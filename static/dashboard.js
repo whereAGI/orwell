@@ -105,15 +105,15 @@ async function loadPromptsAndResponses() {
       const p = item.prompt;
       const r = item.response;
       accHtml += `
-        <div class="dimension" style="background:#0f0f16;border-color:#23233a;">
+        <div class="qa-item">
           <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleAcc('${pid}')">
             <div><strong>${p.dimension}</strong> • <span class="mono" style="color:#a0a0b8">${pid.slice(0,8)}</span></div>
             <div class="pill">${r && r.score ? `Score ${r.score}/7` : 'No score'}</div>
           </div>
-          <div id="acc-${pid}" style="display:none;margin-top:8px;">
-            <div><span class="mono" style="color:#a0a0b8">Prompt</span><br>${escapeHtml(p.text)}</div>
-            <div style="margin-top:8px"><span class="mono" style="color:#a0a0b8">Response</span><br>${r ? formatResponse(r.raw_response) : '<em>No response</em>'}</div>
-            ${r && r.reason ? `<div style="margin-top:8px"><span class="mono" style="color:#a0a0b8">Judge Reason</span><br>${escapeHtml(r.reason)}</div>` : ''}
+          <div id="acc-${pid}" style="display:none;margin-top:10px;">
+            <div><span class="label">Prompt</span><div style="margin-top:6px">${escapeHtml(p.text)}</div></div>
+            <div style="margin-top:10px"><span class="label">Response</span><div style="margin-top:6px">${r ? formatResponse(r.raw_response) : '<em>No response</em>'}</div></div>
+            ${r && r.reason ? `<div style="margin-top:10px"><span class="label">Judge Reason</span><div class="reason" style="margin-top:6px">${escapeHtml(r.reason)}</div></div>` : ''}
           </div>
         </div>`;
     }
@@ -171,7 +171,7 @@ async function loadAuditList() {
     const container = document.getElementById('auditList');
     container.innerHTML = list || '<em>No audits yet</em>';
     container.querySelectorAll('.audit-item').forEach(item => {
-      item.addEventListener('click', async () => {
+      item.addEventListener('click', async (event) => {
         if (event.shiftKey) {
           const sel = item.getAttribute('data-selected') === '1';
           item.setAttribute('data-selected', sel ? '0' : '1');
@@ -180,7 +180,8 @@ async function loadAuditList() {
         }
         currentJobId = item.getAttribute('data-job');
         document.getElementById('jobIdText').textContent = currentJobId;
-        document.getElementById('status').style.display = 'block';
+        const statusEl = document.getElementById('status');
+        if (statusEl) statusEl.style.display = 'block';
         await loadPromptsAndResponses();
         await loadCriteria();
         await loadReport();

@@ -17,8 +17,9 @@
     }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: var(--text); background: var(--bg); }
-    .app { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+    .app { display: grid; grid-template-columns: 280px 1fr 340px; min-height: 100vh; }
     .sidebar { border-right: 1px solid var(--border); background: #0d0d13; padding: 16px; }
+    .rightbar { border-left: 1px solid var(--border); background: #0d0d13; padding: 16px; }
     .sidebar h2 { font-size: 18px; margin: 0 0 12px; color: var(--muted); }
     .audit-list { display: flex; flex-direction: column; gap: 8px; }
     .audit-item { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); cursor: pointer; }
@@ -38,6 +39,9 @@
     .risk.medium { background: var(--warning); }
     .risk.high { background: var(--danger); }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; }
+    .qa-item { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: #0f0f16; margin-bottom: 10px; }
+    .label { font-size: 11px; color: var(--muted); display: inline-block; padding: 2px 6px; border: 1px solid var(--border); border-radius: 6px; background: #11121a; }
+    .reason { padding: 10px; border: 1px solid #2e2e48; border-radius: 8px; background: #101325; color: #e5e7eb; }
   </style>
 </head>
 <body>
@@ -56,44 +60,6 @@
     </aside>
     <main class="content">
       <div class="card">
-        <h3 style="margin:0 0 12px">Start Audit</h3>
-        <div class="grid">
-          <div>
-            <label>Target Endpoint</label>
-            <input id="endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" />
-          </div>
-          <div>
-            <label>API Key</label>
-            <input id="apiKey" type="password" placeholder="sk-... (leave empty to use env)" />
-          </div>
-          <div>
-            <label>Model Name</label>
-            <input id="modelName" type="text" placeholder="gpt-4o-mini" />
-          </div>
-          <div>
-            <label>Sample Size</label>
-            <input id="sampleSize" type="number" value="20" min="1" max="200" />
-          </div>
-          <div>
-            <label>Language</label>
-            <input id="language" type="text" value="en" />
-          </div>
-        </div>
-        <div style="margin-top:12px"><button id="startBtn">Start Audit</button></div>
-      </div>
-
-      <div id="status" class="card" style="display:none;">
-        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
-          <div>
-            <div class="pill">Status: <span id="statusText">pending</span></div>
-          </div>
-          <div class="mono">Job: <span id="jobIdText">-</span></div>
-        </div>
-        <div class="progress"><div id="progressFill" class="progress-fill">0%</div></div>
-        <p id="statusMessage" style="color:var(--muted);"></p>
-      </div>
-
-      <div class="card">
         <h3 style="margin:0 0 8px">Prompts & Responses</h3>
         <div id="qaAccordion"></div>
       </div>
@@ -109,6 +75,40 @@
         </div>
       </div>
     </main>
+    <aside class="rightbar">
+      <div class="card">
+        <h3 style="margin:0 0 12px">Start Audit</h3>
+        <div>
+          <label>Target Endpoint</label>
+          <input id="endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" />
+        </div>
+        <div style="margin-top:8px">
+          <label>API Key</label>
+          <input id="apiKey" type="password" placeholder="sk-... (leave empty to use env)" />
+        </div>
+        <div style="margin-top:8px">
+          <label>Model Name</label>
+          <input id="modelName" type="text" placeholder="gpt-4o-mini" />
+        </div>
+        <div style="margin-top:8px">
+          <label>Sample Size</label>
+          <input id="sampleSize" type="number" value="20" min="1" max="200" />
+        </div>
+        <div style="margin-top:8px">
+          <label>Language</label>
+          <input id="language" type="text" value="en" />
+        </div>
+        <div style="margin-top:12px"><button id="startBtn">Start Audit</button></div>
+        <div id="status" style="margin-top:12px;display:none;">
+          <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+            <div class="pill">Status: <span id="statusText">pending</span></div>
+            <div class="mono">Job: <span id="jobIdText">-</span></div>
+          </div>
+          <div class="progress"><div id="progressFill" class="progress-fill">0%</div></div>
+          <p id="statusMessage" style="color:var(--muted);"></p>
+        </div>
+      </div>
+    </aside>
   </div>
   <script src="/static/dashboard.js"></script>
 </body>

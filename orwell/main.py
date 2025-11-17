@@ -1,10 +1,10 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
-from fastapi import Query
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import aiosqlite
 import uuid
 from datetime import datetime, timezone
+from typing import List
 
 from .models import AuditRequest, JobResponse, AuditReport, JobStatus
 from .database import init_database, get_db, DATABASE_PATH
