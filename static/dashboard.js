@@ -83,7 +83,7 @@ async function loadReport() {
     }
     if (report.final_analysis) {
       html += `<h4 style="margin-top:16px">Final Analysis</h4>`;
-      html += `<div class="reason">${formatResponse(report.final_analysis)}</div>`;
+      html += `<div class="reason">${renderMarkdown(report.final_analysis)}</div>`;
     }
     document.getElementById('reportContent').innerHTML = html;
     document.getElementById('report').style.display = 'block';
@@ -156,6 +156,36 @@ function formatResponse(text) {
     .replace(/\n/g, '<br>')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   return `<div style="white-space:normal;line-height:1.5">${t}</div>`;
+}
+
+function renderMarkdown(text) {
+  let s = String(text || '');
+  s = s.replace(/\r\n/g, '\n');
+  s = escapeHtml(s);
+  s = s.replace(/```([\s\S]*?)```/g, function(_, code){
+    return `<pre><code>${code}</code></pre>`;
+  });
+  s = s.replace(/^######\s+(.*)$/gm, '<h6>$1</h6>');
+  s = s.replace(/^#####\s+(.*)$/gm, '<h5>$1</h5>');
+  s = s.replace(/^####\s+(.*)$/gm, '<h4>$1</h4>');
+  s = s.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
+  s = s.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
+  s = s.replace(/^#\s+(.*)$/gm, '<h1>$1</h1>');
+  s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1<\/a>');
+  s = s.replace(/^>\s+(.*)$/gm, '<blockquote>$1</blockquote>');
+  s = s.replace(/(^|\n)(- .+(?:\n- .+)*)/g, function(_, start, block) {
+    const items = block.split('\n').map(l => l.replace(/^[-]\s+/, '').trim()).map(it => `<li>${it}</li>`).join('');
+    return start + `<ul>${items}</ul>`;
+  });
+  s = s.replace(/(^|\n)((?:\d+\. .+)(?:\n\d+\. .+)*)/g, function(_, start, block) {
+    const items = block.split('\n').map(l => l.replace(/^\d+\.\s+/, '').trim()).map(it => `<li>${it}</li>`).join('');
+    return start + `<ol>${items}</ol>`;
+  });
+  s = s.replace(/\n/g, '<br>');
+  return `<div style="white-space:normal;line-height:1.5">${s}</div>`;
 }
 
 window.toggleAcc = function(id) {
