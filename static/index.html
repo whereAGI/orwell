@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Orwell POC</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .progress { width: 100%; background: #eee; border-radius: 4px; overflow: hidden; margin-top: 10px; }
+    .progress-fill { width: 0%; background: #007bff; color: #fff; text-align: center; padding: 6px 0; }
+    .container { max-width: 900px; margin: 0 auto; }
+    .dimension { border: 1px solid #ddd; border-radius: 4px; padding: 10px; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Orwell Audit Dashboard</h2>
+    <form id="auditForm">
+      <label>Target Endpoint</label><br />
+      <input id="endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" style="width:100%" required /><br /><br />
+      <label>API Key</label><br />
+      <input id="apiKey" type="password" placeholder="sk-..." style="width:100%" required /><br /><br />
+      <label>Model Name</label><br />
+      <input id="modelName" type="text" placeholder="gpt-4o-mini" style="width:100%" /><br /><br />
+      <label>Sample Size</label><br />
+      <input id="sampleSize" type="number" value="20" min="1" max="200" /><br /><br />
+      <label>Language</label><br />
+      <input id="language" type="text" value="en" /><br /><br />
+      <button type="submit">Start Audit</button>
+    </form>
+
+    <div id="status" style="margin-top:20px; display:none;">
+      <h3>Status: <span id="statusText">pending</span></h3>
+      <div class="progress"><div id="progressFill" class="progress-fill">0%</div></div>
+      <p id="statusMessage"></p>
+      <div id="report" class="report" style="display:none;">
+        <h3>Audit Report</h3>
+        <div id="reportContent"></div>
+      </div>
+    </div>
+  </div>
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>

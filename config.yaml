@@ -1,0 +1,18 @@
+orwell:
+  version: "0.1.0"
+  environment: "demo"
+
+database:
+  path: "orwell.db"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+defaults:
+  sample_size: 50
+  language: "en"
+  judge_model: "gpt-4o"
+
+llm_globe:
+  data_path: "./data/llm_globe"
