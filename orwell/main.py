@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends
+from fastapi import Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import aiosqlite
@@ -93,6 +94,20 @@ async def list_audits(limit: int = 50, db = Depends(get_db)):
         "progress": r["progress"],
         "created_at": r["created_at"],
     } for r in rows]
+
+@app.delete("/api/audits")
+async def delete_audits(job_ids: List[str] = Query(None), db = Depends(get_db)):
+    if not job_ids:
+        raise HTTPException(status_code=400, detail="No job_ids provided")
+    placeholders = ",".join(["?"] * len(job_ids))
+    # Delete dependent rows first due to foreign key constraints
+    await db.execute(f"DELETE FROM scores WHERE response_id IN (SELECT response_id FROM responses WHERE job_id IN ({placeholders}))", job_ids)
+    await db.execute(f"DELETE FROM responses WHERE job_id IN ({placeholders})", job_ids)
+    await db.execute(f"DELETE FROM prompts WHERE job_id IN ({placeholders})", job_ids)
+    await db.execute(f"DELETE FROM reports WHERE job_id IN ({placeholders})", job_ids)
+    await db.execute(f"DELETE FROM audit_jobs WHERE job_id IN ({placeholders})", job_ids)
+    await db.commit()
+    return {"deleted": job_ids}
 
 @app.get("/api/audit/{job_id}/prompts")
 async def get_prompts(job_id: str, db = Depends(get_db)):

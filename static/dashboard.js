@@ -159,7 +159,7 @@ async function loadAuditList() {
     const res = await fetch('/api/audits');
     const audits = await res.json();
     const list = audits.map(a => `
-      <div class="audit-item" data-job="${a.job_id}">
+      <div class="audit-item" data-job="${a.job_id}" data-selected="0">
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
             <div style="font-weight:600;">${a.target_model}</div>
@@ -172,6 +172,12 @@ async function loadAuditList() {
     container.innerHTML = list || '<em>No audits yet</em>';
     container.querySelectorAll('.audit-item').forEach(item => {
       item.addEventListener('click', async () => {
+        if (event.shiftKey) {
+          const sel = item.getAttribute('data-selected') === '1';
+          item.setAttribute('data-selected', sel ? '0' : '1');
+          item.style.borderColor = sel ? 'var(--border)' : '#ef4444';
+          return;
+        }
         currentJobId = item.getAttribute('data-job');
         document.getElementById('jobIdText').textContent = currentJobId;
         document.getElementById('status').style.display = 'block';
@@ -184,5 +190,26 @@ async function loadAuditList() {
     console.error('Error loading audits:', err);
   }
 }
+
+document.getElementById('deleteBtn').addEventListener('click', async () => {
+  const items = Array.from(document.querySelectorAll('.audit-item')).filter(x => x.getAttribute('data-selected') === '1');
+  const ids = items.map(x => x.getAttribute('data-job'));
+  if (!ids.length) {
+    alert('Hold Shift and click items to select for deletion.');
+    return;
+  }
+  if (!confirm('Delete ' + ids.length + ' audits? This cannot be undone.')) return;
+  try {
+    const url = '/api/audits?' + ids.map(id => 'job_ids=' + encodeURIComponent(id)).join('&');
+    const res = await fetch(url, { method: 'DELETE' });
+    if (!res.ok) throw new Error(await res.text());
+    await loadAuditList();
+    document.getElementById('qaAccordion').innerHTML = '';
+    document.getElementById('report').style.display = 'none';
+    document.getElementById('status').style.display = 'none';
+  } catch (err) {
+    alert('Delete failed: ' + err);
+  }
+});
 
 loadAuditList();
