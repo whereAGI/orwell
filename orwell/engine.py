@@ -29,6 +29,13 @@ class AuditEngine:
                 sample_size=request.sample_size,
                 dimensions=request.dimensions,
             )
+            if not prompts:
+                await db.execute(
+                    "UPDATE audit_jobs SET status = ?, error_message = ? WHERE job_id = ?",
+                    (JobStatus.FAILED.value, "No prompts matched selected dimensions", job_id),
+                )
+                await db.commit()
+                return
             for prompt in prompts:
                 await db.execute(
                     """INSERT INTO prompts (prompt_id, job_id, dimension, text, language)

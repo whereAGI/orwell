@@ -1,5 +1,6 @@
 let currentJobId = null;
 let pollInterval = null;
+let selectedDimensions = [];
 
 document.getElementById('startBtn').addEventListener('click', async () => {
   const endpoint = document.getElementById('endpoint').value.trim();
@@ -11,7 +12,8 @@ document.getElementById('startBtn').addEventListener('click', async () => {
     model_name: modelName || null,
     sample_size: parseInt(document.getElementById('sampleSize').value),
     language: document.getElementById('language').value,
-    judge_model: 'gpt-4o'
+    judge_model: 'gpt-4o',
+    dimensions: selectedDimensions.length ? selectedDimensions : null
   };
   try {
     const response = await fetch('/api/audit/create', {
@@ -19,10 +21,14 @@ document.getElementById('startBtn').addEventListener('click', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request)
     });
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
     const result = await response.json();
     currentJobId = result.job_id;
     document.getElementById('status').style.display = 'block';
     document.getElementById('report').style.display = 'none';
+    document.getElementById('qaAccordion').innerHTML = '';
     pollStatus();
     pollInterval = setInterval(pollStatus, 2000);
   } catch (err) {
@@ -235,4 +241,49 @@ document.getElementById('deleteBtn').addEventListener('click', async () => {
   }
 });
 
+async function initDimensions() {
+  try {
+    const res = await fetch('/api/dimensions');
+    const data = await res.json();
+    const dims = (data.dimensions || []).sort();
+    const listEl = document.getElementById('dimList');
+    listEl.innerHTML = dims.map(d => `<span class="pill" data-dim="${escapeHtml(d)}">${escapeHtml(d)}</span>`).join('');
+    selectedDimensions = [];
+    listEl.querySelectorAll('.pill').forEach(el => {
+      el.addEventListener('click', () => {
+        const d = el.getAttribute('data-dim');
+        const idx = selectedDimensions.indexOf(d);
+        if (idx >= 0) {
+          selectedDimensions.splice(idx, 1);
+          el.classList.remove('selected');
+        } else {
+          selectedDimensions.push(d);
+          el.classList.add('selected');
+        }
+      });
+    });
+  } catch (err) {
+    console.error('Failed to load dimensions:', err);
+  }
+}
+initDimensions();
 loadAuditList();
+
+const dimSelectAll = document.getElementById('dimSelectAll');
+if (dimSelectAll) {
+  dimSelectAll.addEventListener('click', () => {
+    const pills = document.querySelectorAll('#dimList .pill');
+    selectedDimensions = Array.from(pills).map(p => p.getAttribute('data-dim'));
+    pills.forEach(p => p.classList.add('selected'));
+  });
+}
+
+const dimClear = document.getElementById('dimClear');
+if (dimClear) {
+  dimClear.addEventListener('click', () => {
+    selectedDimensions = [];
+    document.querySelectorAll('#dimList .pill').forEach(p => p.classList.remove('selected'));
+  });
+}
+
+// Removed standalone startSelected flow; Start Audit button uses selectedDimensions

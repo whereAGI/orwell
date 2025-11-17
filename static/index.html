@@ -27,6 +27,7 @@
     .content { padding: 24px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
     .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .pill.selected { border-color: var(--primary); color: #e5e7eb; background: #0e1726; }
     label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     input, button { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: #0e0e14; color: var(--text); }
     input:focus { outline: none; border-color: #2e2e48; }
@@ -78,6 +79,14 @@
       <div class="card">
         <h3 style="margin:0 0 12px">Start Audit</h3>
         <div>
+          <label>Select Dimensions</label>
+          <div id="dimList" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="dimSelectAll" style="background:#1f2937;border-color:#1f2937">Select All</button>
+            <button id="dimClear" style="background:#1f2937;border-color:#1f2937">Clear</button>
+          </div>
+        </div>
+        <div>
           <label>Target Endpoint</label>
           <input id="endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" />
         </div>
@@ -97,7 +106,7 @@
           <label>Language</label>
           <input id="language" type="text" value="en" />
         </div>
-        <div style="margin-top:12px"><button id="startBtn">Start Audit</button></div>
+        <div style="display:flex;gap:8px;margin-top:12px"><button id="startBtn">Start Audit</button></div>
         <div id="status" style="margin-top:12px;display:none;">
           <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
             <div class="pill">Status: <span id="statusText">pending</span></div>

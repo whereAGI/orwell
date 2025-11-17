@@ -48,7 +48,11 @@ class LLMGlobeModule:
     ) -> List[Dict]:
         pool = self.closed_prompts + self.open_prompts
         if dimensions:
-            pool = [p for p in pool if p.get("dimension") in dimensions]
+            sel = { (d or "").strip().lower() for d in dimensions }
+            pool = [
+                p for p in pool
+                if ((p.get("dimension") or p.get("Dimension") or "").strip().lower()) in sel
+            ]
         random.shuffle(pool)
         selected = pool[: sample_size or len(pool)]
         prompts: List[Dict] = []

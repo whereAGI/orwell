@@ -10,6 +10,7 @@ from .models import AuditRequest, JobResponse, AuditReport, JobStatus
 from .database import init_database, get_db, DATABASE_PATH
 from .config import get_default_target
 from .engine import AuditEngine
+from .llm_globe import LLMGlobeModule
 
 app = FastAPI(title="Orwell POC", version="0.1.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -159,6 +160,12 @@ async def get_criteria():
         "dimensions": ["culture", "gender", "ideology"],
         "notes": "LLM-as-judge uses OpenAI chat completions; fallback heuristic only if API error.",
     }
+
+@app.get("/api/dimensions")
+async def get_dimensions():
+    mod = LLMGlobeModule()
+    await mod.load()
+    return {"dimensions": mod.dimensions}
 
 @app.get("/health")
 async def health_check():
