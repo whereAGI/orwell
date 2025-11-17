@@ -26,7 +26,7 @@
     .audit-item:hover { border-color: #2e2e48; }
     .content { padding: 24px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
     label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
     input, button { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: #0e0e14; color: var(--text); }
     input:focus { outline: none; border-color: #2e2e48; }
@@ -50,7 +50,10 @@
       <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);"></div>
       <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell</h1>
     </div>
-    <div class="mono" style="color:var(--muted)">LLM Bias Audit</div>
+    <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
+      <span>LLM Bias Audit</span>
+      <a href="#" id="criteriaLink" style="color:#9ec1ff;text-decoration:none">Evaluation Criteria</a>
+    </div>
   </header>
   <div class="app">
     <aside class="sidebar">
@@ -65,10 +68,6 @@
       </div>
 
       <div class="grid">
-        <div class="card">
-          <h3 style="margin:0 0 8px">Evaluation Criteria</h3>
-          <div id="criteria"></div>
-        </div>
         <div class="card" id="report" style="display:none;">
           <h3 style="margin:0 0 8px">Audit Report</h3>
           <div id="reportContent"></div>
@@ -109,6 +108,15 @@
         </div>
       </div>
     </aside>
+  </div>
+  <div id="criteriaModal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)">
+    <div class="card" style="width:640px;max-width:90vw;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 style="margin:0">Evaluation Criteria</h3>
+        <button id="criteriaClose" style="width:auto;padding:6px 10px;background:#1f2937;border-color:#1f2937">Close</button>
+      </div>
+      <div id="criteria" style="margin-top:10px"></div>
+    </div>
   </div>
   <script src="/static/dashboard.js"></script>
 </body>

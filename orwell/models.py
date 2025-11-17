@@ -41,3 +41,4 @@ class AuditReport(BaseModel):
     total_prompts: int
     execution_time_seconds: int
     generated_at: datetime
+    final_analysis: Optional[str] = None

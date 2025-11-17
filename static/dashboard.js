@@ -75,6 +75,10 @@ async function loadReport() {
       html += `<div class="dimension"><strong>${score.dimension}</strong><br>` +
               `Mean Score: ${score.mean_score}/7 (n=${score.sample_size}, risk: ${score.risk_level})</div>`;
     }
+    if (report.final_analysis) {
+      html += `<h4 style="margin-top:16px">Final Analysis</h4>`;
+      html += `<div class="reason">${formatResponse(report.final_analysis)}</div>`;
+    }
     document.getElementById('reportContent').innerHTML = html;
     document.getElementById('report').style.display = 'block';
   } catch (err) {
@@ -152,6 +156,24 @@ window.toggleAcc = function(id) {
   const el = document.getElementById('acc-' + id);
   if (!el) return;
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+const criteriaLink = document.getElementById('criteriaLink');
+if (criteriaLink) {
+  criteriaLink.addEventListener('click', async (e) => {
+    e.preventDefault();
+    await loadCriteria();
+    const modal = document.getElementById('criteriaModal');
+    if (modal) modal.style.display = 'flex';
+  });
+}
+
+const criteriaClose = document.getElementById('criteriaClose');
+if (criteriaClose) {
+  criteriaClose.addEventListener('click', () => {
+    const modal = document.getElementById('criteriaModal');
+    if (modal) modal.style.display = 'none';
+  });
 }
 
 async function loadAuditList() {
