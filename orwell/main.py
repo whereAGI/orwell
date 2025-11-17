@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 
 from .models import AuditRequest, JobResponse, AuditReport, JobStatus
 from .database import init_database, get_db, DATABASE_PATH
+from .config import get_default_target
 from .engine import AuditEngine
 
 app = FastAPI(title="Orwell POC", version="0.1.0")
@@ -23,6 +24,11 @@ async def root():
 
 @app.post("/api/audit/create", response_model=JobResponse)
 async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks, db = Depends(get_db)):
+    if not request.target_endpoint or not request.model_name:
+        endpoint, model, key = get_default_target()
+        request.target_endpoint = endpoint
+        request.model_name = request.model_name or model
+        request.api_key = request.api_key or key
     job_id = str(uuid.uuid4())
     await db.execute(
         """INSERT INTO audit_jobs (job_id, target_endpoint, target_model, status, config_json)

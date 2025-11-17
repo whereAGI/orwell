@@ -10,8 +10,8 @@ class JobStatus(str, Enum):
     FAILED = "failed"
 
 class AuditRequest(BaseModel):
-    target_endpoint: HttpUrl
-    api_key: str
+    target_endpoint: Optional[HttpUrl] = None
+    api_key: Optional[str] = ""
     model_name: Optional[str] = None
     language: str = "en"
     sample_size: Optional[int] = 50

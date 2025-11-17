@@ -13,6 +13,9 @@ defaults:
   sample_size: 50
   language: "en"
   judge_model: "gpt-4o"
+  endpoint: "https://api.openai.com/v1/chat/completions"
+  model: "gpt-4o-mini"
+  api_key: ""
 
 llm_globe:
   data_path: "./data/llm_globe"

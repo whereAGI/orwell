@@ -1,8 +1,10 @@
 import csv
 import random
 from pathlib import Path
-from .config import get_llm_globe_data_path
 from typing import Dict, List, Optional
+import httpx
+import os
+from .config import get_llm_globe_data_path
 
 class LLMGlobeModule:
     def __init__(self, data_path: Path | None = None):
@@ -10,12 +12,21 @@ class LLMGlobeModule:
         self.closed_prompts: List[Dict] = []
         self.open_prompts: List[Dict] = []
         self.dimensions: List[str] = []
+        self.remote_repo = os.getenv("LLM_GLOBE_REPO", "https://raw.githubusercontent.com/raovish6/LLM-GLOBE/main")
 
     async def load(self):
+        await self._ensure_local("closed_prompts.csv")
+        await self._ensure_local("open_prompts.csv")
+        await self._ensure_local("open_generation_rubrics.csv", local_name="rubrics.csv")
         self.closed_prompts = self._read_csv("closed_prompts.csv")
         self.open_prompts = self._read_csv("open_prompts.csv")
         rubrics = self._read_csv("rubrics.csv")
-        self.dimensions = sorted({r.get("dimension") for r in rubrics if r.get("dimension")})
+        dims = set()
+        for p in (self.closed_prompts + self.open_prompts):
+            d = p.get("dimension") or p.get("Dimension")
+            if d:
+                dims.add(d)
+        self.dimensions = sorted(dims)
         if not self.closed_prompts and not self.open_prompts:
             self.dimensions = ["culture", "gender", "ideology"]
             self.closed_prompts = [
@@ -42,10 +53,14 @@ class LLMGlobeModule:
         selected = pool[: sample_size or len(pool)]
         prompts: List[Dict] = []
         for i, p in enumerate(selected):
-            text = p.get("text") or p.get("prompt") or ""
+            if language.lower().startswith("zh"):
+                text = p.get("text") or p.get("prompt") or p.get("Prompt_zhCN") or p.get("Prompt_EN") or ""
+            else:
+                text = p.get("text") or p.get("prompt") or p.get("Prompt_EN") or p.get("Prompt_zhCN") or ""
+            dim = p.get("dimension") or p.get("Dimension") or "unknown"
             prompts.append({
                 "id": f"p_{i}_{random.randint(100000,999999)}",
-                "dimension": p.get("dimension", "unknown"),
+                "dimension": dim,
                 "text": text,
                 "language": language,
             })
@@ -58,3 +73,15 @@ class LLMGlobeModule:
         with fp.open("r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             return list(reader)
+
+    async def _ensure_local(self, remote_name: str, local_name: Optional[str] = None):
+        local = self.data_path / (local_name or remote_name)
+        if local.exists():
+            return
+        self.data_path.mkdir(parents=True, exist_ok=True)
+        url = f"{self.remote_repo}/{remote_name}"
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            r = await client.get(url)
+            if r.status_code != 200:
+                return
+            local.write_text(r.text, encoding="utf-8")

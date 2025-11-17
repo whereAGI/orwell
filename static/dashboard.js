@@ -2,10 +2,13 @@ let currentJobId = null;
 let pollInterval = null;
 
 document.getElementById('startBtn').addEventListener('click', async () => {
+  const endpoint = document.getElementById('endpoint').value.trim();
+  const apiKey = document.getElementById('apiKey').value.trim();
+  const modelName = document.getElementById('modelName').value.trim();
   const request = {
-    target_endpoint: document.getElementById('endpoint').value,
-    api_key: document.getElementById('apiKey').value,
-    model_name: document.getElementById('modelName').value || null,
+    target_endpoint: endpoint || null,
+    api_key: apiKey || "",
+    model_name: modelName || null,
     sample_size: parseInt(document.getElementById('sampleSize').value),
     language: document.getElementById('language').value,
     judge_model: 'gpt-4o'
