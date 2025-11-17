@@ -4,6 +4,7 @@ import time
 import json
 from typing import Dict, List
 import uuid
+import os
 
 from .models import AuditRequest, JobStatus
 from .llm_globe import LLMGlobeModule
@@ -54,6 +55,7 @@ class AuditEngine:
                 responses=responses,
                 judge=judge,
                 db=db,
+                job_id=job_id,
                 progress_start=0.7,
                 progress_end=0.9,
             )
@@ -64,6 +66,8 @@ class AuditEngine:
                 db=db,
                 execution_time=int(time.time() - start_time),
                 target_model=request.model_name or "unknown",
+                judge_model=request.judge_model,
+                target_endpoint=str(request.target_endpoint),
             )
 
             await self._update_job_status(db, job_id, JobStatus.COMPLETED, 1.0)
@@ -88,12 +92,45 @@ class AuditEngine:
     ) -> List[Dict]:
         results: List[Dict] = []
         total = len(prompts)
+        api_key = api_key or os.getenv("ORWELL_API_KEY") or os.getenv("OPENAI_API_KEY")
+        if not api_key and os.getenv("ORWELL_TEST_MODE") != "1":
+            raise RuntimeError("Target model API key missing")
+        if os.getenv("ORWELL_TEST_MODE") == "1":
+            for i, prompt in enumerate(prompts):
+                response_id = str(uuid.uuid4())
+                message = f"Stub response for {prompt['dimension']}: OK"
+                latency = 10.0
+                tokens = 5
+                await db.execute(
+                    """INSERT INTO responses (response_id, prompt_id, job_id, raw_response, tokens_used, latency_ms)
+                        VALUES (?, ?, ?, ?, ?, ?)""",
+                    (response_id, prompt["id"], job_id, message, tokens, latency),
+                )
+                results.append({
+                    "id": response_id,
+                    "prompt_id": prompt["id"],
+                    "text": message,
+                    "dimension": prompt["dimension"],
+                })
+                progress = progress_start + (i / max(total, 1)) * (progress_end - progress_start)
+                await self._update_job_status(db, job_id, JobStatus.RUNNING, progress)
+            await db.commit()
+            return results
+        def _normalize(url: str, suffix: str) -> str:
+            u = url.rstrip('/')
+            if u.endswith(suffix):
+                return u
+            if u.endswith('/v1') or u.endswith('/openai/v1') or u.endswith('/api/v1'):
+                return u + suffix
+            return u + suffix
+        ep_chat = _normalize(endpoint, '/chat/completions')
+        ep_comp = _normalize(endpoint, '/completions')
         async with httpx.AsyncClient(timeout=30.0) as client:
             for i, prompt in enumerate(prompts):
                 try:
                     t0 = time.time()
                     resp = await client.post(
-                        endpoint,
+                        ep_chat,
                         headers={"Authorization": f"Bearer {api_key}"},
                         json={
                             "model": model_name,
@@ -102,10 +139,25 @@ class AuditEngine:
                             "max_tokens": 500,
                         },
                     )
+                    if resp.status_code in (404, 405):
+                        t0 = time.time()
+                        resp = await client.post(
+                            ep_comp,
+                            headers={"Authorization": f"Bearer {api_key}"},
+                            json={
+                                "model": model_name,
+                                "prompt": prompt["text"],
+                                "temperature": 0.7,
+                                "max_tokens": 500,
+                            },
+                        )
                     resp.raise_for_status()
                     payload = resp.json()
                     latency = (time.time() - t0) * 1000
-                    message = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    message = (
+                        payload.get("choices", [{}])[0].get("message", {}).get("content")
+                        or payload.get("choices", [{}])[0].get("text", "")
+                    )
                     tokens = payload.get("usage", {}).get("total_tokens", 0)
                     response_id = str(uuid.uuid4())
                     await db.execute(
@@ -119,8 +171,8 @@ class AuditEngine:
                         "text": message,
                         "dimension": prompt["dimension"],
                     })
-                except Exception:
-                    pass
+                except Exception as e:
+                    raise RuntimeError(f"Target API error: {e}")
                 progress = progress_start + (i / max(total, 1)) * (progress_end - progress_start)
                 await self._update_job_status(db, job_id, JobStatus.RUNNING, progress)
         await db.commit()
@@ -132,6 +184,7 @@ class AuditEngine:
         responses: List[Dict],
         judge: "JudgeClient",
         db: aiosqlite.Connection,
+        job_id: str,
         progress_start: float,
         progress_end: float,
     ) -> List[Dict]:
@@ -152,8 +205,8 @@ class AuditEngine:
                     (score_id, r["id"], r["dimension"], value, 0.85, reasoning),
                 )
                 scores.append({"dimension": r["dimension"], "value": value, "reasoning": reasoning})
-            except Exception:
-                pass
+            except Exception as e:
+                raise RuntimeError(f"Judge scoring error: {e}")
             progress = progress_start + (i / max(total, 1)) * (progress_end - progress_start)
             await self._update_job_status(db, job_id, JobStatus.RUNNING, progress)
         await db.commit()
@@ -166,6 +219,8 @@ class AuditEngine:
         db: aiosqlite.Connection,
         execution_time: int,
         target_model: str,
+        judge_model: str,
+        target_endpoint: str,
     ):
         dims: Dict[str, List[float]] = {}
         async with db.execute("SELECT dimension, value FROM scores JOIN responses USING(response_id) WHERE responses.job_id = ?", (job_id,)) as cur:
@@ -184,6 +239,8 @@ class AuditEngine:
         results = {
             "job_id": job_id,
             "target_model": target_model,
+            "judge_model": judge_model,
+            "target_endpoint": target_endpoint,
             "overall_risk": overall_risk,
             "dimensions": report_dims,
             "total_prompts": len(prompts),

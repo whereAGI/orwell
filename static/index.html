@@ -2,41 +2,105 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Orwell POC</title>
+  <title>Orwell Audit</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    .progress { width: 100%; background: #eee; border-radius: 4px; overflow: hidden; margin-top: 10px; }
-    .progress-fill { width: 0%; background: #007bff; color: #fff; text-align: center; padding: 6px 0; }
-    .container { max-width: 900px; margin: 0 auto; }
-    .dimension { border: 1px solid #ddd; border-radius: 4px; padding: 10px; margin-bottom: 8px; }
+    :root {
+      --bg: #0b0b0f;
+      --card: #121218;
+      --muted: #a0a0b8;
+      --text: #f5f6f8;
+      --primary: #1f6feb;
+      --border: #252536;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; color: var(--text); background: var(--bg); }
+    .app { display: grid; grid-template-columns: 280px 1fr; min-height: 100vh; }
+    .sidebar { border-right: 1px solid var(--border); background: #0d0d13; padding: 16px; }
+    .sidebar h2 { font-size: 18px; margin: 0 0 12px; color: var(--muted); }
+    .audit-list { display: flex; flex-direction: column; gap: 8px; }
+    .audit-item { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); cursor: pointer; }
+    .audit-item:hover { border-color: #2e2e48; }
+    .content { padding: 24px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    input, button { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border); background: #0e0e14; color: var(--text); }
+    input:focus { outline: none; border-color: #2e2e48; }
+    button { background: var(--primary); border-color: var(--primary); font-weight: 600; cursor: pointer; }
+    .progress { width: 100%; background: #0f1320; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin-top: 10px; }
+    .progress-fill { width: 0%; background: var(--primary); color: #fff; text-align: center; padding: 6px 0; }
+    .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); background: #0e1320; color: var(--muted); }
+    .risk { padding: 14px; border-radius: 8px; color: #fff; }
+    .risk.low { background: var(--success); }
+    .risk.medium { background: var(--warning); }
+    .risk.high { background: var(--danger); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h2>Orwell Audit Dashboard</h2>
-    <form id="auditForm">
-      <label>Target Endpoint</label><br />
-      <input id="endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" style="width:100%" required /><br /><br />
-      <label>API Key</label><br />
-      <input id="apiKey" type="password" placeholder="sk-..." style="width:100%" required /><br /><br />
-      <label>Model Name</label><br />
-      <input id="modelName" type="text" placeholder="gpt-4o-mini" style="width:100%" /><br /><br />
-      <label>Sample Size</label><br />
-      <input id="sampleSize" type="number" value="20" min="1" max="200" /><br /><br />
-      <label>Language</label><br />
-      <input id="language" type="text" value="en" /><br /><br />
-      <button type="submit">Start Audit</button>
-    </form>
-
-    <div id="status" style="margin-top:20px; display:none;">
-      <h3>Status: <span id="statusText">pending</span></h3>
-      <div class="progress"><div id="progressFill" class="progress-fill">0%</div></div>
-      <p id="statusMessage"></p>
-      <div id="report" class="report" style="display:none;">
-        <h3>Audit Report</h3>
-        <div id="reportContent"></div>
+  <div class="app">
+    <aside class="sidebar">
+      <h2>Previous Audits</h2>
+      <div id="auditList" class="audit-list"></div>
+    </aside>
+    <main class="content">
+      <div class="card">
+        <h3 style="margin:0 0 12px">Start Audit</h3>
+        <div class="grid">
+          <div>
+            <label>Target Endpoint</label>
+            <input id="endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" />
+          </div>
+          <div>
+            <label>API Key</label>
+            <input id="apiKey" type="password" placeholder="sk-... (leave empty to use env)" />
+          </div>
+          <div>
+            <label>Model Name</label>
+            <input id="modelName" type="text" placeholder="gpt-4o-mini" />
+          </div>
+          <div>
+            <label>Sample Size</label>
+            <input id="sampleSize" type="number" value="20" min="1" max="200" />
+          </div>
+          <div>
+            <label>Language</label>
+            <input id="language" type="text" value="en" />
+          </div>
+        </div>
+        <div style="margin-top:12px"><button id="startBtn">Start Audit</button></div>
       </div>
-    </div>
+
+      <div id="status" class="card" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
+          <div>
+            <div class="pill">Status: <span id="statusText">pending</span></div>
+          </div>
+          <div class="mono">Job: <span id="jobIdText">-</span></div>
+        </div>
+        <div class="progress"><div id="progressFill" class="progress-fill">0%</div></div>
+        <p id="statusMessage" style="color:var(--muted);"></p>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 8px">Prompts & Responses</h3>
+        <div id="qaAccordion"></div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3 style="margin:0 0 8px">Evaluation Criteria</h3>
+          <div id="criteria"></div>
+        </div>
+        <div class="card" id="report" style="display:none;">
+          <h3 style="margin:0 0 8px">Audit Report</h3>
+          <div id="reportContent"></div>
+        </div>
+      </div>
+    </main>
   </div>
   <script src="/static/dashboard.js"></script>
 </body>

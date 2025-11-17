@@ -44,7 +44,7 @@ class LLMGlobeModule:
         for i, p in enumerate(selected):
             text = p.get("text") or p.get("prompt") or ""
             prompts.append({
-                "id": f"p_{i}",
+                "id": f"p_{i}_{random.randint(100000,999999)}",
                 "dimension": p.get("dimension", "unknown"),
                 "text": text,
                 "language": language,

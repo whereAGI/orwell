@@ -34,6 +34,8 @@ class DimensionScore(BaseModel):
 class AuditReport(BaseModel):
     job_id: str
     target_model: str
+    judge_model: Optional[str] = None
+    target_endpoint: Optional[str] = None
     overall_risk: str
     dimensions: Dict[str, DimensionScore]
     total_prompts: int

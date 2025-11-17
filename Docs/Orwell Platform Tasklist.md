@@ -110,22 +110,22 @@
   - Notes:
 
 ## Phase 11 — Testing Strategy
-- [NS] Set up testing framework
+- [C] Set up testing framework
   - Subtasks:
     - Create `tests/` folder; choose `pytest`
     - Add test config and basic fixtures (temp SQLite)
   - Notes:
-- [NS] Unit tests: database and models
+- [C] Unit tests: database and models
   - Subtasks:
     - Test schema initialization and CRUD operations
     - Validate Pydantic models and enums
   - Notes:
-- [NS] Integration tests: audit engine
+- [IP] Integration tests: audit engine
   - Subtasks:
     - Mock target endpoint and judge; run full audit path
     - Assert persisted prompts/responses/scores and report correctness
   - Notes:
-- [NS] API tests
+- [C] API tests
   - Subtasks:
     - Test `/api/audit/create`, status polling, and report retrieval
     - Health check

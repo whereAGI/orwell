@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import yaml
+from dotenv import load_dotenv
 
 DEFAULT_CONFIG_PATH = Path("config.yaml")
 
@@ -8,6 +9,7 @@ _CONFIG = None
 
 def load_config() -> dict:
     global _CONFIG
+    load_dotenv()
     if _CONFIG is not None:
         return _CONFIG
     if DEFAULT_CONFIG_PATH.exists():
@@ -27,3 +29,10 @@ def get_llm_globe_data_path() -> Path:
     cfg = load_config()
     p = cfg.get("llm_globe", {}).get("data_path", "./data/llm_globe")
     return Path(p)
+
+def is_mock_mode() -> bool:
+    v = os.getenv("ORWELL_MOCK_MODE", "").lower()
+    if v in {"1", "true", "yes"}:
+        return True
+    env = os.getenv("ORWELL_ENV", "") or load_config().get("orwell", {}).get("environment", "")
+    return env == "demo"
