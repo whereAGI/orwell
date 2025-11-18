@@ -2,7 +2,30 @@ let currentJobId = null;
 let pollInterval = null;
 let selectedDimensions = [];
 
-document.getElementById('startBtn').addEventListener('click', async () => {
+document.getElementById('startBtn').addEventListener('click', async (e) => {
+  const startBtn = e.currentTarget;
+  if (startBtn.textContent === 'Stop Audit') {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = null;
+    if (currentJobId) {
+      try {
+        const res = await fetch(`/api/audit/${currentJobId}/abort`, { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+      } catch (err) {
+        console.error('Abort failed:', err);
+      }
+    }
+    document.getElementById('status').style.display = 'block';
+    document.getElementById('report').style.display = 'none';
+    document.getElementById('qaAccordion').innerHTML = '';
+    startBtn.textContent = 'Start Audit';
+    startBtn.style.background = 'var(--primary)';
+    startBtn.style.borderColor = 'var(--primary)';
+    document.getElementById('statusText').textContent = 'aborted';
+    document.getElementById('statusMessage').textContent = 'Aborted by user';
+    await loadReport();
+    return;
+  }
   const endpoint = document.getElementById('endpoint').value.trim();
   const apiKey = document.getElementById('apiKey').value.trim();
   const modelName = document.getElementById('modelName').value.trim();
@@ -26,6 +49,9 @@ document.getElementById('startBtn').addEventListener('click', async () => {
     }
     const result = await response.json();
     currentJobId = result.job_id;
+    startBtn.textContent = 'Stop Audit';
+    startBtn.style.background = 'var(--danger)';
+    startBtn.style.borderColor = 'var(--danger)';
     document.getElementById('status').style.display = 'block';
     document.getElementById('report').style.display = 'none';
     document.getElementById('qaAccordion').innerHTML = '';
@@ -33,6 +59,12 @@ document.getElementById('startBtn').addEventListener('click', async () => {
     pollInterval = setInterval(pollStatus, 2000);
   } catch (err) {
     alert('Error creating audit: ' + err);
+    if (startBtn) {
+      startBtn.textContent = 'Start Audit';
+      startBtn.style.background = 'var(--primary)';
+      startBtn.style.borderColor = 'var(--primary)';
+      startBtn.disabled = false;
+    }
   }
 });
 
@@ -52,6 +84,12 @@ async function pollStatus() {
     document.getElementById('statusMessage').textContent = status.message || '';
     if (status.status === 'completed') {
       clearInterval(pollInterval);
+      const startBtn = document.getElementById('startBtn');
+      if (startBtn) {
+        startBtn.textContent = 'Start Audit';
+        startBtn.style.background = 'var(--primary)';
+        startBtn.style.borderColor = 'var(--primary)';
+      }
       await loadPromptsAndResponses();
       await loadCriteria();
       await loadReport();
@@ -60,7 +98,23 @@ async function pollStatus() {
       }
     } else if (status.status === 'failed') {
       clearInterval(pollInterval);
+      const startBtn = document.getElementById('startBtn');
+      if (startBtn) {
+        startBtn.textContent = 'Start Audit';
+        startBtn.style.background = 'var(--primary)';
+        startBtn.style.borderColor = 'var(--primary)';
+      }
       alert('Audit failed: ' + status.message);
+    } else if (status.status === 'aborted') {
+      clearInterval(pollInterval);
+      const startBtn = document.getElementById('startBtn');
+      if (startBtn) {
+        startBtn.textContent = 'Start Audit';
+        startBtn.style.background = 'var(--primary)';
+        startBtn.style.borderColor = 'var(--primary)';
+      }
+      document.getElementById('statusText').textContent = 'aborted';
+      document.getElementById('statusMessage').textContent = status.message || 'Aborted by user';
     }
   } catch (err) {
     console.error('Error polling status:', err);
@@ -84,6 +138,9 @@ async function loadReport() {
     if (report.final_analysis) {
       html += `<h4 style="margin-top:16px">Final Analysis</h4>`;
       html += `<div class="reason">${renderMarkdown(report.final_analysis)}</div>`;
+    }
+    if ((report.total_prompts || 0) === 0 && /aborted/i.test(report.final_analysis || '')) {
+      html = `<div class="reason">${renderMarkdown(report.final_analysis)}</div>`;
     }
     document.getElementById('reportContent').innerHTML = html;
     document.getElementById('report').style.display = 'block';

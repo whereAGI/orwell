@@ -8,6 +8,7 @@ class JobStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    ABORTED = "aborted"
 
 class AuditRequest(BaseModel):
     target_endpoint: Optional[HttpUrl] = None

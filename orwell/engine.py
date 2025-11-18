@@ -45,6 +45,9 @@ class AuditEngine:
             await db.commit()
             await self._update_job_status(db, job_id, JobStatus.RUNNING, 0.3)
 
+            if await self._is_aborted(db, job_id):
+                return
+
             responses = await self._query_model(
                 prompts=prompts,
                 endpoint=str(request.target_endpoint),
@@ -55,6 +58,9 @@ class AuditEngine:
                 progress_start=0.3,
                 progress_end=0.7,
             )
+
+            if await self._is_aborted(db, job_id):
+                return
 
             judge = JudgeClient(model=request.judge_model, api_key=request.api_key)
             await self._score_responses(
@@ -67,12 +73,18 @@ class AuditEngine:
                 progress_end=0.9,
             )
 
+            if await self._is_aborted(db, job_id):
+                return
+
             final_text = await self._final_analysis(
                 db=db,
                 job_id=job_id,
                 judge=judge,
                 target_model=request.model_name or "unknown",
             )
+
+            if await self._is_aborted(db, job_id):
+                return
 
             await self._generate_report(
                 job_id=job_id,
@@ -85,9 +97,31 @@ class AuditEngine:
                 final_analysis=final_text,
             )
 
+            if await self._is_aborted(db, job_id):
+                return
             await self._update_job_status(db, job_id, JobStatus.COMPLETED, 1.0)
 
+    async def _is_aborted(self, db: aiosqlite.Connection, job_id: str) -> bool:
+        async with db.execute("SELECT status, error_message FROM audit_jobs WHERE job_id = ?", (job_id,)) as cur:
+            row = await cur.fetchone()
+        if not row:
+            return False
+        try:
+            st = JobStatus(row["status"])
+        except Exception:
+            st = JobStatus.RUNNING
+        return st == JobStatus.ABORTED
+
     async def _update_job_status(self, db: aiosqlite.Connection, job_id: str, status: JobStatus, progress: float):
+        async with db.execute("SELECT status FROM audit_jobs WHERE job_id = ?", (job_id,)) as cur:
+            row = await cur.fetchone()
+        if row:
+            try:
+                current = JobStatus(row["status"])
+            except Exception:
+                current = JobStatus.RUNNING
+            if current == JobStatus.ABORTED:
+                return
         await db.execute(
             "UPDATE audit_jobs SET status = ?, progress = ? WHERE job_id = ?",
             (status.value, progress, job_id),
@@ -112,6 +146,9 @@ class AuditEngine:
             raise RuntimeError("Target model API key missing")
         if os.getenv("ORWELL_TEST_MODE") == "1":
             for i, prompt in enumerate(prompts):
+                if await self._is_aborted(db, job_id):
+                    await db.commit()
+                    return results
                 response_id = str(uuid.uuid4())
                 message = f"Stub response for {prompt['dimension']}: OK"
                 latency = 10.0
@@ -142,8 +179,14 @@ class AuditEngine:
         ep_comp = _normalize(endpoint, '/completions')
         async with httpx.AsyncClient(timeout=30.0) as client:
             for i, prompt in enumerate(prompts):
+                if await self._is_aborted(db, job_id):
+                    await db.commit()
+                    return results
                 try:
                     t0 = time.time()
+                    if await self._is_aborted(db, job_id):
+                        await db.commit()
+                        return results
                     resp = await client.post(
                         ep_chat,
                         headers={"Authorization": f"Bearer {api_key}"},
@@ -156,6 +199,9 @@ class AuditEngine:
                     )
                     if resp.status_code in (404, 405):
                         t0 = time.time()
+                        if await self._is_aborted(db, job_id):
+                            await db.commit()
+                            return results
                         resp = await client.post(
                             ep_comp,
                             headers={"Authorization": f"Bearer {api_key}"},
@@ -206,6 +252,9 @@ class AuditEngine:
         total = len(responses)
         scores: List[Dict] = []
         for i, r in enumerate(responses):
+            if await self._is_aborted(db, job_id):
+                await db.commit()
+                return scores
             p = next((x for x in prompts if x["id"] == r["prompt_id"]), None)
             if not p:
                 continue
@@ -238,6 +287,11 @@ class AuditEngine:
         target_endpoint: str,
         final_analysis: str | None,
     ):
+        async with db.execute("SELECT status FROM audit_jobs WHERE job_id = ?", (job_id,)) as cur:
+            row = await cur.fetchone()
+        if row and row["status"] == JobStatus.ABORTED.value:
+            # do not generate a report for aborted jobs
+            return
         dims: Dict[str, List[float]] = {}
         async with db.execute("SELECT dimension, value FROM scores JOIN responses USING(response_id) WHERE responses.job_id = ?", (job_id,)) as cur:
             async for row in cur:

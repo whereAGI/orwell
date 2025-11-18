@@ -47,16 +47,22 @@ class LLMGlobeModule:
         dimensions: Optional[List[str]] = None,
     ) -> List[Dict]:
         pool = self.closed_prompts + self.open_prompts
+        selected_pool: List[Dict] = []
         if dimensions:
-            sel = { (d or "").strip().lower() for d in dimensions }
-            pool = [
-                p for p in pool
-                if ((p.get("dimension") or p.get("Dimension") or "").strip().lower()) in sel
-            ]
-        random.shuffle(pool)
-        selected = pool[: sample_size or len(pool)]
+            for d in dimensions:
+                dn = (d or "").strip().lower()
+                group = [
+                    p for p in pool
+                    if ((p.get("dimension") or p.get("Dimension") or "").strip().lower()) == dn
+                ]
+                random.shuffle(group)
+                take = sample_size or len(group)
+                selected_pool.extend(group[: take])
+        else:
+            random.shuffle(pool)
+            selected_pool = pool[: sample_size or len(pool)]
         prompts: List[Dict] = []
-        for i, p in enumerate(selected):
+        for i, p in enumerate(selected_pool):
             if language.lower().startswith("zh"):
                 text = p.get("text") or p.get("prompt") or p.get("Prompt_zhCN") or p.get("Prompt_EN") or ""
             else:

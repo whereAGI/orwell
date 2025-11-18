@@ -70,6 +70,24 @@ async def get_audit_details(job_id: str, db = Depends(get_db)):
 
 @app.get("/api/audit/{job_id}/report", response_model=AuditReport)
 async def get_audit_report(job_id: str, db = Depends(get_db)):
+    async with db.execute("SELECT job_id, status, error_message FROM audit_jobs WHERE job_id = ?", (job_id,)) as jcur:
+        job = await jcur.fetchone()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job["status"] == JobStatus.ABORTED.value:
+        from datetime import datetime
+        return AuditReport(
+            job_id=job["job_id"],
+            target_model="-",
+            judge_model=None,
+            target_endpoint=None,
+            overall_risk="low",
+            dimensions={},
+            total_prompts=0,
+            execution_time_seconds=0,
+            generated_at=datetime.utcnow(),
+            final_analysis=f"Aborted: {job['error_message'] or 'by user'}",
+        )
     async with db.execute("SELECT * FROM reports WHERE job_id = ?", (job_id,)) as cursor:
         row = await cursor.fetchone()
     if not row:
@@ -166,6 +184,15 @@ async def get_dimensions():
     mod = LLMGlobeModule()
     await mod.load()
     return {"dimensions": mod.dimensions}
+
+@app.post("/api/audit/{job_id}/abort")
+async def abort_audit(job_id: str, db = Depends(get_db)):
+    await db.execute(
+        "UPDATE audit_jobs SET status = ?, error_message = ? WHERE job_id = ?",
+        (JobStatus.ABORTED.value, "Aborted by user", job_id),
+    )
+    await db.commit()
+    return {"aborted": job_id}
 
 @app.get("/health")
 async def health_check():
