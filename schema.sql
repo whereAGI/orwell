@@ -55,3 +55,11 @@ CREATE INDEX IF NOT EXISTS idx_jobs_status ON audit_jobs(status);
 CREATE INDEX IF NOT EXISTS idx_prompts_job ON prompts(job_id);
 CREATE INDEX IF NOT EXISTS idx_responses_job ON responses(job_id);
 CREATE INDEX IF NOT EXISTS idx_scores_dimension ON scores(dimension);
+
+CREATE TABLE IF NOT EXISTS custom_prompts (
+    id TEXT PRIMARY KEY,
+    dimension TEXT NOT NULL,
+    text TEXT NOT NULL,
+    language TEXT DEFAULT 'en',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import aiosqlite
@@ -12,6 +13,11 @@ from .config import get_default_target
 from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
 
+class CreatePromptRequest(BaseModel):
+    dimension: str
+    text: str
+    language: str = "en"
+
 app = FastAPI(title="Orwell POC", version="0.1.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -23,6 +29,10 @@ async def startup():
 @app.get("/")
 async def root():
     return FileResponse("static/index.html")
+
+@app.get("/studio")
+async def studio():
+    return FileResponse("static/data_studio.html")
 
 @app.post("/api/audit/create", response_model=JobResponse)
 async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks, db = Depends(get_db)):
@@ -193,6 +203,68 @@ async def abort_audit(job_id: str, db = Depends(get_db)):
     )
     await db.commit()
     return {"aborted": job_id}
+
+@app.get("/api/data/prompts")
+async def list_prompts():
+    mod = LLMGlobeModule()
+    await mod.load()
+    # Combine all prompts with source info
+    all_prompts = []
+    
+    def normalize(p, source):
+        # Handle CSV keys vs DB keys
+        dim = p.get("dimension") or p.get("Dimension") or "unknown"
+        # Try to find text in various possible keys (handle case sensitivity)
+        text = (
+            p.get("text") or 
+            p.get("prompt") or 
+            p.get("Prompt_EN") or 
+            p.get("prompt_EN") or 
+            p.get("Prompt_zhCN") or 
+            p.get("prompt_zhCN") or 
+            ""
+        )
+        # Default language if not specified
+        lang = p.get("language") or "en"
+        # Generate a stable-ish ID for CSV items if missing
+        pid = p.get("id")
+        if not pid:
+            # Simple hash for UI keying
+            import hashlib
+            h = hashlib.md5(f"{dim}{text}".encode()).hexdigest()
+            pid = f"sys_{h[:8]}"
+            
+        return {
+            "id": pid,
+            "dimension": dim,
+            "text": text,
+            "language": lang,
+            "source": source
+        }
+
+    for p in mod.closed_prompts:
+        all_prompts.append(normalize(p, "system_closed"))
+    for p in mod.open_prompts:
+        all_prompts.append(normalize(p, "system_open"))
+    for p in mod.custom_prompts:
+        # Custom prompts are already normalized but pass through helper to be safe
+        all_prompts.append(normalize(p, "custom"))
+        
+    return all_prompts
+
+@app.post("/api/data/prompts")
+async def create_prompt(req: CreatePromptRequest):
+    mod = LLMGlobeModule()
+    # We need to init DB path in mod
+    await mod.load() 
+    return await mod.add_custom_prompt(req.dimension, req.text, req.language)
+
+@app.delete("/api/data/prompts/{pid}")
+async def delete_prompt(pid: str):
+    mod = LLMGlobeModule()
+    await mod.load()
+    await mod.delete_custom_prompt(pid)
+    return {"deleted": pid}
 
 @app.get("/health")
 async def health_check():
