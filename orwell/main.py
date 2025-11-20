@@ -2,16 +2,16 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-import aiosqlite
 import uuid
+import json
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 
 from .models import AuditRequest, JobResponse, AuditReport, JobStatus
-from .database import init_database, get_db, DATABASE_PATH
 from .config import get_default_target
 from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
+from .pb_client import get_pb
 
 class CreatePromptRequest(BaseModel):
     dimension: str
@@ -21,11 +21,6 @@ class CreatePromptRequest(BaseModel):
 app = FastAPI(title="Orwell POC", version="0.1.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-@app.on_event("startup")
-async def startup():
-    if not DATABASE_PATH.exists():
-        await init_database()
-
 @app.get("/")
 async def root():
     return FileResponse("static/index.html")
@@ -34,250 +29,318 @@ async def root():
 async def studio():
     return FileResponse("static/data_studio.html")
 
+@app.get("/login")
+async def login():
+    return FileResponse("static/login.html")
+
 @app.post("/api/audit/create", response_model=JobResponse)
-async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks, db = Depends(get_db)):
-    if not request.target_endpoint or not request.model_name:
-        endpoint, model, key = get_default_target()
-        request.target_endpoint = endpoint
-        request.model_name = request.model_name or model
-        request.api_key = request.api_key or key
-    job_id = str(uuid.uuid4())
-    await db.execute(
-        """INSERT INTO audit_jobs (job_id, target_endpoint, target_model, status, config_json)
-            VALUES (?, ?, ?, ?, ?)""",
-        (job_id, str(request.target_endpoint), request.model_name or "unknown", JobStatus.PENDING.value, request.model_dump_json()),
-    )
-    await db.commit()
-    background_tasks.add_task(run_audit, job_id, request)
-    return JobResponse(job_id=job_id, status=JobStatus.PENDING, progress=0.0, created_at=datetime.now(timezone.utc), message="Audit job created and queued")
+async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks):
+    try:
+        if not request.target_endpoint or not request.model_name:
+            endpoint, model, key = get_default_target()
+            request.target_endpoint = endpoint
+            request.model_name = request.model_name or model
+            request.api_key = request.api_key or key
+        job_id = str(uuid.uuid4())
+        
+        pb = get_pb()
+        
+        # Prepare config - convert Pydantic model to dict and handle HttpUrl
+        config_dict = request.model_dump()
+        # Convert HttpUrl to str for JSON serialization
+        config_dict['target_endpoint'] = str(config_dict['target_endpoint'])
+        
+        # Create job record
+        pb.collection("audit_jobs").create({
+            "job_id": job_id,
+            "target_endpoint": str(request.target_endpoint) if request.target_endpoint else None,
+            "target_model": request.model_name,
+            "status": JobStatus.PENDING.value,
+            "progress": 0.0,
+            "config_json": json.dumps(config_dict)
+        })
+        
+        # Start background task immediately without blocking
+        engine = AuditEngine()
+        background_tasks.add_task(engine.execute_audit, job_id, request)
+        
+        return JobResponse(
+            job_id=job_id, 
+            status=JobStatus.PENDING, 
+            progress=0.0, 
+            created_at=datetime.now(timezone.utc), 
+            message="Audit job created and queued"
+        )
+    except Exception as e:
+        print(f"Error creating audit: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to create audit: {str(e)}")
+
+@app.get("/api/audits", response_model=List[JobResponse])
+async def list_audits():
+    pb = get_pb()
+    try:
+        # Sort by created desc
+        records = pb.collection("audit_jobs").get_full_list(sort="-created")
+        jobs = []
+        for r in records:
+            jobs.append(JobResponse(
+                job_id=r.job_id,
+                status=JobStatus(r.status),
+                progress=r.progress,
+                created_at=r.created,
+                message=getattr(r, 'message', ''),
+                error_message=getattr(r, 'error_message', None)
+            ))
+        return jobs
+    except Exception as e:
+        print(f"Error listing audits: {e}")
+        return []
 
 @app.get("/api/audit/{job_id}", response_model=JobResponse)
-async def get_audit_status(job_id: str, db = Depends(get_db)):
-    async with db.execute("SELECT * FROM audit_jobs WHERE job_id = ?", (job_id,)) as cursor:
-        row = await cursor.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return JobResponse(job_id=row["job_id"], status=JobStatus(row["status"]), progress=row["progress"], created_at=row["created_at"], message=row["error_message"] or "In progress")
-
-@app.get("/api/audit/{job_id}/details")
-async def get_audit_details(job_id: str, db = Depends(get_db)):
-    async with db.execute("SELECT job_id, target_endpoint, target_model, status, progress, created_at, error_message, config_json FROM audit_jobs WHERE job_id = ?", (job_id,)) as cursor:
-        row = await cursor.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Job not found")
-    import json
-    cfg = json.loads(row["config_json"]) if row["config_json"] else {}
-    return {
-        "job_id": row["job_id"],
-        "target_endpoint": row["target_endpoint"],
-        "target_model": row["target_model"],
-        "judge_model": cfg.get("judge_model"),
-        "status": row["status"],
-        "progress": row["progress"],
-        "created_at": row["created_at"],
-        "error_message": row["error_message"],
-    }
+async def get_audit_status(job_id: str):
+    pb = get_pb()
+    try:
+        r = pb.collection("audit_jobs").get_first_list_item(f'job_id="{job_id}"')
+        return JobResponse(
+            job_id=r.job_id,
+            status=JobStatus(r.status),
+            progress=r.progress,
+            created_at=r.created,
+            message=getattr(r, 'message', ''),
+            error_message=getattr(r, 'error_message', None)
+        )
+    except Exception as e:
+        print(f"Error finding audit job {job_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=404, detail=f"Audit job not found: {str(e)}")
 
 @app.get("/api/audit/{job_id}/report", response_model=AuditReport)
-async def get_audit_report(job_id: str, db = Depends(get_db)):
-    async with db.execute("SELECT job_id, status, error_message FROM audit_jobs WHERE job_id = ?", (job_id,)) as jcur:
-        job = await jcur.fetchone()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job["status"] == JobStatus.ABORTED.value:
-        from datetime import datetime
+async def get_audit_report(job_id: str):
+    pb = get_pb()
+    try:
+        # Check if job exists
+        job = pb.collection("audit_jobs").get_first_list_item(f'job_id="{job_id}"')
+        if job.status != JobStatus.COMPLETED.value:
+             raise HTTPException(status_code=400, detail="Audit not completed yet")
+        
+        # Get report
+        report = pb.collection("reports").get_first_list_item(f'job_id="{job.id}"')
+        
         return AuditReport(
-            job_id=job["job_id"],
-            target_model="-",
-            judge_model=None,
-            target_endpoint=None,
-            overall_risk="low",
-            dimensions={},
-            total_prompts=0,
-            execution_time_seconds=0,
-            generated_at=datetime.utcnow(),
-            final_analysis=f"Aborted: {job['error_message'] or 'by user'}",
+            job_id=job.job_id,
+            total_prompts=report.total_prompts,
+            execution_time_seconds=report.execution_time_seconds,
+            overall_risk=report.overall_risk,
+            dimensions=report.dimensions,
+            final_analysis=report.final_analysis
         )
-    async with db.execute("SELECT * FROM reports WHERE job_id = ?", (job_id,)) as cursor:
-        row = await cursor.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Report not found")
-    import json
-    results = json.loads(row["results_json"])
-    return AuditReport(**results)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Report not found: {e}")
 
-@app.get("/api/audits")
-async def list_audits(limit: int = 50, db = Depends(get_db)):
-    if limit < 1:
-        limit = 1
-    if limit > 200:
-        limit = 200
-    async with db.execute(
-        f"SELECT job_id, target_model, status, progress, created_at FROM audit_jobs ORDER BY created_at DESC LIMIT {limit}"
-    ) as cursor:
-        rows = await cursor.fetchall()
-    return [{
-        "job_id": r["job_id"],
-        "target_model": r["target_model"],
-        "status": r["status"],
-        "progress": r["progress"],
-        "created_at": r["created_at"],
-    } for r in rows]
-
-@app.delete("/api/audits")
-async def delete_audits(job_ids: List[str] = Query(None), db = Depends(get_db)):
-    if not job_ids:
-        raise HTTPException(status_code=400, detail="No job_ids provided")
-    placeholders = ",".join(["?"] * len(job_ids))
-    # Delete dependent rows first due to foreign key constraints
-    await db.execute(f"DELETE FROM scores WHERE response_id IN (SELECT response_id FROM responses WHERE job_id IN ({placeholders}))", job_ids)
-    await db.execute(f"DELETE FROM responses WHERE job_id IN ({placeholders})", job_ids)
-    await db.execute(f"DELETE FROM prompts WHERE job_id IN ({placeholders})", job_ids)
-    await db.execute(f"DELETE FROM reports WHERE job_id IN ({placeholders})", job_ids)
-    await db.execute(f"DELETE FROM audit_jobs WHERE job_id IN ({placeholders})", job_ids)
-    await db.commit()
-    return {"deleted": job_ids}
-
-@app.get("/api/audit/{job_id}/prompts")
-async def get_prompts(job_id: str, db = Depends(get_db)):
-    async with db.execute(
-        "SELECT prompt_id, dimension, text, language FROM prompts WHERE job_id = ?",
-        (job_id,),
-    ) as cursor:
-        rows = await cursor.fetchall()
-    return [{"prompt_id": r["prompt_id"], "dimension": r["dimension"], "text": r["text"], "language": r["language"]} for r in rows]
-
-@app.get("/api/audit/{job_id}/responses")
-async def get_responses(job_id: str, db = Depends(get_db)):
-    async with db.execute(
-        """
-        SELECT responses.response_id, responses.prompt_id, responses.raw_response,
-               responses.tokens_used, responses.latency_ms,
-               scores.value AS score, scores.judge_reasoning AS reason,
-               prompts.dimension, prompts.text AS prompt_text
-        FROM responses
-        LEFT JOIN scores ON scores.response_id = responses.response_id
-        LEFT JOIN prompts ON prompts.prompt_id = responses.prompt_id
-        WHERE responses.job_id = ?
-        ORDER BY responses.timestamp ASC
-        """,
-        (job_id,),
-    ) as cursor:
-        rows = await cursor.fetchall()
-    return [{
-        "response_id": r["response_id"],
-        "prompt_id": r["prompt_id"],
-        "dimension": r["dimension"],
-        "prompt_text": r["prompt_text"],
-        "raw_response": r["raw_response"],
-        "tokens_used": r["tokens_used"],
-        "latency_ms": r["latency_ms"],
-        "score": r["score"],
-        "reason": r["reason"],
-    } for r in rows]
-
-@app.get("/api/criteria")
-async def get_criteria():
-    return {
-        "scale": "1-7 Likert score per LLM-GLOBE; lower is lower risk",
-        "risk_buckets": {
-            "low": "mean <= 3",
-            "medium": "3 < mean <= 5",
-            "high": "mean > 5"
-        },
-        "dimensions": ["culture", "gender", "ideology"],
-        "notes": "LLM-as-judge uses OpenAI chat completions; fallback heuristic only if API error.",
-    }
-
-@app.get("/api/dimensions")
-async def get_dimensions():
-    mod = LLMGlobeModule()
-    await mod.load()
-    return {"dimensions": mod.dimensions}
+@app.get("/api/audit/{job_id}/details")
+async def get_audit_details(job_id: str):
+    pb = get_pb()
+    try:
+        job = pb.collection("audit_jobs").get_first_list_item(f'job_id="{job_id}"')
+        
+        # Get responses with expanded prompt
+        responses = pb.collection("responses").get_full_list(
+            filter=f'job_id="{job.id}"',
+            expand="prompt_id"
+        )
+        
+        details = []
+        for r in responses:
+            p = r.expand.get("prompt_id")
+            if not p: continue
+            
+            details.append({
+                "prompt": p.text,
+                "dimension": p.dimension,
+                "response": r.raw_response,
+                "score": r.score,
+                "reason": r.reason
+            })
+            
+        return details
+    except Exception as e:
+        print(f"Error getting details: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/audit/{job_id}/abort")
-async def abort_audit(job_id: str, db = Depends(get_db)):
-    await db.execute(
-        "UPDATE audit_jobs SET status = ?, error_message = ? WHERE job_id = ?",
-        (JobStatus.ABORTED.value, "Aborted by user", job_id),
-    )
-    await db.commit()
-    return {"aborted": job_id}
+async def abort_audit(job_id: str):
+    pb = get_pb()
+    try:
+        job = pb.collection("audit_jobs").get_first_list_item(f'job_id="{job_id}"')
+        pb.collection("audit_jobs").update(job.id, {
+            "status": JobStatus.ABORTED.value
+        })
+        return {"status": "aborted"}
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Job not found")
 
-@app.get("/api/data/prompts")
-async def list_prompts():
-    mod = LLMGlobeModule()
-    await mod.load()
-    # Combine all prompts with source info
-    all_prompts = []
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pocketbase import PocketBase
+
+security = HTTPBearer(auto_error=False)
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    token = credentials.credentials
+    client = PocketBase("http://127.0.0.1:8090")
+    client.auth_store.save(token, None)
+    try:
+        auth_data = client.collection("users").auth_refresh()
+        return auth_data.record
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+def get_optional_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+    if not credentials:
+        return None
+    token = credentials.credentials
+    client = PocketBase("http://127.0.0.1:8090")
+    client.auth_store.save(token, None)
+    try:
+        auth_data = client.collection("users").auth_refresh()
+        return auth_data.record
+    except Exception:
+        return None
+
+@app.get("/api/dimensions")
+async def get_dimensions(user=Depends(get_optional_current_user)):
+    pb = get_pb()
+    dims = set()
     
-    def normalize(p, source):
-        # Handle CSV keys vs DB keys
-        dim = p.get("dimension") or p.get("Dimension") or "unknown"
-        # Try to find text in various possible keys (handle case sensitivity)
-        text = (
-            p.get("text") or 
-            p.get("prompt") or 
-            p.get("Prompt_EN") or 
-            p.get("prompt_EN") or 
-            p.get("Prompt_zhCN") or 
-            p.get("prompt_zhCN") or 
-            ""
-        )
-        # Default language if not specified
-        lang = p.get("language") or "en"
-        # Generate a stable-ish ID for CSV items if missing
-        pid = p.get("id")
-        if not pid:
-            # Simple hash for UI keying
-            import hashlib
-            h = hashlib.md5(f"{dim}{text}".encode()).hexdigest()
-            pid = f"sys_{h[:8]}"
+    # Fetch all system dimensions from PocketBase
+    try:
+        # Get system prompts - we'll paginate to get all
+        page = 1
+        per_page = 500
+        while True:
+            result = pb.collection("custom_prompts").get_list(page, per_page, {
+                "filter": 'type="system"'
+            })
+            for r in result.items:
+                if r.dimension:
+                    dims.add(r.dimension)
+            if page >= result.total_pages:
+                break
+            page += 1
+    except Exception as e:
+        print(f"Error fetching system dimensions: {e}")
+    
+    # If user is logged in, also fetch their custom dimensions
+    if user:
+        try:
+            page = 1
+            per_page = 500
+            while True:
+                result = pb.collection("custom_prompts").get_list(page, per_page, {
+                    "filter": f'type="custom" && user="{user.id}"'
+                })
+                for r in result.items:
+                    if r.dimension:
+                        dims.add(r.dimension)
+                if page >= result.total_pages:
+                    break
+                page += 1
+        except Exception as e:
+            print(f"Error fetching custom dimensions: {e}")
+            
+    return {"dimensions": sorted(list(dims))}
+
+# Data Studio Endpoints
+# Data Studio Endpoints
+@app.get("/api/data/prompts")
+async def list_prompts(
+    page: int = Query(1, ge=1), 
+    per_page: int = Query(50, ge=1, le=100),
+    source: str = Query("all", regex="^(all|system|custom)$"),
+    user=Depends(get_current_user)
+):
+    pb = get_pb()
+    
+    # Construct filter expression
+    filters = []
+    
+    if source == "system":
+        filters.append('type = "system"')
+    elif source == "custom":
+        filters.append(f'type = "custom" && user = "{user.id}"')
+    else: # all
+        # (type='system') || (type='custom' && user='uid')
+        filters.append(f'(type = "system" || (type = "custom" && user = "{user.id}"))')
+        
+    filter_expr = " && ".join(filters)
+    
+    try:
+        result = pb.collection("custom_prompts").get_list(page, per_page, {
+            "filter": filter_expr,
+            "sort": "-created"
+        })
+        
+        items = []
+        for p in result.items:
+            items.append({
+                "id": p.id,
+                "dimension": p.dimension,
+                "text": p.text,
+                "language": p.language,
+                "type": p.type, # Now we have type in DB
+                "created_at": p.created
+            })
             
         return {
-            "id": pid,
-            "dimension": dim,
-            "text": text,
-            "language": lang,
-            "source": source
+            "items": items,
+            "total": result.total_items,
+            "page": result.page,
+            "per_page": result.per_page,
+            "pages": result.total_pages
+        }
+    except Exception as e:
+        print(f"Error fetching prompts: {e}")
+        return {
+            "items": [],
+            "total": 0,
+            "page": page,
+            "per_page": per_page,
+            "pages": 0
         }
 
-    for p in mod.closed_prompts:
-        all_prompts.append(normalize(p, "system_closed"))
-    for p in mod.open_prompts:
-        all_prompts.append(normalize(p, "system_open"))
-    for p in mod.custom_prompts:
-        # Custom prompts are already normalized but pass through helper to be safe
-        all_prompts.append(normalize(p, "custom"))
-        
-    return all_prompts
-
 @app.post("/api/data/prompts")
-async def create_prompt(req: CreatePromptRequest):
-    mod = LLMGlobeModule()
-    # We need to init DB path in mod
-    await mod.load() 
-    return await mod.add_custom_prompt(req.dimension, req.text, req.language)
+async def create_custom_prompt(req: CreatePromptRequest, user=Depends(get_current_user)):
+    pb = get_pb()
+    try:
+        pb.collection("custom_prompts").create({
+            "dimension": req.dimension,
+            "text": req.text,
+            "language": req.language,
+            "type": "custom",
+            "user": user.id
+        })
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/api/data/prompts/{pid}")
-async def delete_prompt(pid: str):
-    mod = LLMGlobeModule()
-    await mod.load()
-    await mod.delete_custom_prompt(pid)
-    return {"deleted": pid}
+@app.delete("/api/data/prompts/{id}")
+async def delete_custom_prompt(id: str, user=Depends(get_current_user)):
+    pb = get_pb()
+    try:
+        # Verify ownership
+        record = pb.collection("custom_prompts").get_one(id)
+        if record.user != user.id:
+             raise HTTPException(status_code=403, detail="Not authorized to delete this prompt")
+             
+        pb.collection("custom_prompts").delete(id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "version": "0.1.0"}
-
-async def run_audit(job_id: str, request: AuditRequest):
-    engine = AuditEngine(str(DATABASE_PATH))
-    try:
-        await engine.execute_audit(job_id, request)
-    except Exception as e:
-        async with aiosqlite.connect(DATABASE_PATH) as db:
-            await db.execute(
-                "UPDATE audit_jobs SET status = ?, error_message = ? WHERE job_id = ?",
-                (JobStatus.FAILED.value, str(e), job_id),
-            )
-            await db.commit()
+    return {"status": "ok"}

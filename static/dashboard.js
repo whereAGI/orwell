@@ -126,14 +126,14 @@ async function loadReport() {
     const response = await fetch(`/api/audit/${currentJobId}/report`);
     const report = await response.json();
     let html = `<div style="padding:15px;background:${getRiskColor(report.overall_risk)};color:white;border-radius:4px;margin-bottom:12px;">` +
-               `<h4 style="margin:0;">Overall Risk: ${report.overall_risk.toUpperCase()}</h4>` +
-               `<p style="margin:5px 0 0 0;">${report.total_prompts} prompts in ${report.execution_time_seconds}s</p>` +
-               `</div>`;
+      `<h4 style="margin:0;">Overall Risk: ${report.overall_risk.toUpperCase()}</h4>` +
+      `<p style="margin:5px 0 0 0;">${report.total_prompts} prompts in ${report.execution_time_seconds}s</p>` +
+      `</div>`;
     html += `<div class="mono" style="color:#a0a0b8;margin-bottom:12px;">Target Model: ${report.target_model || '-'} • Judge Model: ${report.judge_model || '-'} • Endpoint: ${report.target_endpoint || '-'}</div>`;
     html += `<h4>Dimension Scores</h4>`;
     for (const [dim, score] of Object.entries(report.dimensions)) {
       html += `<div class="dimension"><strong>${score.dimension}</strong><br>` +
-              `Mean Score: ${score.mean_score}/7 (n=${score.sample_size}, risk: ${score.risk_level})</div>`;
+        `Mean Score: ${score.mean_score}/7 (n=${score.sample_size}, risk: ${score.risk_level})</div>`;
     }
     if (report.final_analysis) {
       html += `<h4 style="margin-top:16px">Final Analysis</h4>`;
@@ -174,7 +174,7 @@ async function loadPromptsAndResponses() {
       accHtml += `
         <div class="qa-item">
           <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleAcc('${pid}')">
-            <div><strong>${p.dimension}</strong> • <span class="mono" style="color:#a0a0b8">${pid.slice(0,8)}</span></div>
+            <div><strong>${p.dimension}</strong> • <span class="mono" style="color:#a0a0b8">${pid.slice(0, 8)}</span></div>
             <div class="pill">${r && r.score ? `Score ${r.score}/7` : 'No score'}</div>
           </div>
           <div id="acc-${pid}" style="display:none;margin-top:10px;">
@@ -196,7 +196,7 @@ async function loadCriteria() {
     const c = await cRes.json();
     let html = `<div class="dimension"><strong>Scale</strong><br>${c.scale}</div>`;
     html += `<div class="dimension"><strong>Risk Buckets</strong><br>low: ${c.risk_buckets.low}<br>medium: ${c.risk_buckets.medium}<br>high: ${c.risk_buckets.high}</div>`;
-    html += `<div class="dimension"><strong>Dimensions</strong><br>${(c.dimensions||[]).join(', ')}</div>`;
+    html += `<div class="dimension"><strong>Dimensions</strong><br>${(c.dimensions || []).join(', ')}</div>`;
     html += `<div class="dimension"><strong>Notes</strong><br>${c.notes}</div>`;
     document.getElementById('criteria').innerHTML = html;
   } catch (err) {
@@ -205,7 +205,7 @@ async function loadCriteria() {
 }
 
 function escapeHtml(s) {
-  return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
 function formatResponse(text) {
@@ -219,7 +219,7 @@ function renderMarkdown(text) {
   let s = String(text || '');
   s = s.replace(/\r\n/g, '\n');
   s = escapeHtml(s);
-  s = s.replace(/```([\s\S]*?)```/g, function(_, code){
+  s = s.replace(/```([\s\S]*?)```/g, function (_, code) {
     return `<pre><code>${code}</code></pre>`;
   });
   s = s.replace(/^######\s+(.*)$/gm, '<h6>$1</h6>');
@@ -233,11 +233,11 @@ function renderMarkdown(text) {
   s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
   s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1<\/a>');
   s = s.replace(/^>\s+(.*)$/gm, '<blockquote>$1</blockquote>');
-  s = s.replace(/(^|\n)(- .+(?:\n- .+)*)/g, function(_, start, block) {
+  s = s.replace(/(^|\n)(- .+(?:\n- .+)*)/g, function (_, start, block) {
     const items = block.split('\n').map(l => l.replace(/^[-]\s+/, '').trim()).map(it => `<li>${it}</li>`).join('');
     return start + `<ul>${items}</ul>`;
   });
-  s = s.replace(/(^|\n)((?:\d+\. .+)(?:\n\d+\. .+)*)/g, function(_, start, block) {
+  s = s.replace(/(^|\n)((?:\d+\. .+)(?:\n\d+\. .+)*)/g, function (_, start, block) {
     const items = block.split('\n').map(l => l.replace(/^\d+\.\s+/, '').trim()).map(it => `<li>${it}</li>`).join('');
     return start + `<ol>${items}</ol>`;
   });
@@ -245,7 +245,7 @@ function renderMarkdown(text) {
   return `<div style="white-space:normal;line-height:1.5">${s}</div>`;
 }
 
-window.toggleAcc = function(id) {
+window.toggleAcc = function (id) {
   const el = document.getElementById('acc-' + id);
   if (!el) return;
   el.style.display = el.style.display === 'none' ? 'block' : 'none';
@@ -278,9 +278,9 @@ async function loadAuditList() {
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <div>
             <div style="font-weight:600;">${a.target_model}</div>
-            <div class="mono" style="color:#a0a0b8">${a.job_id.slice(0,8)} • ${a.status}</div>
+            <div class="mono" style="color:#a0a0b8">${a.job_id.slice(0, 8)} • ${a.status}</div>
           </div>
-          <div class="pill">${Math.round((a.progress||0)*100)}%</div>
+          <div class="pill">${Math.round((a.progress || 0) * 100)}%</div>
         </div>
       </div>`).join('');
     const container = document.getElementById('auditList');
@@ -372,5 +372,28 @@ if (dimClear) {
     document.querySelectorAll('#dimList .pill').forEach(p => p.classList.remove('selected'));
   });
 }
+
+// We can use the global 'pb' object from auth.js
+// But for existing fetch calls to our Python backend, we might not need to change much
+// IF the backend doesn't enforce auth yet.
+// However, the plan said "Include auth token in all API requests".
+// Since we haven't implemented token verification in Python yet (it was a TODO in main.py),
+// we can technically skip sending the token for now, BUT we should do it to be ready.
+// Also, we can use PB SDK to fetch data directly if we want, but we kept the Python API.
+
+// Let's wrap fetch to include token
+const originalFetch = window.fetch;
+window.fetch = async (url, options = {}) => {
+  if (!options.headers) options.headers = {};
+  if (pb.authStore.isValid) {
+    options.headers['Authorization'] = `Bearer ${pb.authStore.token}`;
+  }
+  return originalFetch(url, options);
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  loadAudits();
+  loadDimensions();
+});
 
 // Removed standalone startSelected flow; Start Audit button uses selectedDimensions

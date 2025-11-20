@@ -130,6 +130,14 @@
             display: flex;
         }
     </style>
+    <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
+    <script src="/static/auth.js"></script>
+    <script>
+        // Protect route
+        if (!pb.authStore.isValid) {
+            window.location.href = '/login';
+        }
+    </script>
 </head>
 
 <body>
@@ -156,12 +164,11 @@
 
             <div class="filters" style="display:flex; justify-content: space-between; align-items: center;">
                 <div style="display:flex; gap:12px;">
-                    <input type="text" id="search" placeholder="Search prompts..." style="width: 300px;"
-                        onkeyup="filterTable()">
-                    <select id="dimFilter" onchange="filterTable()">
+                    <input type="text" id="search" placeholder="Search prompts..." style="width: 300px;">
+                    <select id="dimFilter">
                         <option value="">All Dimensions</option>
                     </select>
-                    <select id="sourceFilter" onchange="filterTable()">
+                    <select id="sourceFilter">
                         <option value="">All Sources</option>
                         <option value="custom">Custom Only</option>
                         <option value="system">System Only</option>
@@ -198,8 +205,8 @@
                     Showing 0-0 of 0
                 </div>
                 <div style="display:flex; gap:8px;">
-                    <button class="secondary" id="prevBtn" onclick="prevPage()">Previous</button>
-                    <button class="secondary" id="nextBtn" onclick="nextPage()">Next</button>
+                    <button class="secondary" id="prevBtn">Previous</button>
+                    <button class="secondary" id="nextBtn">Next</button>
                 </div>
             </div>
         </div>

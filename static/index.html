@@ -214,6 +214,9 @@
         style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Data
         Studio</a>
       <a href="#" id="criteriaLink" style="color:#9ec1ff;text-decoration:none">Evaluation Criteria</a>
+      <span id="userEmail" style="color:var(--muted);"></span>
+      <button id="logoutBtn"
+        style="width:auto;padding:4px 8px;background:#ef4444;border-color:#ef4444;font-size:12px;">Logout</button>
     </div>
   </header>
   <div class="app">
@@ -292,6 +295,14 @@
       <div id="criteria" style="margin-top:10px"></div>
     </div>
   </div>
+  <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
+  <script src="/static/auth.js"></script>
+  <script>
+    // Protect route
+    if (!pb.authStore.isValid) {
+      window.location.href = '/login';
+    }
+  </script>
   <script src="/static/dashboard.js"></script>
 </body>
 
