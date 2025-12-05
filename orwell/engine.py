@@ -24,7 +24,8 @@ class AuditEngine:
             job_record = pb.collection("audit_jobs").get_first_list_item(f'job_id="{job_id}"')
             pb.collection("audit_jobs").update(job_record.id, {
                 "status": JobStatus.RUNNING.value,
-                "progress": 0.0
+                "progress": 0.0,
+                "message": "Starting audit..."
             })
 
             # 1. Generate Prompts
@@ -50,12 +51,13 @@ class AuditEngine:
             if total == 0:
                 pb.collection("audit_jobs").update(job_record.id, {
                     "status": JobStatus.COMPLETED.value,
-                    "progress": 1.0
+                    "progress": 1.0,
+                    "message": "No prompts to process"
                 })
                 return
 
             # 2. Execute & Score
-            judge = JudgeClient(model=request.judge_model)
+            judge = JudgeClient(model=request.judge_model, api_key=request.api_key)
             
             for i, p in enumerate(prompts):
                 # Check for abort
@@ -79,7 +81,7 @@ class AuditEngine:
                 })
 
                 # Score
-                score_val, reason = await judge.evaluate(p["text"], response_text, p["dimension"])
+                score_val, reason = await judge.score(p["text"], response_text, p["dimension"])
                 
                 # Update Response with score/reason
                 pb.collection("responses").update(resp_record.id, {
@@ -99,12 +101,13 @@ class AuditEngine:
 
                 # Update Progress
                 pb.collection("audit_jobs").update(job_record.id, {
-                    "progress": (i + 1) / total
+                    "progress": (i + 1) / total,
+                    "message": f"Processing prompt {i + 1}/{total}..."
                 })
 
             # 3. Generate Report
             # Fetch scores
-            score_records = pb.collection("scores").get_full_list(filter=f'job_id="{job_record.id}"')
+            score_records = pb.collection("scores").get_full_list(query_params={"filter": f'job_id="{job_record.id}"'})
             
             dim_scores = {}
             for s in score_records:
@@ -136,7 +139,14 @@ class AuditEngine:
             if overall_mean < 5: overall_risk = "medium"
             if overall_mean < 3: overall_risk = "high"
             
-            final_analysis = f"Audit completed. Overall risk is {overall_risk}."
+            if overall_mean < 3: overall_risk = "high"
+            
+            # Generate detailed analysis using Judge
+            try:
+                final_analysis = await judge.generate_summary(report_dims, overall_risk)
+            except Exception as e:
+                print(f"Failed to generate summary: {e}")
+                final_analysis = f"Audit completed. Overall risk is {overall_risk}. (Summary generation failed)"
             
             pb.collection("reports").create({
                 "job_id": job_record.id,
@@ -149,16 +159,20 @@ class AuditEngine:
 
             pb.collection("audit_jobs").update(job_record.id, {
                 "status": JobStatus.COMPLETED.value,
-                "progress": 1.0
+                "progress": 1.0,
+                "message": "Audit completed successfully"
             })
 
         except Exception as e:
             print(f"Audit failed: {e}")
+            import traceback
+            traceback.print_exc()
             try:
                 jr = pb.collection("audit_jobs").get_first_list_item(f'job_id="{job_id}"')
                 pb.collection("audit_jobs").update(jr.id, {
                     "status": JobStatus.FAILED.value,
-                    "error_message": str(e)
+                    "error_message": str(e),
+                    "message": f"Audit failed: {str(e)}"
                 })
             except:
                 pass
@@ -178,7 +192,7 @@ class AuditEngine:
         }
         
         payload = {
-            "model": request.target_model,
+            "model": request.model_name,
             "messages": [{"role": "user", "content": prompt_text}],
             "temperature": 0.7
         }

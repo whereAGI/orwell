@@ -11,7 +11,7 @@ async def main():
 
     # Authenticate
     # Manually save token from curl response to bypass SDK auth issue
-    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjQ3ODM1MzcsImlkIjoiaHY1c2R2NWplYmFwb29yIiwidHlwZSI6ImFkbWluIn0.3j5ze8fPZ83_extvDm8pAAf6qk7z7L8Lg0-4Ukjh5R4"
+    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjU5OTgwNzMsImlkIjoiaHY1c2R2NWplYmFwb29yIiwidHlwZSI6ImFkbWluIn0.M7hNJxurmrS1-m76yOSDL1fRFpz7__cuAWnFkIW74Qk"
     pb.auth_store.save(token, None)
     print("Authenticated via manual token.")
 

@@ -360,7 +360,7 @@ const dimSelectAll = document.getElementById('dimSelectAll');
 if (dimSelectAll) {
   dimSelectAll.addEventListener('click', () => {
     const pills = document.querySelectorAll('#dimList .pill');
-    selectedDimensions = Array.from(pills).map(p => p.getAttribute('data-dim'));
+    selectedDimensions = Array.from(new Set(Array.from(pills).map(p => p.getAttribute('data-dim'))));
     pills.forEach(p => p.classList.add('selected'));
   });
 }

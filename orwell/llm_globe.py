@@ -131,7 +131,9 @@ class LLMGlobeModule:
         pool = self.closed_prompts + self.open_prompts + self.custom_prompts
         selected_pool: List[Dict] = []
         if dimensions:
-            for d in dimensions:
+            # Deduplicate dimensions to avoid generating duplicate prompts
+            unique_dims = sorted(list(set(dimensions)))
+            for d in unique_dims:
                 dn = (d or "").strip().lower()
                 group = [
                     p for p in pool
