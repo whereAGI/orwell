@@ -191,9 +191,14 @@ class AuditEngine:
             "Authorization": f"Bearer {request.api_key}"
         }
         
+        messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": prompt_text})
+
         payload = {
             "model": request.model_name,
-            "messages": [{"role": "user", "content": prompt_text}],
+            "messages": messages,
             "temperature": 0.7
         }
 

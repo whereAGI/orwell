@@ -17,12 +17,14 @@ class AuditRequest(BaseModel):
     language: str = "en"
     sample_size: Optional[int] = 50
     dimensions: Optional[List[str]] = None
+    system_prompt: Optional[str] = None
     judge_model: str = "gpt-4o"
 
 class JobResponse(BaseModel):
     job_id: str
     name: Optional[str] = None
     notes: Optional[str] = None
+    system_prompt_snapshot: Optional[str] = None
     status: JobStatus
     progress: float
     created_at: datetime

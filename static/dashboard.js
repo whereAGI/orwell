@@ -1,6 +1,7 @@
 let currentJobId = null;
 let pollInterval = null;
 let selectedDimensions = [];
+let systemPromptsMap = {};
 
 document.getElementById('startBtn').addEventListener('click', async (e) => {
   const startBtn = e.currentTarget;
@@ -29,6 +30,10 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
   const endpoint = document.getElementById('endpoint').value.trim();
   const apiKey = document.getElementById('apiKey').value.trim();
   const modelName = document.getElementById('modelName').value.trim();
+  
+  const sysPromptName = document.getElementById('systemPromptInput').value.trim();
+  const sysPrompt = systemPromptsMap[sysPromptName] || (sysPromptName ? sysPromptName : null);
+
   const request = {
     target_endpoint: endpoint || null,
     api_key: apiKey || "",
@@ -36,7 +41,8 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     sample_size: parseInt(document.getElementById('sampleSize').value),
     language: document.getElementById('language').value,
     judge_model: 'gpt-4o',
-    dimensions: selectedDimensions.length ? selectedDimensions : null
+    dimensions: selectedDimensions.length ? selectedDimensions : null,
+    system_prompt: sysPrompt
   };
   try {
     const response = await fetch('/api/audit/create', {
@@ -156,6 +162,10 @@ function getRiskColor(risk) {
 
 async function loadPromptsAndResponses() {
   try {
+    const jobRes = await fetch(`/api/audit/${currentJobId}`);
+    const job = await jobRes.json();
+    const systemPrompt = job.system_prompt_snapshot || null;
+
     const pRes = await fetch(`/api/audit/${currentJobId}/prompts`);
     const prompts = await pRes.json();
     const rRes = await fetch(`/api/audit/${currentJobId}/responses`);
@@ -167,7 +177,35 @@ async function loadPromptsAndResponses() {
       x.response = r;
       byPrompt.set(r.prompt_id, x);
     });
+    
     let accHtml = '';
+
+    // Render System Prompt
+    if (systemPrompt) {
+        window.currentSystemPrompt = systemPrompt;
+        const lines = systemPrompt.split('\n');
+        // Take first 3 lines or 300 chars for preview
+        let preview = systemPrompt;
+        let isTruncated = false;
+        
+        if (lines.length > 3) {
+            preview = lines.slice(0, 3).join('\n');
+            isTruncated = true;
+        }
+        if (preview.length > 300) {
+            preview = preview.slice(0, 300) + '...';
+            isTruncated = true;
+        }
+
+        accHtml += `
+        <div style="background:#1a1a23; padding:12px; border-radius:8px; margin-bottom:16px; border:1px solid var(--border)">
+            <div style="font-weight:600;margin-bottom:8px;color:var(--muted);font-size:12px;text-transform:uppercase">System Prompt</div>
+            <div style="font-family:monospace;white-space:pre-wrap;color:var(--text);opacity:0.9;font-size:13px">${escapeHtml(preview)}</div>
+            ${isTruncated ? `<button onclick="showSystemPromptModal()" style="margin-top:8px;padding:4px 8px;font-size:12px;width:auto;background:#252536;border:none;cursor:pointer;color:var(--primary)">Read More</button>` : ''}
+        </div>
+        `;
+    }
+
     for (const [pid, item] of byPrompt.entries()) {
       const p = item.prompt;
       const r = item.response;
@@ -189,6 +227,14 @@ async function loadPromptsAndResponses() {
     console.error('Error loading prompts/responses:', err);
   }
 }
+
+window.showSystemPromptModal = function() {
+    const el = document.getElementById('fullSystemPrompt');
+    if (el && window.currentSystemPrompt) {
+        el.textContent = window.currentSystemPrompt;
+        document.getElementById('systemPromptModal').style.display = 'flex';
+    }
+};
 
 async function loadCriteria() {
   try {
@@ -446,7 +492,34 @@ window.fetch = async (url, options = {}) => {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadAuditList();
+  loadSystemPrompts();
   if (typeof initDimensions === 'function') initDimensions();
 });
+
+async function loadSystemPrompts() {
+  try {
+    const res = await fetch('/api/system-prompts');
+    if (!res.ok) return;
+    const prompts = await res.json();
+    const dl = document.getElementById('systemPrompts');
+    dl.innerHTML = '';
+    systemPromptsMap = {};
+    
+    // Add None option
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = 'None';
+    dl.appendChild(noneOpt);
+
+    prompts.forEach(p => {
+      systemPromptsMap[p.name] = p.text;
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      dl.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Failed to load system prompts', e);
+  }
+}
 
 // Removed standalone startSelected flow; Start Audit button uses selectedDimensions

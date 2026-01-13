@@ -18,6 +18,10 @@ class CreatePromptRequest(BaseModel):
     text: str
     language: str = "en"
 
+class CreateSystemPromptRequest(BaseModel):
+    name: str
+    text: str
+
 app = FastAPI(title="Orwell POC", version="0.1.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -28,6 +32,10 @@ async def root():
 @app.get("/studio")
 async def studio():
     return FileResponse("static/data_studio.html")
+
+@app.get("/prompt-studio")
+async def prompt_studio():
+    return FileResponse("static/prompt_studio.html")
 
 @app.get("/login")
 async def login():
@@ -58,7 +66,8 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
             "status": JobStatus.PENDING.value,
             "progress": 0.0,
             "config_json": json.dumps(config_dict),
-            "name": f"Audit {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            "name": f"Audit {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            "system_prompt_snapshot": request.system_prompt
         })
         
         # Start background task immediately without blocking
@@ -133,7 +142,8 @@ async def update_audit(job_id: str, req: UpdateAuditRequest):
             message=getattr(r, 'message', ''),
             error_message=getattr(r, 'error_message', None),
             name=getattr(r, 'name', None),
-            notes=getattr(r, 'notes', None)
+            notes=getattr(r, 'notes', None),
+            system_prompt_snapshot=getattr(r, 'system_prompt_snapshot', None)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -152,7 +162,8 @@ async def get_audit_status(job_id: str):
             message=getattr(r, 'message', ''),
             error_message=getattr(r, 'error_message', None),
             name=getattr(r, 'name', None),
-            notes=getattr(r, 'notes', None)
+            notes=getattr(r, 'notes', None),
+            system_prompt_snapshot=getattr(r, 'system_prompt_snapshot', None)
         )
     except Exception as e:
         print(f"Error finding audit job {job_id}: {e}")
@@ -343,7 +354,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     client = PocketBase("http://127.0.0.1:8090")
     client.auth_store.save(token, None)
     try:
-        auth_data = client.collection("users").auth_refresh()
+        auth_data = client.collection("users").authRefresh()
         return auth_data.record
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
@@ -355,7 +366,7 @@ def get_optional_current_user(credentials: Optional[HTTPAuthorizationCredentials
     client = PocketBase("http://127.0.0.1:8090")
     client.auth_store.save(token, None)
     try:
-        auth_data = client.collection("users").auth_refresh()
+        auth_data = client.collection("users").authRefresh()
         return auth_data.record
     except Exception:
         return None
@@ -491,6 +502,84 @@ async def delete_custom_prompt(id: str, user=Depends(get_current_user)):
              raise HTTPException(status_code=403, detail="Not authorized to delete this prompt")
              
         pb.collection("custom_prompts").delete(id)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/system-prompts")
+async def list_system_prompts(user=Depends(get_optional_current_user)):
+    pb = get_pb()
+    try:
+        # Sort by created desc
+        records = pb.collection("system_prompts").get_full_list(query_params={"sort": "-created"})
+        
+        prompts = []
+        for r in records:
+            text = r.text or ""
+            # Simple heuristic: 1 token ~= 4 chars for English text
+            token_count = len(text) // 4
+            
+            prompts.append({
+                "id": r.id,
+                "name": r.name,
+                "text": text,
+                "user": getattr(r, "user", None),
+                "created_at": r.created,
+                "char_count": len(text),
+                "token_count": token_count
+            })
+        return prompts
+    except Exception as e:
+        print(f"Error fetching system prompts: {e}")
+        return []
+
+@app.post("/api/system-prompts")
+async def create_system_prompt(req: CreateSystemPromptRequest, user=Depends(get_current_user)):
+    pb = get_pb()
+    try:
+        pb.collection("system_prompts").create({
+            "name": req.name,
+            "text": req.text,
+            "user": user.id
+        })
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class UpdateSystemPromptRequest(BaseModel):
+    name: Optional[str] = None
+    text: Optional[str] = None
+
+@app.patch("/api/system-prompts/{id}")
+async def update_system_prompt(id: str, req: UpdateSystemPromptRequest, user=Depends(get_current_user)):
+    pb = get_pb()
+    try:
+        record = pb.collection("system_prompts").get_one(id)
+        if hasattr(record, "user") and record.user and record.user != user.id:
+             raise HTTPException(status_code=403, detail="Not authorized")
+        
+        data = {}
+        if req.name is not None:
+            data["name"] = req.name
+        if req.text is not None:
+            data["text"] = req.text
+            
+        if data:
+            pb.collection("system_prompts").update(id, data)
+            
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/system-prompts/{id}")
+async def delete_system_prompt(id: str, user=Depends(get_current_user)):
+    pb = get_pb()
+    try:
+        record = pb.collection("system_prompts").get_one(id)
+        if hasattr(record, "user") and record.user and record.user != user.id:
+             raise HTTPException(status_code=403, detail="Not authorized")
+        
+        pb.collection("system_prompts").delete(id)
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

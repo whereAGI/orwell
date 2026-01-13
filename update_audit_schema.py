@@ -77,6 +77,24 @@ async def update_audit_schema():
             })
             updates_needed = True
             
+        if "system_prompt_snapshot" not in existing_fields:
+            print("Adding 'system_prompt_snapshot' field to schema...")
+            current_schema_dicts.append({
+                "system": False,
+                "id": "",
+                "name": "system_prompt_snapshot",
+                "type": "text",
+                "required": False,
+                "presentable": False,
+                "unique": False,
+                "options": {
+                    "min": None,
+                    "max": None,
+                    "pattern": ""
+                }
+            })
+            updates_needed = True
+            
         if updates_needed:
             pb.collections.update("audit_jobs", {
                 "schema": current_schema_dicts

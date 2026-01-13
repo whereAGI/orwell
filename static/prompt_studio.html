@@ -1,0 +1,218 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Orwell Prompt Studio</title>
+    <style>
+        :root {
+            --bg: #0b0b0f;
+            --card: #121218;
+            --muted: #a0a0b8;
+            --text: #f5f6f8;
+            --primary: #1f6feb;
+            --border: #252536;
+            --danger: #ef4444;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        .app {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        h1,
+        h2,
+        h3 {
+            margin-top: 0;
+        }
+
+        input,
+        select,
+        button {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #0e0e14;
+            color: var(--text);
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: #2e2e48;
+        }
+
+        button {
+            background: var(--primary);
+            border-color: var(--primary);
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button.danger {
+            background: var(--danger);
+            border-color: var(--danger);
+        }
+
+        button.secondary {
+            background: #1f2937;
+            border-color: #1f2937;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            background: #1f2937;
+            color: var(--muted);
+        }
+
+        .modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content.large {
+            width: 800px;
+            max-width: 95vw;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+    </style>
+    <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
+    <script src="/static/auth.js"></script>
+    <script>
+        // Protect route
+        if (!pb.authStore.isValid) {
+            window.location.href = '/login';
+        }
+    </script>
+</head>
+
+<body>
+    <header
+        style="display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);background:#0d0d13;">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);"></div>
+            <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell <span
+                    style="color:var(--muted);font-weight:400;">/ prompt studio</span></h1>
+        </div>
+        <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
+            <a href="/"
+                style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Back
+                to Playground</a>
+            <a href="/studio"
+                style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Data
+                Studio</a>
+        </div>
+    </header>
+
+    <div class="app" style="max-width: 100%; padding: 24px;">
+        <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+                <h2 style="margin:0">Manage System Prompts</h2>
+                <button onclick="openAddModal()">+ Add New System Prompt</button>
+            </div>
+
+            <div style="overflow-x: auto;">
+                <table style="table-layout: fixed; width: 100%;">
+                    <thead>
+                        <tr>
+                            <th style="width: 200px;">Name</th>
+                            <th>Prompt Text</th>
+                            <th style="width: 150px;">Length</th>
+                            <th style="width: 150px;">Created</th>
+                            <th style="width: 200px;">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="promptTable">
+                        <!-- Rows injected by JS -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Modal -->
+    <div id="addModal" class="modal">
+        <div class="card modal-content large" style="margin: 0; max-height: 90vh; display: flex; flex-direction: column;">
+            <h3 id="modalTitle">Add System Prompt</h3>
+            <div style="display:grid;gap:12px; flex: 1; overflow-y: auto;">
+                <div>
+                    <label style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Name</label>
+                    <input type="text" id="newName" placeholder="e.g. Friendly Assistant" style="width:100%">
+                </div>
+                <div style="flex: 1; display: flex; flex-direction: column;">
+                    <label style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">System Prompt Content</label>
+                    <textarea id="newText" rows="20" placeholder="You are a helpful assistant..."
+                        style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);resize:vertical;min-height:300px;"></textarea>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                    <button onclick="submitPrompt()">Save Prompt</button>
+                    <button class="secondary" onclick="closeAddModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="card" style="width: 400px; margin: 0;">
+            <h3 style="color:var(--danger)">Confirm Deletion</h3>
+            <p>Are you sure you want to delete this prompt? This action cannot be undone.</p>
+            <div style="display:flex;gap:8px;margin-top:16px;">
+                <button class="danger" id="confirmDeleteBtn">Delete</button>
+                <button class="secondary" onclick="closeDeleteModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/promptstudio.js"></script>
+</body>
+
+</html>

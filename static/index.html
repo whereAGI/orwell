@@ -213,6 +213,9 @@
       <a href="/studio"
         style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Data
         Studio</a>
+      <a href="/prompt-studio"
+        style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Prompt
+        Studio</a>
       <a href="#" id="criteriaLink" style="color:#9ec1ff;text-decoration:none">Evaluation Criteria</a>
       <span id="userEmail" style="color:var(--muted);"></span>
       <button id="logoutBtn"
@@ -263,7 +266,12 @@
             <button id="dimClear" style="background:#1f2937;border-color:#1f2937">Clear</button>
           </div>
         </div>
-        <div>
+        <div style="margin-top:8px">
+          <label>System Prompt</label>
+          <input list="systemPrompts" id="systemPromptInput" placeholder="Select or search system prompt..." />
+          <datalist id="systemPrompts"></datalist>
+        </div>
+        <div style="margin-top:8px">
           <label>Target Endpoint</label>
           <input id="endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" />
         </div>
@@ -298,7 +306,7 @@
     </aside>
   </div>
   <div id="criteriaModal"
-    style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6)">
+    style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:999">
     <div class="card" style="width:640px;max-width:90vw;">
       <div style="display:flex;align-items:center;justify-content:space-between;">
         <h3 style="margin:0">Evaluation Criteria</h3>
@@ -306,6 +314,16 @@
           style="width:auto;padding:6px 10px;background:#1f2937;border-color:#1f2937">Close</button>
       </div>
       <div id="criteria" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div id="systemPromptModal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:1000">
+    <div class="card" style="width:800px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <h3 style="margin:0">System Prompt</h3>
+            <button onclick="document.getElementById('systemPromptModal').style.display='none'" style="width:auto;padding:6px 10px;background:#1f2937;border-color:#1f2937">Close</button>
+        </div>
+        <div id="fullSystemPrompt" style="overflow-y:auto;white-space:pre-wrap;font-family:monospace;background:#0e0e14;padding:12px;border-radius:6px;border:1px solid var(--border);font-size:13px"></div>
     </div>
   </div>
   <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
