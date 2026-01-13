@@ -57,7 +57,8 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
             "target_model": request.model_name,
             "status": JobStatus.PENDING.value,
             "progress": 0.0,
-            "config_json": json.dumps(config_dict)
+            "config_json": json.dumps(config_dict),
+            "name": f"Audit {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         })
         
         # Start background task immediately without blocking
@@ -92,12 +93,50 @@ async def list_audits():
                 created_at=r.created,
                 target_model=getattr(r, 'target_model', None),
                 message=getattr(r, 'message', ''),
-                error_message=getattr(r, 'error_message', None)
+                error_message=getattr(r, 'error_message', None),
+                name=getattr(r, 'name', None),
+                notes=getattr(r, 'notes', None)
             ))
         return jobs
     except Exception as e:
         print(f"Error listing audits: {e}")
         return []
+
+class UpdateAuditRequest(BaseModel):
+    name: Optional[str] = None
+    notes: Optional[str] = None
+
+@app.patch("/api/audit/{job_id}", response_model=JobResponse)
+async def update_audit(job_id: str, req: UpdateAuditRequest):
+    pb = get_pb()
+    try:
+        job = pb.collection("audit_jobs").get_first_list_item(f'job_id="{job_id}"')
+        
+        update_data = {}
+        if req.name is not None:
+            update_data["name"] = req.name
+        if req.notes is not None:
+            update_data["notes"] = req.notes
+            
+        if update_data:
+            pb.collection("audit_jobs").update(job.id, update_data)
+            
+        # Refetch
+        r = pb.collection("audit_jobs").get_one(job.id)
+        
+        return JobResponse(
+            job_id=r.job_id,
+            status=JobStatus(r.status),
+            progress=r.progress,
+            created_at=r.created,
+            target_model=getattr(r, 'target_model', None),
+            message=getattr(r, 'message', ''),
+            error_message=getattr(r, 'error_message', None),
+            name=getattr(r, 'name', None),
+            notes=getattr(r, 'notes', None)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/audit/{job_id}", response_model=JobResponse)
 async def get_audit_status(job_id: str):
@@ -111,7 +150,9 @@ async def get_audit_status(job_id: str):
             created_at=r.created,
             target_model=getattr(r, 'target_model', None),
             message=getattr(r, 'message', ''),
-            error_message=getattr(r, 'error_message', None)
+            error_message=getattr(r, 'error_message', None),
+            name=getattr(r, 'name', None),
+            notes=getattr(r, 'notes', None)
         )
     except Exception as e:
         print(f"Error finding audit job {job_id}: {e}")
@@ -369,7 +410,7 @@ async def list_prompts(
     page: int = Query(1, ge=1), 
     per_page: int = Query(50, ge=1, le=100),
     source: str = Query("all", regex="^(all|system|custom)$"),
-    user=Depends(get_current_user)
+    user=Depends(get_optional_current_user)
 ):
     pb = get_pb()
     
@@ -379,10 +420,15 @@ async def list_prompts(
     if source == "system":
         filters.append('type = "system"')
     elif source == "custom":
+        if not user:
+             raise HTTPException(status_code=401, detail="Authentication required for custom prompts")
         filters.append(f'type = "custom" && user = "{user.id}"')
     else: # all
-        # (type='system') || (type='custom' && user='uid')
-        filters.append(f'(type = "system" || (type = "custom" && user = "{user.id}"))')
+        if user:
+            filters.append(f'(type = "system" || (type = "custom" && user = "{user.id}"))')
+        else:
+            filters.append('type = "system"')
+
         
     filter_expr = " && ".join(filters)
     

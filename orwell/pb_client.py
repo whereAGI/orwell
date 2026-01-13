@@ -15,10 +15,11 @@ class PBClient:
         if not cls._instance:
             cls._instance = PocketBase(PB_URL)
             # Auto-auth as admin for backend tasks
-            # Manual token workaround
-            token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjU5OTgwNzMsImlkIjoiaHY1c2R2NWplYmFwb29yIiwidHlwZSI6ImFkbWluIn0.M7hNJxurmrS1-m76yOSDL1fRFpz7__cuAWnFkIW74Qk"
-            cls._instance.auth_store.save(token, None)
-            print("PB Client Authenticated via manual token.")
+            try:
+                cls._instance.admins.auth_with_password(ADMIN_EMAIL, ADMIN_PASS)
+                print("PB Client Authenticated as Admin.")
+            except Exception as e:
+                print(f"Failed to authenticate PB Client: {e}")
         return cls._instance
 
 def get_pb():

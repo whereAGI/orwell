@@ -21,10 +21,14 @@ class AuditRequest(BaseModel):
 
 class JobResponse(BaseModel):
     job_id: str
+    name: Optional[str] = None
+    notes: Optional[str] = None
     status: JobStatus
     progress: float
     created_at: datetime
     message: str
+    target_model: Optional[str] = None
+    error_message: Optional[str] = None
 
 class DimensionScore(BaseModel):
     dimension: str

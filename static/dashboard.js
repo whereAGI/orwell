@@ -334,6 +334,7 @@ async function initDimensions() {
     const data = await res.json();
     const dims = (data.dimensions || []).sort();
     const listEl = document.getElementById('dimList');
+    if (!listEl) return;
     listEl.innerHTML = dims.map(d => `<span class="pill" data-dim="${escapeHtml(d)}">${escapeHtml(d)}</span>`).join('');
     selectedDimensions = [];
     listEl.querySelectorAll('.pill').forEach(el => {
@@ -353,8 +354,60 @@ async function initDimensions() {
     console.error('Failed to load dimensions:', err);
   }
 }
-initDimensions();
-loadAuditList();
+// Renaming Logic
+const nameDisplay = document.getElementById('auditNameDisplay');
+const nameInput = document.getElementById('auditNameInput');
+const editNameBtn = document.getElementById('editNameBtn');
+const saveDetailsBtn = document.getElementById('saveDetailsBtn');
+
+if (editNameBtn) {
+    editNameBtn.addEventListener('click', () => {
+        nameDisplay.style.display = 'none';
+        nameInput.style.display = 'block';
+        nameInput.focus();
+    });
+}
+
+if (nameDisplay) {
+    nameDisplay.addEventListener('click', () => {
+        nameDisplay.style.display = 'none';
+        nameInput.style.display = 'block';
+        nameInput.focus();
+    });
+}
+
+if (saveDetailsBtn) {
+    saveDetailsBtn.addEventListener('click', async () => {
+        if (!currentJobId) return;
+        const newName = nameInput.value.trim();
+        const newNotes = document.getElementById('auditNotes').value.trim();
+        
+        try {
+            const res = await fetch(`/api/audit/${currentJobId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName, notes: newNotes })
+            });
+            if (!res.ok) throw new Error(await res.text());
+            
+            // Update UI
+            nameDisplay.textContent = newName;
+            nameDisplay.style.display = 'block';
+            nameInput.style.display = 'none';
+            
+            // Reload list to update sidebar
+            await loadAuditList();
+            
+            alert('Saved successfully');
+        } catch (e) {
+            console.error(e);
+            alert('Failed to save: ' + e);
+        }
+    });
+}
+
+// initDimensions();
+// loadAuditList();
 
 const dimSelectAll = document.getElementById('dimSelectAll');
 if (dimSelectAll) {
@@ -392,8 +445,8 @@ window.fetch = async (url, options = {}) => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  loadAudits();
-  loadDimensions();
+  loadAuditList();
+  if (typeof initDimensions === 'function') initDimensions();
 });
 
 // Removed standalone startSelected flow; Start Audit button uses selectedDimensions
