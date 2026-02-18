@@ -9,3 +9,16 @@ dist/
 build/
 *.egg-info/
 .env
+
+# Database
+pb_data/
+*.db
+*.db-shm
+*.db-wal
+
+# Test Data
+data/
+
+# PocketBase binary
+pocketbase
+pocketbase*.zip
