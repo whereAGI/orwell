@@ -19,6 +19,9 @@ pb_data/
 # Test Data
 data/
 
+# Scripts that might contain local config
+init_default_models.py
+
 # PocketBase binary
 pocketbase
 pocketbase*.zip

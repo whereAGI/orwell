@@ -1,0 +1,262 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <title>Orwell Model Studio</title>
+    <style>
+        :root {
+            --bg: #0b0b0f;
+            --card: #121218;
+            --muted: #a0a0b8;
+            --text: #f5f6f8;
+            --primary: #1f6feb;
+            --border: #252536;
+            --danger: #ef4444;
+            --success: #22c55e;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+            color: var(--text);
+            background: var(--bg);
+        }
+
+        .app {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            min-height: 100vh;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            background: #0d0d13;
+        }
+
+        .content {
+            padding: 24px;
+            max-width: 1200px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        h1, h2, h3 {
+            margin-top: 0;
+        }
+
+        input, select, button {
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: #0e0e14;
+            color: var(--text);
+        }
+
+        input:focus, select:focus {
+            outline: none;
+            border-color: #2e2e48;
+        }
+
+        button {
+            background: var(--primary);
+            border-color: var(--primary);
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        button.danger {
+            background: var(--danger);
+            border-color: var(--danger);
+        }
+
+        button.secondary {
+            background: #1f2937;
+            border-color: #1f2937;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tab {
+            padding: 10px 16px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: var(--muted);
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: var(--card);
+            padding: 24px;
+            border-radius: 12px;
+            width: 500px;
+            max-width: 90%;
+            border: 1px solid var(--border);
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .pill {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 12px;
+            background: #1f2937;
+            color: var(--muted);
+            margin-right: 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app">
+        <header>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);"></div>
+                <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell <span
+                        style="color:var(--muted);font-weight:400;">/ model studio</span></h1>
+            </div>
+            <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
+                <a href="/"
+                    style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Playground</a>
+                <a href="/studio"
+                    style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Data
+                    Studio</a>
+                <a href="/prompt-studio"
+                    style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Prompt
+                    Studio</a>
+            </div>
+        </header>
+        
+        <div class="content">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <div class="tabs" style="margin-bottom:0; border-bottom:none;">
+                    <div class="tab active" onclick="switchTab('target')">Target Models</div>
+                    <div class="tab" onclick="switchTab('judge')">Judge Models</div>
+                </div>
+                <button onclick="openModal()" style="width:auto; padding:8px 16px;">+ Add Model</button>
+            </div>
+            <div style="border-bottom:1px solid var(--border); margin-bottom:16px;"></div>
+            
+       <div id="modelList">
+                    <!-- Table will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Add/Edit Model Modal -->
+    <div id="modelModal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle" style="margin-top:0">Add New Model</h2>
+            <input type="hidden" id="modelId"> <!-- Hidden ID for edits -->
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="modelName" style="width:100%" placeholder="e.g. Production GPT-4o">
+            </div>
+            <!-- Category is hidden and set programmatically -->
+            <input type="hidden" id="modelCategory">
+            
+            <div class="form-group">
+                <label>Provider</label>
+                <select id="modelProvider" style="width:100%" onchange="updateProviderDefaults()">
+                    <option value="openai">OpenAI</option>
+                    <option value="openrouter">OpenRouter</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="custom">Custom</option>
+                </select>
+                <div id="providerLink" style="font-size:12px; margin-top:4px;"></div>
+            </div>
+            <div class="form-group">
+                <label>Base URL</label>
+                <input type="text" id="modelBaseUrl" style="width:100%" value="https://api.openai.com/v1">
+            </div>
+            <div class="form-group">
+                <label>Model Key</label>
+                <!-- Default input -->
+                <input type="text" id="modelKeyInput" style="width:100%; display:block;" placeholder="e.g. gpt-4o">
+                <!-- Select for Ollama -->
+                <select id="modelKeySelect" style="width:100%; display:none;">
+                    <option value="" disabled selected>Select a local model...</option>
+                </select>
+                <div id="modelKeyHelp" style="font-size:12px; color:var(--muted); margin-top:4px; display:none;">Fetching local models...</div>
+            </div>
+            <div class="form-group">
+                <label>API Key (Optional)</label>
+                <input type="password" id="modelApiKey" style="width:100%" placeholder="sk-...">
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Left blank for Ollama or if using environment variables.</div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
+                <button class="secondary" onclick="closeModal()">Cancel</button>
+                <button onclick="saveModel()">Save Model</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/modelstudio.js"></script>
+</body>
+</html>

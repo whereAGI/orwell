@@ -4,10 +4,25 @@ from typing import Tuple
 from openai import AsyncOpenAI
 
 class JudgeClient:
-    def __init__(self, model: str, api_key: str | None):
+    def __init__(self, model: str, api_key: str | None, base_url: str | None = None):
         self.model = model
         self.api_key = api_key or os.getenv("ORWELL_API_KEY") or os.getenv("OPENAI_API_KEY")
-        self.client = AsyncOpenAI(api_key=self.api_key) if self.api_key else None
+        self.base_url = base_url
+        
+        # If base_url is provided (e.g. local Ollama), ensure we have a key (dummy is fine)
+        if self.base_url:
+            if not self.api_key:
+                self.api_key = "dummy"
+            
+            # Normalize Ollama URL: Ensure it ends with /v1 and remove /chat/completions if present
+            if "localhost:11434" in self.base_url:
+                if self.base_url.endswith("/chat/completions"):
+                    self.base_url = self.base_url.replace("/chat/completions", "")
+                
+                if "/v1" not in self.base_url:
+                    self.base_url = self.base_url.rstrip("/") + "/v1"
+            
+        self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url) if self.api_key else None
 
     async def score(self, prompt_text: str, response_text: str, dimension: str) -> Tuple[float, str]:
         if not self.client:

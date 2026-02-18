@@ -7,11 +7,12 @@ import json
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from .models import AuditRequest, JobResponse, AuditReport, JobStatus
+from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig
 from .config import get_default_target
 from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
 from .pb_client import get_pb
+from .log_store import get_logs
 
 class CreatePromptRequest(BaseModel):
     dimension: str
@@ -37,26 +38,124 @@ async def studio():
 async def prompt_studio():
     return FileResponse("static/prompt_studio.html")
 
+@app.get("/model-studio")
+async def model_studio():
+    return FileResponse("static/model_studio.html")
+
 @app.get("/login")
 async def login():
     return FileResponse("static/login.html")
 
+@app.get("/api/models", response_model=List[ModelConfig])
+async def list_models(category: Optional[str] = None):
+    pb = get_pb()
+    query_params = {"sort": "name"}
+    if category:
+        query_params["filter"] = f'category="{category}"'
+    
+    try:
+        records = pb.collection("models").get_full_list(query_params=query_params)
+        return [
+            ModelConfig(
+                id=r.id,
+                name=r.name,
+                category=r.category,
+                provider=r.provider,
+                base_url=r.base_url,
+                model_key=r.model_key,
+                api_key=r.api_key 
+            ) for r in records
+        ]
+    except Exception as e:
+        print(f"Error fetching models: {e}")
+        return []
+
+@app.post("/api/models", response_model=ModelConfig)
+async def create_model(config: ModelConfig):
+    pb = get_pb()
+    try:
+        record = pb.collection("models").create({
+            "name": config.name,
+            "category": config.category,
+            "provider": config.provider,
+            "base_url": config.base_url,
+            "model_key": config.model_key,
+            "api_key": config.api_key
+        })
+        return ModelConfig(
+            id=record.id,
+            name=record.name,
+            category=record.category,
+            provider=record.provider,
+            base_url=record.base_url,
+            model_key=record.model_key,
+            api_key=record.api_key
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create model: {str(e)}")
+
+@app.put("/api/models/{model_id}", response_model=ModelConfig)
+async def update_model(model_id: str, config: ModelConfig):
+    pb = get_pb()
+    try:
+        # Update existing record
+        pb.collection("models").update(model_id, {
+            "name": config.name,
+            "category": config.category,
+            "provider": config.provider,
+            "base_url": config.base_url,
+            "model_key": config.model_key,
+            "api_key": config.api_key
+        })
+        return config
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update model: {str(e)}")
+
+@app.delete("/api/models/{model_id}")
+async def delete_model(model_id: str):
+    pb = get_pb()
+    try:
+        pb.collection("models").delete(model_id)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
+
 @app.post("/api/audit/create", response_model=JobResponse)
 async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks):
     try:
+        pb = get_pb()
+        
+        # 1. Resolve Target Model
+        if request.target_model_id:
+            try:
+                tm = pb.collection("models").get_one(request.target_model_id)
+                request.target_endpoint = tm.base_url
+                request.model_name = tm.model_key
+                if tm.api_key:
+                    request.api_key = tm.api_key
+            except Exception as e:
+                print(f"Error resolving target model {request.target_model_id}: {e}")
+        
+        # 2. Resolve Judge Model (we need to pass this to engine somehow)
+        # For now, we'll store judge config in the request object if we can, or engine will look it up
+        # The AuditRequest model doesn't have fields for judge endpoint/key, let's rely on engine looking it up
+        # OR we can update AuditRequest to carry these. 
+        # Actually, simpler approach: The Engine will look up the judge model if judge_model_id is present.
+        
+        # Fallback defaults if still missing
         if not request.target_endpoint or not request.model_name:
             endpoint, model, key = get_default_target()
-            request.target_endpoint = endpoint
+            request.target_endpoint = request.target_endpoint or endpoint
             request.model_name = request.model_name or model
             request.api_key = request.api_key or key
+            
         job_id = str(uuid.uuid4())
-        
-        pb = get_pb()
         
         # Prepare config - convert Pydantic model to dict and handle HttpUrl
         config_dict = request.model_dump()
         # Convert HttpUrl to str for JSON serialization
-        config_dict['target_endpoint'] = str(config_dict['target_endpoint'])
+        if config_dict.get('target_endpoint'):
+            config_dict['target_endpoint'] = str(config_dict['target_endpoint'])
         
         # Create job record
         pb.collection("audit_jobs").create({
@@ -170,6 +269,10 @@ async def get_audit_status(job_id: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=404, detail=f"Audit job not found: {str(e)}")
+
+@app.get("/api/audit/{job_id}/logs")
+async def get_audit_logs(job_id: str):
+    return get_logs(job_id)
 
 @app.get("/api/audit/{job_id}/report", response_model=AuditReport)
 async def get_audit_report(job_id: str):

@@ -10,7 +10,21 @@ class JobStatus(str, Enum):
     FAILED = "failed"
     ABORTED = "aborted"
 
+class ModelConfig(BaseModel):
+    id: Optional[str] = None
+    name: str
+    category: str
+    provider: str
+    base_url: str
+    model_key: str
+    api_key: Optional[str] = None
+
 class AuditRequest(BaseModel):
+    # Support selecting stored models
+    target_model_id: Optional[str] = None
+    judge_model_id: Optional[str] = None
+
+    # Fallback / Custom fields
     target_endpoint: Optional[HttpUrl] = None
     api_key: Optional[str] = ""
     model_name: Optional[str] = None

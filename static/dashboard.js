@@ -31,16 +31,24 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
   const apiKey = document.getElementById('apiKey').value.trim();
   const modelName = document.getElementById('modelName').value.trim();
   
+  const targetModelId = document.getElementById('targetModelSelect').value;
+  const judgeModelId = document.getElementById('judgeModelSelect').value;
+  
   const sysPromptName = document.getElementById('systemPromptInput').value.trim();
   const sysPrompt = systemPromptsMap[sysPromptName] || (sysPromptName ? sysPromptName : null);
 
   const request = {
-    target_endpoint: endpoint || null,
-    api_key: apiKey || "",
-    model_name: modelName || null,
+    target_model_id: (targetModelId && targetModelId !== 'custom') ? targetModelId : null,
+    judge_model_id: (judgeModelId && judgeModelId !== 'default') ? judgeModelId : null,
+    
+    // Only send these if custom is selected or needed as fallback
+    target_endpoint: (targetModelId === 'custom') ? (endpoint || null) : null,
+    api_key: (targetModelId === 'custom') ? (apiKey || "") : "",
+    model_name: (targetModelId === 'custom') ? (modelName || null) : null,
+    
     sample_size: parseInt(document.getElementById('sampleSize').value),
     language: document.getElementById('language').value,
-    judge_model: 'gpt-4o',
+    judge_model: 'gpt-4o', // Default if no judge ID
     dimensions: selectedDimensions.length ? selectedDimensions : null,
     system_prompt: sysPrompt
   };
@@ -76,6 +84,10 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
 
 async function pollStatus() {
   if (!currentJobId) return;
+  
+  // Poll logs concurrently
+  pollLogs();
+
   try {
     await loadAuditList();
     const response = await fetch(`/api/audit/${currentJobId}`);
@@ -400,6 +412,7 @@ async function initDimensions() {
     console.error('Failed to load dimensions:', err);
   }
 }
+
 // Renaming Logic
 const nameDisplay = document.getElementById('auditNameDisplay');
 const nameInput = document.getElementById('auditNameInput');
@@ -452,9 +465,6 @@ if (saveDetailsBtn) {
     });
 }
 
-// initDimensions();
-// loadAuditList();
-
 const dimSelectAll = document.getElementById('dimSelectAll');
 if (dimSelectAll) {
   dimSelectAll.addEventListener('click', () => {
@@ -472,14 +482,6 @@ if (dimClear) {
   });
 }
 
-// We can use the global 'pb' object from auth.js
-// But for existing fetch calls to our Python backend, we might not need to change much
-// IF the backend doesn't enforce auth yet.
-// However, the plan said "Include auth token in all API requests".
-// Since we haven't implemented token verification in Python yet (it was a TODO in main.py),
-// we can technically skip sending the token for now, BUT we should do it to be ready.
-// Also, we can use PB SDK to fetch data directly if we want, but we kept the Python API.
-
 // Let's wrap fetch to include token
 const originalFetch = window.fetch;
 window.fetch = async (url, options = {}) => {
@@ -493,6 +495,7 @@ window.fetch = async (url, options = {}) => {
 document.addEventListener('DOMContentLoaded', () => {
   loadAuditList();
   loadSystemPrompts();
+  loadModels(); // Added
   if (typeof initDimensions === 'function') initDimensions();
 });
 
@@ -501,25 +504,183 @@ async function loadSystemPrompts() {
     const res = await fetch('/api/system-prompts');
     if (!res.ok) return;
     const prompts = await res.json();
-    const dl = document.getElementById('systemPrompts');
-    dl.innerHTML = '';
+    const select = document.getElementById('systemPromptInput');
+    select.innerHTML = '<option value="">None (Default)</option>';
     systemPromptsMap = {};
     
-    // Add None option
-    const noneOpt = document.createElement('option');
-    noneOpt.value = '';
-    noneOpt.textContent = 'None';
-    dl.appendChild(noneOpt);
-
     prompts.forEach(p => {
       systemPromptsMap[p.name] = p.text;
       const opt = document.createElement('option');
       opt.value = p.name;
-      dl.appendChild(opt);
+      opt.textContent = p.name;
+      select.appendChild(opt);
     });
   } catch (e) {
     console.error('Failed to load system prompts', e);
   }
 }
 
-// Removed standalone startSelected flow; Start Audit button uses selectedDimensions
+// Model Studio Integration
+async function loadModels() {
+    try {
+        const response = await fetch('/api/models');
+        const models = await response.json();
+        
+        const targetSelect = document.getElementById('targetModelSelect');
+        const judgeSelect = document.getElementById('judgeModelSelect');
+        
+        // Clear existing (except default options)
+        targetSelect.innerHTML = '<option value="custom">Custom (Enter manually)</option>';
+        judgeSelect.innerHTML = '<option value="default">System Default (GPT-4o)</option>';
+        
+        models.forEach(m => {
+            const option = document.createElement('option');
+            option.value = m.id;
+            option.textContent = `${m.name} (${m.model_key})`;
+            
+            if (m.category === 'target') {
+                targetSelect.appendChild(option);
+            } else if (m.category === 'judge') {
+                judgeSelect.appendChild(option);
+            }
+        });
+        
+        // Setup change handler
+        targetSelect.addEventListener('change', toggleCustomFields);
+        toggleCustomFields(); // Init state
+        
+    } catch (err) {
+        console.error('Failed to load models:', err);
+    }
+}
+
+function toggleCustomFields() {
+    const select = document.getElementById('targetModelSelect');
+    const customFields = document.getElementById('customTargetFields');
+    
+    if (!select || !customFields) return;
+
+    if (select.value === 'custom') {
+        customFields.style.display = 'block';
+    } else {
+        customFields.style.display = 'none';
+    }
+}
+
+// Terminal Logic
+const terminal = document.getElementById('terminal');
+const terminalContent = document.getElementById('terminalContent');
+const toggleBtn = document.getElementById('toggleTerminalBtn');
+const clearBtn = document.getElementById('clearLogsBtn');
+const logStatus = document.getElementById('logStatus');
+
+let isTerminalCollapsed = false;
+let lastLogTimestamp = null;
+
+if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+        isTerminalCollapsed = !isTerminalCollapsed;
+        terminal.classList.toggle('collapsed', isTerminalCollapsed);
+        toggleBtn.textContent = isTerminalCollapsed ? '[]' : '_';
+    });
+}
+
+// Resize Logic
+const header = document.getElementById('terminalHeader');
+if (header) {
+    let isResizing = false;
+    let startY, startHeight;
+
+    header.addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'BUTTON') return; // Ignore button clicks
+        isResizing = true;
+        startY = e.clientY;
+        startHeight = terminal.clientHeight;
+        document.body.style.cursor = 'ns-resize';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        if (isTerminalCollapsed) return; // Don't resize if collapsed
+        
+        const delta = startY - e.clientY;
+        const newHeight = startHeight + delta;
+        if (newHeight > 100 && newHeight < window.innerHeight - 100) {
+            terminal.style.height = `${newHeight}px`;
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = '';
+        }
+    });
+}
+
+if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+        terminalContent.innerHTML = '';
+    });
+}
+
+async function pollLogs() {
+    if (!currentJobId) return;
+    
+    try {
+        const res = await fetch(`/api/audit/${currentJobId}/logs`);
+        if (!res.ok) return;
+        
+        const logs = await res.json();
+        if (logs.length === 0) return;
+        
+        // Filter new logs
+        const newLogs = lastLogTimestamp 
+            ? logs.filter(l => l.timestamp > lastLogTimestamp)
+            : logs;
+            
+        if (newLogs.length > 0) {
+            lastLogTimestamp = newLogs[newLogs.length - 1].timestamp;
+            renderLogs(newLogs);
+            if (logStatus) logStatus.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+        }
+    } catch (e) {
+        console.error("Log poll failed", e);
+    }
+}
+
+function renderLogs(logs) {
+    if (!terminalContent) return;
+    
+    // Check if we should scroll (if near bottom)
+    const wasAtBottom = terminalContent.scrollTop + terminalContent.clientHeight >= terminalContent.scrollHeight - 50;
+
+    logs.forEach(log => {
+        const div = document.createElement('div');
+        div.className = 'log-entry';
+        
+        const time = new Date(log.timestamp).toLocaleTimeString();
+        const typeClass = `type-${log.type}`;
+        
+        let detailsHtml = '';
+        if (log.details && Object.keys(log.details).length > 0) {
+            detailsHtml = `<div class="json-block">${escapeHtml(JSON.stringify(log.details, null, 2))}</div>`;
+        }
+        
+        div.innerHTML = `
+            <div class="log-meta">
+                <span class="log-time">[${time}]</span>
+                <span class="log-type ${typeClass}">${log.type}</span>
+            </div>
+            <div class="log-content">${escapeHtml(log.content)}</div>
+            ${detailsHtml}
+        `;
+        
+        terminalContent.appendChild(div);
+    });
+
+    if (wasAtBottom) {
+        terminalContent.scrollTop = terminalContent.scrollHeight;
+    }
+}
