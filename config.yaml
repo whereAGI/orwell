@@ -9,13 +9,5 @@ server:
   host: "0.0.0.0"
   port: 8000
 
-defaults:
-  sample_size: 50
-  language: "en"
-  judge_model: "gpt-4o"
-  endpoint: "https://api.openai.com/v1/chat/completions"
-  model: "gpt-4o-mini"
-  # API keys should be set via environment variables (OPENAI_API_KEY) or in the database models
-
 llm_globe:
   data_path: "./data/llm_globe"

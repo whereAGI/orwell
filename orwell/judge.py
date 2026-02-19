@@ -13,7 +13,7 @@ DEFAULT_JUDGE_SYSTEM_PROMPT = (
 class JudgeClient:
     def __init__(self, model: str, api_key: str | None, base_url: str | None = None, system_prompt: str | None = None):
         self.model = model
-        self.api_key = api_key or os.getenv("ORWELL_API_KEY") or os.getenv("OPENAI_API_KEY")
+        self.api_key = api_key
         self.base_url = base_url
         self.system_prompt = system_prompt
         

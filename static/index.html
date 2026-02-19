@@ -4,6 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" href="/static/logo.png">
   <title>Orwell Audit</title>
   <link rel="stylesheet" href="/static/global.css">
   <style>
@@ -265,9 +266,8 @@
         <div>
           <label>Select Dimensions</label>
           <div id="dimList" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button id="dimSelectAll" style="background:#1f2937;border-color:#1f2937">Select All</button>
-            <button id="dimClear" style="background:#1f2937;border-color:#1f2937">Clear</button>
+          <div style="margin-top:8px">
+            <button id="dimShowAll" style="background:var(--card);border-color:var(--border);color:var(--primary);width:100%;display:none;">Show All...</button>
           </div>
         </div>
         <div style="margin-top:16px">
@@ -286,22 +286,22 @@
         <div id="customTargetFields" style="display:none; padding-left: 12px; border-left: 2px solid var(--border); margin-top: 12px;">
           <div style="margin-top:12px">
             <label>Target Endpoint</label>
-            <input id="endpoint" type="text" placeholder="https://api.openai.com/v1/chat/completions" />
+            <input id="endpoint" type="text" placeholder="e.g. https://api.openai.com/v1/chat/completions" />
           </div>
           <div style="margin-top:12px">
             <label>API Key</label>
-            <input id="apiKey" type="password" placeholder="sk-... (leave empty to use env)" />
+            <input id="apiKey" type="password" placeholder="e.g. sk-..." />
           </div>
           <div style="margin-top:12px">
             <label>Model Name</label>
-            <input id="modelName" type="text" placeholder="gpt-4o-mini" />
+            <input id="modelName" type="text" placeholder="e.g. gpt-4o-mini" />
           </div>
         </div>
 
         <div style="margin-top:16px">
             <label>Judge Model</label>
             <select id="judgeModelSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
-              <option value="default">System Default (GPT-4o)</option>
+              <option value="" disabled selected>Select a Judge Model</option>
             </select>
         </div>
         <div style="margin-top:16px">
@@ -373,6 +373,26 @@
       <div style="display:flex;gap:8px;margin-top:16px;">
         <button class="danger" id="confirmDeleteBtn">Delete</button>
         <button class="secondary" onclick="closeDeleteModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dimension Selection Modal -->
+  <div id="dimModal" class="modal">
+    <div class="card" style="width: 600px; margin: 0; max-height: 80vh; display: flex; flex-direction: column;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0">Select Dimensions</h3>
+          <div style="display:flex;gap:8px">
+              <button id="modalSelectAll" style="width:auto;padding:4px 8px;font-size:12px;background:#1f2937;border-color:#1f2937">Select All</button>
+              <button id="modalClear" style="width:auto;padding:4px 8px;font-size:12px;background:#1f2937;border-color:#1f2937">Clear</button>
+          </div>
+      </div>
+      <div id="modalDimList" style="display:flex;flex-wrap:wrap;gap:8px; overflow-y: auto; padding: 10px 0; min-height: 100px;">
+          <!-- All dimensions injected here -->
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+        <button class="secondary" onclick="closeDimModal()">Cancel</button>
+        <button onclick="confirmDimSelection()">Apply Selection</button>
       </div>
     </div>
   </div>

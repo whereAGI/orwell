@@ -30,15 +30,6 @@ def get_llm_globe_data_path() -> Path:
     p = cfg.get("llm_globe", {}).get("data_path", "./data/llm_globe")
     return Path(p)
 
-def get_default_target() -> tuple[str, str, str]:
-    cfg = load_config()
-    # Default values are now handled by database/model studio, these are just fallbacks if DB fails
-    endpoint = os.getenv("ORWELL_DEFAULT_ENDPOINT") or cfg.get("defaults", {}).get("endpoint") or "https://api.openai.com/v1/chat/completions"
-    model = os.getenv("ORWELL_DEFAULT_MODEL") or cfg.get("defaults", {}).get("model") or "gpt-4o-mini"
-    # Do not hardcode API keys here. Rely on environment variables only.
-    key = os.getenv("ORWELL_DEFAULT_KEY") or os.getenv("ORWELL_API_KEY") or os.getenv("OPENAI_API_KEY") or ""
-    return endpoint, model, key
-
 def is_mock_mode() -> bool:
     v = os.getenv("ORWELL_MOCK_MODE", "").lower()
     if v in {"1", "true", "yes"}:

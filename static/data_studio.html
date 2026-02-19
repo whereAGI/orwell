@@ -4,6 +4,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/static/logo.png">
     <title>Orwell Data Studio</title>
     <link rel="stylesheet" href="/static/global.css">
     <style>
@@ -37,21 +38,29 @@
                 <h2 style="margin:0">Manage Prompts</h2>
                 <div style="display:flex; gap:8px;">
                     <button id="bulkDeleteBtn" class="danger" style="width: auto; display: none;" onclick="bulkDelete()">Delete Selected</button>
+                    <input type="file" id="csvUpload" accept=".csv" style="display:none" onchange="handleFileUpload(this)">
+                    <button onclick="document.getElementById('csvUpload').click()" style="width: auto;" class="secondary">Import CSV</button>
                     <button onclick="openAddModal()" style="width: auto;">+ Add New Prompt</button>
                 </div>
             </div>
 
-            <div class="filters" style="display:flex; justify-content: space-between; align-items: center;">
-                <div style="display:flex; gap:12px;">
-                    <input type="text" id="search" placeholder="Search prompts..." style="width: 300px;">
-                    <select id="dimFilter">
+            <div class="filters" style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                <div style="display:flex; gap:12px; align-items: center;">
+                    <input type="text" id="search" placeholder="Search prompts..." style="width: 200px;">
+                    <select id="dimFilter" style="width: 150px;">
                         <option value="">All Dimensions</option>
                     </select>
-                    <select id="sourceFilter">
+                    <select id="sourceFilter" style="width: 120px;">
                         <option value="">All Sources</option>
                         <option value="custom">Custom Only</option>
                         <option value="system">System Only</option>
                     </select>
+                    <div style="display:flex; gap:8px; align-items:center; border-left: 1px solid var(--border); padding-left: 12px;">
+                        <label style="font-size:12px; color:var(--muted)">Date:</label>
+                        <input type="date" id="fromDate" style="width: 130px; color-scheme: dark;" title="From Date">
+                        <span style="color:var(--muted)">-</span>
+                        <input type="date" id="toDate" style="width: 130px; color-scheme: dark;" title="To Date">
+                    </div>
                 </div>
                 <div style="display:flex; gap:12px; align-items:center;">
                     <label style="font-size:12px; color:var(--muted)">Rows per page:</label>
@@ -66,10 +75,11 @@
                         <tr>
                             <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
                             <th style="width: 60px;">#</th>
-                            <th style="width: 200px; resize: horizontal; overflow: hidden;">Dimension</th>
+                            <th style="width: 150px; resize: horizontal; overflow: hidden;">Created At</th>
+                            <th style="width: 150px; resize: horizontal; overflow: hidden;">Dimension</th>
                             <th style="resize: horizontal; overflow: hidden;">Prompt Text</th>
-                            <th style="width: 100px; resize: horizontal; overflow: hidden;">Language</th>
-                            <th style="width: 120px; resize: horizontal; overflow: hidden;">Source</th>
+                            <th style="width: 80px; resize: horizontal; overflow: hidden;">Lang</th>
+                            <th style="width: 100px; resize: horizontal; overflow: hidden;">Source</th>
                             <th style="width: 100px;">Actions</th>
                         </tr>
                     </thead>
@@ -153,6 +163,19 @@
             <div style="display:flex;gap:8px;margin-top:16px;">
                 <button class="danger" id="confirmDeleteBtn">Delete</button>
                 <button class="secondary" onclick="closeDeleteModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Result Modal -->
+    <div id="importModal" class="modal">
+        <div class="card" style="width: 500px; margin: 0;">
+            <h3>Import Result</h3>
+            <p id="importMessage"></p>
+            <div id="importErrors" style="margin-top: 12px; max-height: 150px; overflow-y: auto; background: #0e0e14; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; display: none;">
+            </div>
+            <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+                <button onclick="closeImportModal()">OK</button>
             </div>
         </div>
     </div>

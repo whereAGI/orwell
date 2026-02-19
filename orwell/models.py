@@ -33,7 +33,7 @@ class AuditRequest(BaseModel):
     sample_size: Optional[int] = 50
     dimensions: Optional[List[str]] = None
     system_prompt: Optional[str] = None
-    judge_model: str = "gpt-4o"
+    judge_model: Optional[str] = None
 
 class JobResponse(BaseModel):
     job_id: str

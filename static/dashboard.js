@@ -34,12 +34,17 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
   const targetModelId = document.getElementById('targetModelSelect').value;
   const judgeModelId = document.getElementById('judgeModelSelect').value;
   
+  if (!judgeModelId) {
+    alert('Please select a Judge Model');
+    return;
+  }
+  
   const sysPromptName = document.getElementById('systemPromptInput').value.trim();
   const sysPrompt = systemPromptsMap[sysPromptName] || (sysPromptName ? sysPromptName : null);
 
   const request = {
     target_model_id: (targetModelId && targetModelId !== 'custom') ? targetModelId : null,
-    judge_model_id: (judgeModelId) ? judgeModelId : null,
+    judge_model_id: judgeModelId,
     
     // Only send these if custom is selected or needed as fallback
     target_endpoint: (targetModelId === 'custom') ? (endpoint || null) : null,
@@ -48,7 +53,7 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     
     sample_size: parseInt(document.getElementById('sampleSize').value),
     language: document.getElementById('language').value,
-    judge_model: 'gpt-4o', // Fallback only if no ID provided
+    judge_model: null, 
     dimensions: selectedDimensions.length ? selectedDimensions : null,
     system_prompt: sysPrompt
   };
@@ -436,11 +441,33 @@ async function initDimensions() {
   try {
     const res = await fetch('/api/dimensions');
     const data = await res.json();
-    const dims = (data.dimensions || []).sort();
+    const allDims = (data.dimensions || []).sort();
+    
+    // Store all dimensions globally for modal
+    window.allDimensions = allDims;
+    
+    // Initial display: limit to 5
+    renderDimensionList(allDims.slice(0, 5));
+    
+    const showAllBtn = document.getElementById('dimShowAll');
+    if (allDims.length > 5) {
+        showAllBtn.style.display = 'inline-block';
+        showAllBtn.onclick = openDimModal;
+    } else {
+        showAllBtn.style.display = 'none';
+    }
+
+  } catch (err) {
+    console.error('Failed to load dimensions:', err);
+  }
+}
+
+function renderDimensionList(dims) {
     const listEl = document.getElementById('dimList');
     if (!listEl) return;
-    listEl.innerHTML = dims.map(d => `<span class="pill" data-dim="${escapeHtml(d)}">${escapeHtml(d)}</span>`).join('');
-    selectedDimensions = [];
+    
+    listEl.innerHTML = dims.map(d => `<span class="pill ${selectedDimensions.includes(d) ? 'selected' : ''}" data-dim="${escapeHtml(d)}">${escapeHtml(d)}</span>`).join('');
+    
     listEl.querySelectorAll('.pill').forEach(el => {
       el.addEventListener('click', () => {
         const d = el.getAttribute('data-dim');
@@ -454,9 +481,48 @@ async function initDimensions() {
         }
       });
     });
-  } catch (err) {
-    console.error('Failed to load dimensions:', err);
-  }
+}
+
+function openDimModal() {
+    const modalList = document.getElementById('modalDimList');
+    modalList.innerHTML = window.allDimensions.map(d => 
+        `<span class="pill ${selectedDimensions.includes(d) ? 'selected' : ''}" onclick="toggleModalDim(this)" data-dim="${escapeHtml(d)}">${escapeHtml(d)}</span>`
+    ).join('');
+    document.getElementById('dimModal').style.display = 'flex';
+}
+
+// Modal Listeners
+document.getElementById('modalSelectAll').addEventListener('click', () => {
+    const pills = document.querySelectorAll('#modalDimList .pill');
+    pills.forEach(p => p.classList.add('selected'));
+});
+
+document.getElementById('modalClear').addEventListener('click', () => {
+    const pills = document.querySelectorAll('#modalDimList .pill');
+    pills.forEach(p => p.classList.remove('selected'));
+});
+
+window.toggleModalDim = function(el) {
+    el.classList.toggle('selected');
+}
+
+window.closeDimModal = function() {
+    document.getElementById('dimModal').style.display = 'none';
+}
+
+window.confirmDimSelection = function() {
+    const selectedPills = document.querySelectorAll('#modalDimList .pill.selected');
+    selectedDimensions = Array.from(selectedPills).map(p => p.getAttribute('data-dim'));
+    
+    // Update main view to show ONLY selected dimensions
+    renderDimensionList(selectedDimensions);
+    
+    // If no selection, revert to default view (first 5)
+    if (selectedDimensions.length === 0) {
+        renderDimensionList(window.allDimensions.slice(0, 5));
+    }
+    
+    closeDimModal();
 }
 
 // Renaming Logic
@@ -511,22 +577,8 @@ if (saveDetailsBtn) {
     });
 }
 
-const dimSelectAll = document.getElementById('dimSelectAll');
-if (dimSelectAll) {
-  dimSelectAll.addEventListener('click', () => {
-    const pills = document.querySelectorAll('#dimList .pill');
-    selectedDimensions = Array.from(new Set(Array.from(pills).map(p => p.getAttribute('data-dim'))));
-    pills.forEach(p => p.classList.add('selected'));
-  });
-}
-
-const dimClear = document.getElementById('dimClear');
-if (dimClear) {
-  dimClear.addEventListener('click', () => {
-    selectedDimensions = [];
-    document.querySelectorAll('#dimList .pill').forEach(p => p.classList.remove('selected'));
-  });
-}
+// Removed main view listeners for Select All/Clear as they are now in modal
+// Only kept if needed for backward compatibility or future features, but for now they are gone from DOM.
 
 // Let's wrap fetch to include token
 const originalFetch = window.fetch;

@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     document.getElementById('dimFilter').addEventListener('change', () => loadPrompts(1));
     document.getElementById('sourceFilter').addEventListener('change', () => loadPrompts(1));
+    document.getElementById('fromDate').addEventListener('change', () => loadPrompts(1));
+    document.getElementById('toDate').addEventListener('change', () => loadPrompts(1));
     document.getElementById('rowsPerPage').addEventListener('change', updateRowsPerPage);
 });
 
@@ -61,10 +63,14 @@ async function loadPrompts(page = 1) {
         const source = document.getElementById('sourceFilter').value || 'all';
         const search = document.getElementById('search').value;
         const dimension = document.getElementById('dimFilter').value;
+        const fromDate = document.getElementById('fromDate').value;
+        const toDate = document.getElementById('toDate').value;
         
         let url = `/api/data/prompts?page=${page}&per_page=${perPage}&source=${source}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
         if (dimension) url += `&dimension=${encodeURIComponent(dimension)}`;
+        if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
+        if (toDate) url += `&to_date=${encodeURIComponent(toDate)}`;
         
         const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to load prompts');
@@ -238,12 +244,16 @@ function renderTable() {
 
         // Row Index (Global)
         const globalIndex = (currentPage - 1) * perPage + index + 1;
+        
+        // Format Date
+        const dateStr = p.created_at ? new Date(p.created_at).toLocaleString() : '-';
 
         tr.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 <input type="checkbox" class="row-checkbox" value="${p.id}" onchange="updateBulkDeleteState()">
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${globalIndex}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${dateStr}</td>
             <td class="px-6 py-4 text-sm text-gray-900">
                 <div class="line-clamp-2" title="${p.dimension}">${p.dimension}</div>
             </td>
@@ -386,4 +396,67 @@ async function deletePrompt(id) {
         console.error(e);
         alert("Error deleting prompt");
     }
+}
+
+async function handleFileUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        // Show loading state if desired
+        const btn = input.nextElementSibling;
+        const originalText = btn.textContent;
+        btn.textContent = "Uploading...";
+        btn.disabled = true;
+
+        const res = await fetch('/api/data/prompts/import', {
+            method: 'POST',
+            headers: {
+                // Do NOT set Content-Type header when sending FormData, 
+                // the browser sets it automatically with the boundary
+                'Authorization': `Bearer ${pb.authStore.token}` 
+            },
+            body: formData
+        });
+
+        if (res.ok) {
+            const result = await res.json();
+            let msg = `Successfully imported ${result.imported} prompts.`;
+            
+            // Use custom modal
+            document.getElementById('importMessage').textContent = msg;
+            const errorDiv = document.getElementById('importErrors');
+            
+            if (result.errors && result.errors.length > 0) {
+                errorDiv.style.display = 'block';
+                errorDiv.innerHTML = `<div style="color:var(--danger);margin-bottom:4px;">${result.errors.length} errors occurred:</div>` + 
+                    result.errors.join('<br>');
+            } else {
+                errorDiv.style.display = 'none';
+                errorDiv.innerHTML = '';
+            }
+            
+            document.getElementById('importModal').classList.add('active');
+            loadPrompts(1);
+        } else {
+            const err = await res.json();
+            alert("Import failed: " + (err.detail || "Unknown error"));
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Error importing file: " + e.message);
+    } finally {
+        // Reset input
+        input.value = '';
+        const btn = input.nextElementSibling;
+        btn.textContent = "Import CSV";
+        btn.disabled = false;
+    }
+}
+
+function closeImportModal() {
+    document.getElementById('importModal').classList.remove('active');
 }

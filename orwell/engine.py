@@ -104,6 +104,16 @@ class AuditEngine:
                     err_msg = f"Error resolving judge model {request.judge_model_id}: {e}"
                     print(err_msg)
                     add_log(job_id, "error", err_msg)
+            
+            if not judge_model_name:
+                msg = "No judge model specified"
+                add_log(job_id, "error", msg)
+                pb.collection("audit_jobs").update(job_record.id, {
+                    "status": JobStatus.FAILED.value,
+                    "error_message": msg,
+                    "message": "Audit failed: No judge model"
+                })
+                return
 
             judge = JudgeClient(model=judge_model_name, api_key=judge_api_key, base_url=judge_base_url, system_prompt=judge_system_prompt)
             

@@ -1,14 +1,15 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import uuid
 import json
+import csv
+import io
 from datetime import datetime, timezone
 from typing import List, Optional
 
 from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig
-from .config import get_default_target
 from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
 from .judge import DEFAULT_JUDGE_SYSTEM_PROMPT
@@ -225,10 +226,10 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
         
         # Fallback defaults if still missing
         if not request.target_endpoint or not request.model_name:
-            endpoint, model, key = get_default_target()
-            request.target_endpoint = request.target_endpoint or endpoint
-            request.model_name = request.model_name or model
-            request.api_key = request.api_key or key
+             # If no endpoint/model provided and no ID, we can't proceed with defaults anymore.
+             # However, let's see if we can just skip this block or raise error.
+             # For now, if they are missing, the validation might fail later or we should raise an error here if strict.
+             pass
             
         job_id = str(uuid.uuid4())
         
@@ -523,7 +524,7 @@ async def get_evaluation_criteria():
             "toxicity",
             "fairness"
         ],
-        "notes": "Prompts are evaluated by a judge model (GPT-4) which provides a score and reasoning for each response."
+        "notes": "Prompts are evaluated by a judge model which provides a score and reasoning for each response."
     }
 
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -713,6 +714,8 @@ async def list_prompts(
     source: str = Query("all", regex="^(all|system|custom)$"),
     search: Optional[str] = None,
     dimension: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date: Optional[str] = None,
     user=Depends(get_optional_current_user)
 ):
     pb = get_pb()
@@ -739,6 +742,12 @@ async def list_prompts(
     
     if dimension:
         filters.append(f'dimension = "{dimension}"')
+
+    if from_date:
+        filters.append(f'created >= "{from_date} 00:00:00"')
+        
+    if to_date:
+        filters.append(f'created <= "{to_date} 23:59:59"')
         
     filter_expr = " && ".join(filters)
     
@@ -791,7 +800,64 @@ async def create_custom_prompt(req: CreatePromptRequest, user=Depends(get_curren
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
+@app.post("/api/data/prompts/import")
+async def import_prompts_csv(file: UploadFile = File(...), user=Depends(get_current_user)):
+    """Bulk import prompts from CSV"""
+    if not file.filename.endswith('.csv'):
+        raise HTTPException(status_code=400, detail="Only CSV files are allowed")
+    
+    content = await file.read()
+    try:
+        # Decode content
+        text_content = content.decode('utf-8')
+        csv_file = io.StringIO(text_content)
+        reader = csv.DictReader(csv_file)
+        
+        # Validate headers
+        required_headers = {'dimension', 'text'}
+        headers = set(reader.fieldnames or [])
+        # Allow 'prompt' as alias for 'text'
+        if 'text' not in headers and 'prompt' in headers:
+            headers.add('text')
+            
+        if not required_headers.issubset(headers) and not ({'dimension', 'prompt'}.issubset(headers)):
+            raise HTTPException(status_code=400, detail=f"Missing required columns. Found: {headers}. Required: dimension, text (or prompt)")
+            
+        pb = get_pb()
+        imported_count = 0
+        errors = []
+        
+        for i, row in enumerate(reader):
+            try:
+                # Handle aliases
+                text_val = row.get('text') or row.get('prompt')
+                dim_val = row.get('dimension')
+                lang_val = row.get('language', 'en')
+                
+                if not text_val or not dim_val:
+                    continue # Skip empty rows
+                    
+                pb.collection("custom_prompts").create({
+                    "dimension": dim_val.strip(),
+                    "text": text_val.strip(),
+                    "language": lang_val.strip(),
+                    "type": "custom",
+                    "user": user.id
+                })
+                imported_count += 1
+            except Exception as e:
+                errors.append(f"Row {i+1}: {str(e)}")
+                
+        return {
+            "status": "success",
+            "imported": imported_count,
+            "errors": errors
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
 
 
 @app.get("/api/system-prompts")

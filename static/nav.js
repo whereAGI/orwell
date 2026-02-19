@@ -35,11 +35,11 @@ function renderNavbar(activePage) {
         .join('');
 
     header.innerHTML = `
-        <div style="display:flex;align-items:center;gap:10px;">
-            <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);"></div>
+        <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;">
+            <img src="/static/logo.png" alt="Orwell Logo" style="height:32px;width:auto;">
             <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell <span
                     style="color:var(--muted);font-weight:400;">/ ${pageTitle}</span></h1>
-        </div>
+        </a>
         <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
             ${navLinksHtml}
             <a href="/" id="criteriaLink" style="color:#9ec1ff;text-decoration:none">Evaluation Criteria</a>
