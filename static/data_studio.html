@@ -3,109 +3,10 @@
 
 <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orwell Data Studio</title>
+    <link rel="stylesheet" href="/static/global.css">
     <style>
-        :root {
-            --bg: #0b0b0f;
-            --card: #121218;
-            --muted: #a0a0b8;
-            --text: #f5f6f8;
-            --primary: #1f6feb;
-            --border: #252536;
-            --danger: #ef4444;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-            color: var(--text);
-            background: var(--bg);
-        }
-
-        .app {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 24px;
-        }
-
-        .card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 24px;
-        }
-
-        h1,
-        h2,
-        h3 {
-            margin-top: 0;
-        }
-
-        input,
-        select,
-        button {
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: #0e0e14;
-            color: var(--text);
-        }
-
-        input:focus,
-        select:focus {
-            outline: none;
-            border-color: #2e2e48;
-        }
-
-        button {
-            background: var(--primary);
-            border-color: var(--primary);
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        button.danger {
-            background: var(--danger);
-            border-color: var(--danger);
-        }
-
-        button.secondary {
-            background: #1f2937;
-            border-color: #1f2937;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 16px;
-        }
-
-        th,
-        td {
-            text-align: left;
-            padding: 12px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        th {
-            color: var(--muted);
-            font-size: 12px;
-            text-transform: uppercase;
-        }
-
-        .badge {
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-size: 11px;
-            background: #1f2937;
-            color: var(--muted);
-        }
-
         .badge.custom {
             background: #1f6feb22;
             color: #60a5fa;
@@ -115,19 +16,6 @@
             display: flex;
             gap: 12px;
             margin-bottom: 16px;
-        }
-
-        .modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: none;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
         }
     </style>
     <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
@@ -141,28 +29,16 @@
 </head>
 
 <body>
-    <header
-        style="display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);background:#0d0d13;">
-        <div style="display:flex;align-items:center;gap:10px;">
-            <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);"></div>
-            <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell <span
-                    style="color:var(--muted);font-weight:400;">/ data studio</span></h1>
-        </div>
-        <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
-            <a href="/"
-                style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Back
-                to Playground</a>
-            <a href="/prompt-studio"
-                style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Prompt
-                Studio</a>
-        </div>
-    </header>
+    <header></header>
 
-    <div class="app" style="max-width: 100%; padding: 24px;">
+    <div class="app-container">
         <div class="card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
                 <h2 style="margin:0">Manage Prompts</h2>
-                <button onclick="openAddModal()">+ Add New Prompt</button>
+                <div style="display:flex; gap:8px;">
+                    <button id="bulkDeleteBtn" class="danger" style="width: auto; display: none;" onclick="bulkDelete()">Delete Selected</button>
+                    <button onclick="openAddModal()" style="width: auto;">+ Add New Prompt</button>
+                </div>
             </div>
 
             <div class="filters" style="display:flex; justify-content: space-between; align-items: center;">
@@ -188,6 +64,7 @@
                 <table style="table-layout: fixed; width: 100%;">
                     <thead>
                         <tr>
+                            <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
                             <th style="width: 60px;">#</th>
                             <th style="width: 200px; resize: horizontal; overflow: hidden;">Dimension</th>
                             <th style="resize: horizontal; overflow: hidden;">Prompt Text</th>
@@ -207,9 +84,8 @@
                 <div style="color:var(--muted); font-size:14px;" id="pageInfo">
                     Showing 0-0 of 0
                 </div>
-                <div style="display:flex; gap:8px;">
-                    <button class="secondary" id="prevBtn">Previous</button>
-                    <button class="secondary" id="nextBtn">Next</button>
+                <div id="paginationContainer" style="display:flex; gap:8px;">
+                    <!-- Pagination will be injected here -->
                 </div>
             </div>
         </div>
@@ -242,6 +118,33 @@
         </div>
     </div>
 
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="card" style="width: 500px; margin: 0;">
+            <h3>Edit Prompt</h3>
+            <div style="display:grid;gap:12px;">
+                <div>
+                    <label style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Dimension</label>
+                    <input type="text" id="editDimension" placeholder="e.g. Culture, Ethics..." style="width:100%">
+                </div>
+                <div>
+                    <label style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Prompt
+                        Text</label>
+                    <textarea id="editText" rows="4" placeholder="Enter prompt text..."
+                        style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);"></textarea>
+                </div>
+                <div>
+                    <label style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Language</label>
+                    <input type="text" id="editLanguage" value="en" style="width:100%">
+                </div>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                    <button onclick="submitEditPrompt()">Save Changes</button>
+                    <button class="secondary" onclick="closeEditModal()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Delete Modal -->
     <div id="deleteModal" class="modal">
         <div class="card" style="width: 400px; margin: 0;">
@@ -254,6 +157,8 @@
         </div>
     </div>
 
+    <script src="/static/nav.js"></script>
+    <script>renderNavbar('data_studio');</script>
     <script src="/static/datastudio.js"></script>
 </body>
 

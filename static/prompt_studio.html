@@ -3,126 +3,10 @@
 
 <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Orwell Prompt Studio</title>
+    <link rel="stylesheet" href="/static/global.css">
     <style>
-        :root {
-            --bg: #0b0b0f;
-            --card: #121218;
-            --muted: #a0a0b8;
-            --text: #f5f6f8;
-            --primary: #1f6feb;
-            --border: #252536;
-            --danger: #ef4444;
-        }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-            color: var(--text);
-            background: var(--bg);
-        }
-
-        .app {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 24px;
-        }
-
-        .card {
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 24px;
-        }
-
-        h1,
-        h2,
-        h3 {
-            margin-top: 0;
-        }
-
-        input,
-        select,
-        button {
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: #0e0e14;
-            color: var(--text);
-        }
-
-        input:focus,
-        select:focus {
-            outline: none;
-            border-color: #2e2e48;
-        }
-
-        button {
-            background: var(--primary);
-            border-color: var(--primary);
-            font-weight: 600;
-            cursor: pointer;
-        }
-
-        button.danger {
-            background: var(--danger);
-            border-color: var(--danger);
-        }
-
-        button.secondary {
-            background: #1f2937;
-            border-color: #1f2937;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 16px;
-        }
-
-        th,
-        td {
-            text-align: left;
-            padding: 12px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        th {
-            color: var(--muted);
-            font-size: 12px;
-            text-transform: uppercase;
-        }
-
-        .badge {
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-size: 11px;
-            background: #1f2937;
-            color: var(--muted);
-        }
-
-        .modal {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.7);
-            display: none;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-content.large {
-            width: 800px;
-            max-width: 95vw;
-        }
-
-        .modal.active {
-            display: flex;
-        }
     </style>
     <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
     <script src="/static/auth.js"></script>
@@ -135,28 +19,13 @@
 </head>
 
 <body>
-    <header
-        style="display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);background:#0d0d13;">
-        <div style="display:flex;align-items:center;gap:10px;">
-            <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);"></div>
-            <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell <span
-                    style="color:var(--muted);font-weight:400;">/ prompt studio</span></h1>
-        </div>
-        <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
-            <a href="/"
-                style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Back
-                to Playground</a>
-            <a href="/studio"
-                style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Data
-                Studio</a>
-        </div>
-    </header>
+    <header></header>
 
-    <div class="app" style="max-width: 100%; padding: 24px;">
+    <div class="app-container">
         <div class="card">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
                 <h2 style="margin:0">Manage System Prompts</h2>
-                <button onclick="openAddModal()">+ Add New System Prompt</button>
+                <button onclick="openAddModal()" style="width: auto;">+ Add New System Prompt</button>
             </div>
 
             <div style="overflow-x: auto;">
@@ -212,6 +81,8 @@
         </div>
     </div>
 
+    <script src="/static/nav.js"></script>
+    <script>renderNavbar('prompt_studio');</script>
     <script src="/static/promptstudio.js"></script>
 </body>
 

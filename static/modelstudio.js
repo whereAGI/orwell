@@ -55,9 +55,11 @@ function renderModels(models) {
                 <td style="padding:12px;"><span class="pill" style="background:#2d3748; color:#a0aec0; padding:2px 8px; border-radius:12px; font-size:12px;">${m.provider}</span></td>
                 <td style="padding:12px; font-family:monospace; color:var(--primary);">${m.model_key}</td>
                 <td style="padding:12px; font-size:12px; color:var(--muted);">${m.base_url}</td>
-                <td style="padding:12px; text-align:right;">
-                    <button class="secondary" style="padding:4px 8px; font-size:12px; margin-right:8px;" onclick='editModel(${JSON.stringify(m)})'>Edit</button>
-                    <button class="danger" style="padding:4px 8px; font-size:12px;" onclick="deleteModel('${m.id}')">Delete</button>
+                <td style="padding:12px; text-align:right; white-space:nowrap;">
+                    <div style="display:flex; gap:8px; justify-content:flex-end;">
+                        <button class="secondary" style="padding:4px 8px; font-size:12px; width:auto;" onclick='editModel(${JSON.stringify(m)})'>Edit</button>
+                        <button class="danger" style="padding:4px 8px; font-size:12px; width:auto;" onclick="deleteModel('${m.id}')">Delete</button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -81,7 +83,22 @@ function openModal() {
     document.getElementById('modelProvider').value = 'openai';
     document.getElementById('modelKeyInput').value = '';
     document.getElementById('modelApiKey').value = '';
+    document.getElementById('modelSystemPrompt').value = '';
     
+    // For judge models, fetch and set the default system prompt
+    if (currentTab === 'judge') {
+        fetch('/api/models/judge/default-prompt')
+            .then(res => res.json())
+            .then(data => {
+                // Check if user hasn't typed anything yet (though it should be empty since we just cleared it)
+                if (!document.getElementById('modelSystemPrompt').value) {
+                    document.getElementById('modelSystemPrompt').value = data.prompt;
+                }
+            })
+            .catch(err => console.error('Failed to load default judge prompt', err));
+    }
+
+    toggleJudgeFields();
     updateProviderDefaults();
 }
 
@@ -96,6 +113,24 @@ function editModel(model) {
     document.getElementById('modelProvider').value = model.provider;
     document.getElementById('modelBaseUrl').value = model.base_url;
     document.getElementById('modelApiKey').value = model.api_key || '';
+    
+    // Set existing prompt first
+    document.getElementById('modelSystemPrompt').value = model.system_prompt || '';
+
+    // If it's a judge model and has no prompt, fetch default
+    if (model.category === 'judge' && !model.system_prompt) {
+         fetch('/api/models/judge/default-prompt')
+            .then(res => res.json())
+            .then(data => {
+                // Only set if still empty (race condition check)
+                if (!document.getElementById('modelSystemPrompt').value) {
+                     document.getElementById('modelSystemPrompt').value = data.prompt;
+                }
+            })
+            .catch(err => console.error('Failed to load default judge prompt', err));
+    }
+    
+    toggleJudgeFields();
     
     // Trigger provider update to show correct key input
     updateProviderDefaults().then(() => {
@@ -123,6 +158,15 @@ function closeModal() {
     document.getElementById('modelKeyInput').value = '';
     document.getElementById('modelKeySelect').innerHTML = '<option value="" disabled selected>Select a local model...</option>';
     document.getElementById('modelApiKey').value = '';
+    document.getElementById('modelSystemPrompt').value = '';
+}
+
+function toggleJudgeFields() {
+    const category = document.getElementById('modelCategory').value;
+    const container = document.getElementById('judgeSystemPromptContainer');
+    if (container) {
+        container.style.display = category === 'judge' ? 'block' : 'none';
+    }
 }
 
 async function updateProviderDefaults() {
@@ -219,7 +263,8 @@ async function saveModel() {
         provider: provider,
         base_url: document.getElementById('modelBaseUrl').value,
         model_key: modelKey,
-        api_key: document.getElementById('modelApiKey').value || null
+        api_key: document.getElementById('modelApiKey').value || null,
+        system_prompt: document.getElementById('modelSystemPrompt').value || null
     };
     
     if (!model.name || !model.base_url || !model.model_key) {
@@ -254,14 +299,30 @@ async function saveModel() {
     }
 }
 
-async function deleteModel(id) {
-    if (!confirm('Are you sure you want to delete this model?')) return;
-    
+let deleteTargetId = null;
+
+function openDeleteModal(id) {
+    deleteTargetId = id;
+    document.getElementById('deleteModal').style.display = 'flex';
+    document.getElementById('confirmDeleteBtn').onclick = () => confirmDeleteModel(id);
+}
+
+function closeDeleteModal() {
+    document.getElementById('deleteModal').style.display = 'none';
+    deleteTargetId = null;
+}
+
+async function confirmDeleteModel(id) {
     try {
         const response = await fetch(`/api/models/${id}`, { method: 'DELETE' });
         if (!response.ok) throw new Error(await response.text());
+        closeDeleteModal();
         loadModels();
     } catch (err) {
         alert('Failed to delete model: ' + err.message);
     }
+}
+
+async function deleteModel(id) {
+    openDeleteModal(id);
 }

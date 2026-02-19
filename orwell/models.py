@@ -18,6 +18,7 @@ class ModelConfig(BaseModel):
     base_url: str
     model_key: str
     api_key: Optional[str] = None
+    system_prompt: Optional[str] = None
 
 class AuditRequest(BaseModel):
     # Support selecting stored models

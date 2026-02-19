@@ -11,8 +11,77 @@ from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConf
 from .config import get_default_target
 from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
+from .judge import DEFAULT_JUDGE_SYSTEM_PROMPT
 from .pb_client import get_pb
 from .log_store import get_logs
+import httpx
+
+async def verify_model_connection(provider: str, base_url: str, model_key: str, api_key: Optional[str]):
+    """
+    Verifies that the model is reachable and working.
+    Raises HTTPException if verification fails.
+    """
+    # For Ollama, we might be able to check tags, but generally we want to check if the model is runnable.
+    # We'll try a very simple completion.
+    
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    
+    # Payload for a minimal check
+    payload = {
+        "model": model_key,
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 1
+    }
+    
+    # Adjust for provider quirks if necessary
+    # OpenAI, OpenRouter, and standard Ollama v1/chat/completions all support this format.
+    
+    # Ensure URL ends correctly for chat completions if not provided by user?
+    # The UI populates base_url. If it's just the base (e.g. .../v1), we might need to append /chat/completions?
+    # The existing AuditEngine does: url = f"{target_endpoint}/chat/completions" if not ending with it?
+    # Let's align with AuditEngine logic or just assume the user provided the base URL (e.g. .../v1).
+    # The UI defaults: 
+    # OpenAI: https://api.openai.com/v1
+    # OpenRouter: https://openrouter.ai/api/v1
+    # Ollama: http://localhost:11434/v1/chat/completions (Wait, the UI sets the FULL path for Ollama?)
+    # Let's check the UI code again.
+    # UI says: Ollama -> http://localhost:11434/v1/chat/completions
+    # OpenAI -> https://api.openai.com/v1
+    
+    # If the URL ends with /chat/completions, use it as is.
+    # If it ends with /v1, append /chat/completions.
+    
+    target_url = base_url
+    if not target_url.endswith("/chat/completions"):
+        if target_url.endswith("/"):
+            target_url += "chat/completions"
+        else:
+            target_url += "/chat/completions"
+            
+    print(f"Verifying connection to {target_url} for model {model_key}...")
+    
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            resp = await client.post(target_url, headers=headers, json=payload)
+            if resp.status_code != 200:
+                error_detail = resp.text[:200] # Truncate
+                raise ValueError(f"Status {resp.status_code}: {error_detail}")
+                
+            # Parse response to ensure it's valid JSON and looks like a chat completion
+            data = resp.json()
+            if "choices" not in data and "error" in data:
+                 raise ValueError(f"API Error: {data['error']}")
+                 
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=400, detail=f"Connection failed: {str(e)}")
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Model rejected request: {str(e)}")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Verification error: {str(e)}")
 
 class CreatePromptRequest(BaseModel):
     dimension: str
@@ -63,7 +132,8 @@ async def list_models(category: Optional[str] = None):
                 provider=r.provider,
                 base_url=r.base_url,
                 model_key=r.model_key,
-                api_key=r.api_key 
+                api_key=r.api_key,
+                system_prompt=getattr(r, "system_prompt", None)
             ) for r in records
         ]
     except Exception as e:
@@ -72,6 +142,9 @@ async def list_models(category: Optional[str] = None):
 
 @app.post("/api/models", response_model=ModelConfig)
 async def create_model(config: ModelConfig):
+    # Verify connection before creating
+    await verify_model_connection(config.provider, config.base_url, config.model_key, config.api_key)
+
     pb = get_pb()
     try:
         record = pb.collection("models").create({
@@ -96,6 +169,9 @@ async def create_model(config: ModelConfig):
 
 @app.put("/api/models/{model_id}", response_model=ModelConfig)
 async def update_model(model_id: str, config: ModelConfig):
+    # Verify connection before updating
+    await verify_model_connection(config.provider, config.base_url, config.model_key, config.api_key)
+
     pb = get_pb()
     try:
         # Update existing record
@@ -105,7 +181,8 @@ async def update_model(model_id: str, config: ModelConfig):
             "provider": config.provider,
             "base_url": config.base_url,
             "model_key": config.model_key,
-            "api_key": config.api_key
+            "api_key": config.api_key,
+            "system_prompt": config.system_prompt
         })
         return config
     except Exception as e:
@@ -119,6 +196,10 @@ async def delete_model(model_id: str):
         return {"success": True}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
+
+@app.get("/api/models/judge/default-prompt")
+async def get_default_judge_prompt():
+    return {"prompt": DEFAULT_JUDGE_SYSTEM_PROMPT}
 
 @app.post("/api/audit/create", response_model=JobResponse)
 async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks):
@@ -517,6 +598,112 @@ async def get_dimensions(user=Depends(get_optional_current_user)):
             
     return {"dimensions": sorted(list(dims))}
 
+@app.get("/api/data/dimensions")
+async def list_dimensions():
+    # Fetch unique dimensions directly from SQLite for performance
+    try:
+        import aiosqlite
+        from .config import get_db_path # Assuming get_db_path is available or define it
+        
+        # Determine DB path (usually pb_data/data.db relative to CWD)
+        db_path = "pb_data/data.db"
+        
+        async with aiosqlite.connect(db_path) as db:
+            async with db.execute("SELECT DISTINCT dimension FROM custom_prompts WHERE dimension IS NOT NULL AND dimension != '' ORDER BY dimension") as cursor:
+                rows = await cursor.fetchall()
+                dimensions = [row[0] for row in rows]
+                return dimensions
+    except Exception as e:
+        print(f"Error fetching dimensions from SQLite: {e}")
+        # Fallback to standard list if DB access fails
+        return [
+            "Performance Orientation",
+            "Power Distance",
+            "Institutional Collectivism",
+            "In-Group Collectivism",
+            "Gender Differentiation/Egalitarianism",
+            "Uncertainty Avoidance",
+            "Assertiveness",
+            "Future Orientation",
+            "Humane Orientation"
+        ]
+
+@app.delete("/api/data/prompts/bulk")
+async def bulk_delete_prompts(ids: List[str], user=Depends(get_current_user)):
+    pb = get_pb()
+    deleted_count = 0
+    errors = []
+    
+    for id in ids:
+        try:
+            # Verify ownership if it's a custom prompt with a user
+            # If system prompt, we allow deletion if user is authenticated (assuming admin/authorized)
+            record = pb.collection("custom_prompts").get_one(id)
+            
+            # Logic:
+            # 1. If record.type == "custom" and record.user != user.id -> Forbidden
+            # 2. If record.type == "system" -> Allowed (authenticated user)
+            # 3. If record.type == "custom" and record.user == user.id -> Allowed
+            
+            if record.type == "custom" and record.user and record.user != user.id:
+                 errors.append(f"Not authorized to delete prompt {id}")
+                 continue
+                 
+            pb.collection("custom_prompts").delete(id)
+            deleted_count += 1
+        except Exception as e:
+            errors.append(f"Error deleting prompt {id}: {str(e)}")
+            
+    return {"deleted": deleted_count, "errors": errors}
+
+@app.delete("/api/data/prompts/{id}")
+async def delete_custom_prompt(id: str, user=Depends(get_current_user)):
+    pb = get_pb()
+    try:
+        # Verify ownership
+        record = pb.collection("custom_prompts").get_one(id)
+        
+        # Allow if system prompt or owned custom prompt
+        if record.type == "custom" and record.user and record.user != user.id:
+             raise HTTPException(status_code=403, detail="Not authorized to delete this prompt")
+             
+        pb.collection("custom_prompts").delete(id)
+        return {"status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class UpdatePromptRequest(BaseModel):
+    dimension: Optional[str] = None
+    text: Optional[str] = None
+    language: Optional[str] = None
+
+@app.patch("/api/data/prompts/{id}")
+async def update_custom_prompt(id: str, req: UpdatePromptRequest, user=Depends(get_current_user)):
+    pb = get_pb()
+    try:
+        record = pb.collection("custom_prompts").get_one(id)
+        
+        # Allow if system prompt or owned custom prompt
+        if record.type == "custom" and record.user and record.user != user.id:
+             raise HTTPException(status_code=403, detail="Not authorized to edit this prompt")
+        
+        data = {}
+        if req.dimension is not None:
+            data["dimension"] = req.dimension
+        if req.text is not None:
+            data["text"] = req.text
+        if req.language is not None:
+            data["language"] = req.language
+            
+        if data:
+            pb.collection("custom_prompts").update(id, data)
+            
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Data Studio Endpoints
 # Data Studio Endpoints
 @app.get("/api/data/prompts")
@@ -524,6 +711,8 @@ async def list_prompts(
     page: int = Query(1, ge=1), 
     per_page: int = Query(50, ge=1, le=100),
     source: str = Query("all", regex="^(all|system|custom)$"),
+    search: Optional[str] = None,
+    dimension: Optional[str] = None,
     user=Depends(get_optional_current_user)
 ):
     pb = get_pb()
@@ -543,6 +732,13 @@ async def list_prompts(
         else:
             filters.append('type = "system"')
 
+    if search:
+        # Escape quotes in search term to prevent injection/errors
+        safe_search = search.replace('"', '\\"')
+        filters.append(f'text ~ "{safe_search}"')
+    
+    if dimension:
+        filters.append(f'dimension = "{dimension}"')
         
     filter_expr = " && ".join(filters)
     
@@ -595,19 +791,8 @@ async def create_custom_prompt(req: CreatePromptRequest, user=Depends(get_curren
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/api/data/prompts/{id}")
-async def delete_custom_prompt(id: str, user=Depends(get_current_user)):
-    pb = get_pb()
-    try:
-        # Verify ownership
-        record = pb.collection("custom_prompts").get_one(id)
-        if record.user != user.id:
-             raise HTTPException(status_code=403, detail="Not authorized to delete this prompt")
-             
-        pb.collection("custom_prompts").delete(id)
-        return {"status": "success"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+
+
 
 @app.get("/api/system-prompts")
 async def list_system_prompts(user=Depends(get_optional_current_user)):

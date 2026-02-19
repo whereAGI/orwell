@@ -39,7 +39,7 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
 
   const request = {
     target_model_id: (targetModelId && targetModelId !== 'custom') ? targetModelId : null,
-    judge_model_id: (judgeModelId && judgeModelId !== 'default') ? judgeModelId : null,
+    judge_model_id: (judgeModelId) ? judgeModelId : null,
     
     // Only send these if custom is selected or needed as fallback
     target_endpoint: (targetModelId === 'custom') ? (endpoint || null) : null,
@@ -48,7 +48,7 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     
     sample_size: parseInt(document.getElementById('sampleSize').value),
     language: document.getElementById('language').value,
-    judge_model: 'gpt-4o', // Default if no judge ID
+    judge_model: 'gpt-4o', // Fallback only if no ID provided
     dimensions: selectedDimensions.length ? selectedDimensions : null,
     system_prompt: sysPrompt
   };
@@ -277,30 +277,51 @@ function renderMarkdown(text) {
   let s = String(text || '');
   s = s.replace(/\r\n/g, '\n');
   s = escapeHtml(s);
+  
+  // Format headers (ensure they don't have too much spacing)
+  s = s.replace(/^######\s+(.*)$/gm, '<h6 style="margin:12px 0 8px;font-size:13px">$1</h6>');
+  s = s.replace(/^#####\s+(.*)$/gm, '<h5 style="margin:14px 0 8px;font-size:14px">$1</h5>');
+  s = s.replace(/^####\s+(.*)$/gm, '<h4 style="margin:16px 0 8px;font-size:15px">$1</h4>');
+  s = s.replace(/^###\s+(.*)$/gm, '<h3 style="margin:18px 0 10px;font-size:16px">$1</h3>');
+  s = s.replace(/^##\s+(.*)$/gm, '<h2 style="margin:20px 0 12px;font-size:18px">$1</h2>');
+  s = s.replace(/^#\s+(.*)$/gm, '<h1 style="margin:24px 0 16px;font-size:20px">$1</h1>');
+  
+  // Code blocks
   s = s.replace(/```([\s\S]*?)```/g, function (_, code) {
-    return `<pre><code>${code}</code></pre>`;
+    return `<pre style="background:#1a1a20;padding:12px;border-radius:6px;overflow-x:auto"><code>${code}</code></pre>`;
   });
-  s = s.replace(/^######\s+(.*)$/gm, '<h6>$1</h6>');
-  s = s.replace(/^#####\s+(.*)$/gm, '<h5>$1</h5>');
-  s = s.replace(/^####\s+(.*)$/gm, '<h4>$1</h4>');
-  s = s.replace(/^###\s+(.*)$/gm, '<h3>$1</h3>');
-  s = s.replace(/^##\s+(.*)$/gm, '<h2>$1</h2>');
-  s = s.replace(/^#\s+(.*)$/gm, '<h1>$1</h1>');
-  s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Inline code
+  s = s.replace(/`([^`]+)`/g, '<code style="background:#1a1a20;padding:2px 4px;border-radius:4px;font-family:monospace">$1</code>');
+  
+  // Bold/Italic
+  s = s.replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fff">$1</strong>');
   s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
-  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1<\/a>');
-  s = s.replace(/^>\s+(.*)$/gm, '<blockquote>$1</blockquote>');
-  s = s.replace(/(^|\n)(- .+(?:\n- .+)*)/g, function (_, start, block) {
-    const items = block.split('\n').map(l => l.replace(/^[-]\s+/, '').trim()).map(it => `<li>${it}</li>`).join('');
-    return start + `<ul>${items}</ul>`;
-  });
-  s = s.replace(/(^|\n)((?:\d+\. .+)(?:\n\d+\. .+)*)/g, function (_, start, block) {
-    const items = block.split('\n').map(l => l.replace(/^\d+\.\s+/, '').trim()).map(it => `<li>${it}</li>`).join('');
-    return start + `<ol>${items}</ol>`;
-  });
+  
+  // Links
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary)">$1<\/a>');
+  
+  // Blockquotes
+  s = s.replace(/^>\s+(.*)$/gm, '<blockquote style="border-left:3px solid var(--border);margin:0;padding-left:12px;color:var(--muted)">$1</blockquote>');
+  
+  // Lists (Improved regex to handle multiline lists better)
+  // We'll do a simple pass for lists to avoid complex nested logic for now
+  // Convert bullet points
+  s = s.replace(/^\s*-\s+(.*)$/gm, '<li>$1</li>');
+  // Wrap consecutive lis in ul (simple heuristic)
+  s = s.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+  
+  // Convert numbered lists
+  s = s.replace(/^\s*\d+\.\s+(.*)$/gm, '<li value="1">$1</li>'); // Value 1 is dummy, browser handles order if ol
+  // Wrap consecutive numbered lis (that we just made) in ol
+  // Note: This regex might overlap with ul if not careful, but usually they are distinct blocks.
+  // Actually, let's keep the original approach but refined
+  
+  // Clean up newlines: Double newlines -> paragraph breaks
+  s = s.replace(/\n\n/g, '<div style="height:12px"></div>');
   s = s.replace(/\n/g, '<br>');
-  return `<div style="white-space:normal;line-height:1.5">${s}</div>`;
+  
+  return `<div style="white-space:normal;line-height:1.6;font-size:14px;color:#d1d5db">${s}</div>`;
 }
 
 window.toggleAcc = function (id) {
@@ -360,6 +381,12 @@ async function loadAuditList() {
         await loadReport();
       });
     });
+
+    // Auto-select first audit if none selected (e.g. on page load)
+    if (!currentJobId && audits.length > 0) {
+        const first = container.querySelector('.audit-item');
+        if (first) first.click();
+    }
   } catch (err) {
     console.error('Error loading audits:', err);
   }
@@ -372,19 +399,38 @@ document.getElementById('deleteBtn').addEventListener('click', async () => {
     alert('Hold Shift and click items to select for deletion.');
     return;
   }
-  if (!confirm('Delete ' + ids.length + ' audits? This cannot be undone.')) return;
-  try {
-    const url = '/api/audits?' + ids.map(id => 'job_ids=' + encodeURIComponent(id)).join('&');
-    const res = await fetch(url, { method: 'DELETE' });
-    if (!res.ok) throw new Error(await res.text());
-    await loadAuditList();
-    document.getElementById('qaAccordion').innerHTML = '';
-    document.getElementById('report').style.display = 'none';
-    document.getElementById('status').style.display = 'none';
-  } catch (err) {
-    alert('Delete failed: ' + err);
-  }
+  
+  // Show custom modal
+  const modal = document.getElementById('deleteModal');
+  const msg = document.getElementById('deleteMessage');
+  msg.textContent = `Are you sure you want to delete ${ids.length} audit${ids.length > 1 ? 's' : ''}? This action cannot be undone.`;
+  modal.style.display = 'flex';
+  
+  // Setup confirm button
+  const confirmBtn = document.getElementById('confirmDeleteBtn');
+  // Remove old listeners to avoid stacking
+  const newBtn = confirmBtn.cloneNode(true);
+  confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+  
+  newBtn.addEventListener('click', async () => {
+    try {
+      const url = '/api/audits?' + ids.map(id => 'job_ids=' + encodeURIComponent(id)).join('&');
+      const res = await fetch(url, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      await loadAuditList();
+      document.getElementById('qaAccordion').innerHTML = '';
+      document.getElementById('report').style.display = 'none';
+      document.getElementById('status').style.display = 'none';
+      closeDeleteModal();
+    } catch (err) {
+      alert('Delete failed: ' + err);
+    }
+  });
 });
+
+window.closeDeleteModal = function() {
+  document.getElementById('deleteModal').style.display = 'none';
+}
 
 async function initDimensions() {
   try {
@@ -531,7 +577,7 @@ async function loadModels() {
         
         // Clear existing (except default options)
         targetSelect.innerHTML = '<option value="custom">Custom (Enter manually)</option>';
-        judgeSelect.innerHTML = '<option value="default">System Default (GPT-4o)</option>';
+        judgeSelect.innerHTML = '';
         
         models.forEach(m => {
             const option = document.createElement('option');
@@ -544,6 +590,19 @@ async function loadModels() {
                 judgeSelect.appendChild(option);
             }
         });
+        
+        // Handle empty states - ensure at least one option is selected or placeholder shown
+        if (judgeSelect.options.length === 0) {
+             const ph = document.createElement('option');
+             ph.value = "";
+             ph.textContent = "No judge models available";
+             ph.disabled = true;
+             ph.selected = true;
+             judgeSelect.appendChild(ph);
+        } else {
+             // Select first available judge by default
+             judgeSelect.selectedIndex = 0;
+        }
         
         // Setup change handler
         targetSelect.addEventListener('change', toggleCustomFields);
@@ -574,7 +633,7 @@ const toggleBtn = document.getElementById('toggleTerminalBtn');
 const clearBtn = document.getElementById('clearLogsBtn');
 const logStatus = document.getElementById('logStatus');
 
-let isTerminalCollapsed = false;
+let isTerminalCollapsed = true;
 let lastLogTimestamp = null;
 
 if (toggleBtn) {

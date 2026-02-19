@@ -3,53 +3,51 @@
 
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Orwell Audit</title>
+  <link rel="stylesheet" href="/static/global.css">
   <style>
-    :root {
-      --bg: #0b0b0f;
-      --card: #121218;
-      --muted: #a0a0b8;
-      --text: #f5f6f8;
-      --primary: #1f6feb;
-      --border: #252536;
-      --success: #22c55e;
-      --warning: #f59e0b;
-      --danger: #ef4444;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-      color: var(--text);
-      background: var(--bg);
-    }
-
+    /* Page Specific Styles */
     .app {
       display: grid;
       grid-template-columns: 280px 1fr 340px;
-      min-height: 100vh;
+      /* Use flex layout for height */
+      flex: 1;
+      height: 100%; 
+      width: 100%;
+      overflow: hidden; /* Prevent body scroll */
     }
 
     .sidebar {
       border-right: 1px solid var(--border);
       background: #0d0d13;
       padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 320px; /* Space for terminal (expanded) */
     }
 
     .rightbar {
       border-left: 1px solid var(--border);
       background: #0d0d13;
       padding: 16px;
+      overflow-y: auto;
+      padding-bottom: 320px; /* Space for terminal (expanded) */
+    }
+
+    .content {
+      padding: 24px;
+      overflow-y: auto;
+      padding-bottom: 320px; /* Space for terminal (expanded) */
     }
 
     .sidebar h2 {
-      font-size: 18px;
+      font-size: 16px;
       margin: 0 0 12px;
       color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 600;
     }
 
     .audit-list {
@@ -64,6 +62,7 @@
       border-radius: 8px;
       background: var(--card);
       cursor: pointer;
+      user-select: none;
     }
 
     .audit-item:hover {
@@ -72,14 +71,6 @@
 
     .content {
       padding: 24px;
-    }
-
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 16px;
     }
 
     .grid {
@@ -101,28 +92,6 @@
       margin-bottom: 6px;
     }
 
-    input,
-    button {
-      width: 100%;
-      padding: 10px;
-      border-radius: 8px;
-      border: 1px solid var(--border);
-      background: #0e0e14;
-      color: var(--text);
-    }
-
-    input:focus {
-      outline: none;
-      border-color: #2e2e48;
-    }
-
-    button {
-      background: var(--primary);
-      border-color: var(--primary);
-      font-weight: 600;
-      cursor: pointer;
-    }
-
     .progress {
       width: 100%;
       background: #0f1320;
@@ -138,16 +107,6 @@
       color: #fff;
       text-align: center;
       padding: 6px 0;
-    }
-
-    .pill {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 999px;
-      font-size: 12px;
-      border: 1px solid var(--border);
-      background: #0e1320;
-      color: var(--muted);
     }
 
     .risk {
@@ -166,11 +125,6 @@
 
     .risk.high {
       background: var(--danger);
-    }
-
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
     }
 
     .qa-item {
@@ -215,6 +169,10 @@
     }
     .terminal-panel.collapsed {
         height: 40px !important;
+        overflow: hidden; /* Ensure content doesn't show */
+    }
+    .terminal-panel.collapsed .terminal-content {
+        display: none;
     }
     .terminal-header {
       padding: 0 16px;
@@ -252,6 +210,7 @@
     .type-request { color: #c084fc; }
     .type-response { color: #f472b6; }
     .type-debug { color: #9ca3af; }
+    .type-thought { color: #818cf8; font-style: italic; border-left: 2px solid #818cf8; padding-left: 8px; }
 
     .json-block {
         background: #15151a;
@@ -266,29 +225,7 @@
 </head>
 
 <body>
-  <header
-    style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);background:#0d0d13;">
-    <div style="display:flex;align-items:center;gap:10px;">
-      <div style="width:8px;height:8px;border-radius:50%;background:var(--primary);"></div>
-      <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell <span
-          style="color:var(--muted);font-weight:400;">/ playground</span></h1>
-    </div>
-    <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
-      <a href="/studio"
-        style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Data
-        Studio</a>
-      <a href="/prompt-studio"
-        style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Prompt
-        Studio</a>
-      <a href="/model-studio"
-        style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">Model
-        Studio</a>
-      <a href="#" id="criteriaLink" style="color:#9ec1ff;text-decoration:none">Evaluation Criteria</a>
-      <span id="userEmail" style="color:var(--muted);"></span>
-      <button id="logoutBtn"
-        style="width:auto;padding:4px 8px;background:#ef4444;border-color:#ef4444;font-size:12px;">Logout</button>
-    </div>
-  </header>
+  <header></header>
   <div class="app">
     <aside class="sidebar">
       <h2>Previous Audits</h2>
@@ -310,16 +247,16 @@
         <textarea id="auditNotes" style="width:100%; height:80px; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px; resize:vertical;" placeholder="Add notes here..."></textarea>
       </div>
 
-      <div class="card">
-        <h3 style="margin:0 0 8px">Prompts & Responses</h3>
-        <div id="qaAccordion"></div>
-      </div>
-
       <div class="grid">
         <div class="card" id="report" style="display:none;">
           <h3 style="margin:0 0 8px">Audit Report</h3>
           <div id="reportContent"></div>
         </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 8px">Prompts & Responses</h3>
+        <div id="qaAccordion"></div>
       </div>
     </main>
     <aside class="rightbar">
@@ -375,7 +312,7 @@
           <label>Language</label>
           <input id="language" type="text" value="en" />
         </div>
-        <div style="display:flex;gap:8px;margin-top:24px"><button id="startBtn">Start Audit</button></div>
+        <div style="margin-top:24px"><button id="startBtn">Start Audit</button></div>
         <div id="status" style="margin-top:12px;display:none;">
           <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;">
             <div class="pill">Status: <span id="statusText">pending</span></div>
@@ -412,7 +349,7 @@
   </div>
 
   <!-- Terminal Panel -->
-  <div id="terminal" class="terminal-panel">
+  <div id="terminal" class="terminal-panel collapsed">
     <div class="terminal-header" id="terminalHeader">
       <div style="display:flex;align-items:center;gap:12px">
           <span style="font-weight:bold;color:#fff">TERMINAL</span>
@@ -420,11 +357,23 @@
       </div>
       <div style="display:flex;gap:8px">
           <button id="clearLogsBtn" style="width:auto;padding:2px 8px;font-size:10px;background:#333;border:none;">CLEAR</button>
-          <button id="toggleTerminalBtn" style="width:auto;padding:2px 8px;font-size:10px;background:#333;border:none;">_</button>
+          <button id="toggleTerminalBtn" style="width:auto;padding:2px 8px;font-size:10px;background:#333;border:none;">[]</button>
       </div>
     </div>
     <div id="terminalContent" class="terminal-content">
         <div style="color:#666;font-style:italic;padding:12px">Waiting for logs...</div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div id="deleteModal" class="modal">
+    <div class="card" style="width: 400px; margin: 0;">
+      <h3 style="color:var(--danger)">Confirm Deletion</h3>
+      <p id="deleteMessage">Are you sure you want to delete these audits? This action cannot be undone.</p>
+      <div style="display:flex;gap:8px;margin-top:16px;">
+        <button class="danger" id="confirmDeleteBtn">Delete</button>
+        <button class="secondary" onclick="closeDeleteModal()">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -436,6 +385,8 @@
       window.location.href = '/login';
     }
   </script>
+  <script src="/static/nav.js"></script>
+  <script>renderNavbar('playground');</script>
   <script src="/static/dashboard.js"></script>
 </body>
 

@@ -1,6 +1,7 @@
 import httpx
 import time
 import json
+import re
 from typing import Dict, List, Optional
 import uuid
 import os
@@ -29,6 +30,25 @@ class AuditEngine:
                 "progress": 0.0,
                 "message": "Starting audit..."
             })
+
+            # 0. Connectivity Check
+            add_log(job_id, "info", "Verifying target model connectivity...", {"model": request.model_name})
+            try:
+                # Send a very short prompt to check if the model is responsive
+                # Use a simple prompt that doesn't require complex reasoning
+                check_resp = await self._call_target(request, "Hi", job_id, is_check=True)
+                if check_resp.startswith("Error:"):
+                    raise Exception(check_resp)
+                add_log(job_id, "success", "Target model connected successfully")
+            except Exception as e:
+                err_msg = f"Target model connectivity check failed: {e}"
+                add_log(job_id, "error", err_msg)
+                pb.collection("audit_jobs").update(job_record.id, {
+                    "status": JobStatus.FAILED.value,
+                    "error_message": "Target model unreachable. Is Ollama running?",
+                    "message": "Audit failed: Target model unreachable"
+                })
+                return
 
             # 1. Generate Prompts
             add_log(job_id, "info", "Generating prompts via LLM-GLOBE", {"language": request.language, "dimensions": request.dimensions})
@@ -67,6 +87,7 @@ class AuditEngine:
             judge_model_name = request.judge_model
             judge_api_key = request.api_key # Fallback to same key if not specified (legacy behavior)
             judge_base_url = None
+            judge_system_prompt = None
             
             if request.judge_model_id:
                 try:
@@ -76,13 +97,15 @@ class AuditEngine:
                         judge_api_key = jm.api_key
                     if jm.base_url:
                         judge_base_url = jm.base_url
+                    if hasattr(jm, "system_prompt"):
+                        judge_system_prompt = jm.system_prompt
                     add_log(job_id, "info", f"Resolved Judge Model: {jm.name}", {"provider": jm.provider, "model": judge_model_name})
                 except Exception as e:
                     err_msg = f"Error resolving judge model {request.judge_model_id}: {e}"
                     print(err_msg)
                     add_log(job_id, "error", err_msg)
 
-            judge = JudgeClient(model=judge_model_name, api_key=judge_api_key, base_url=judge_base_url)
+            judge = JudgeClient(model=judge_model_name, api_key=judge_api_key, base_url=judge_base_url, system_prompt=judge_system_prompt)
             
             for i, p in enumerate(prompts):
                 # Check for abort
@@ -217,7 +240,7 @@ class AuditEngine:
             except:
                 pass
 
-    async def _call_target(self, request: AuditRequest, prompt_text: str, job_id: str = None) -> str:
+    async def _call_target(self, request: AuditRequest, prompt_text: str, job_id: str = None, is_check: bool = False) -> str:
         """
         Calls the target LLM endpoint.
         """
@@ -247,6 +270,9 @@ class AuditEngine:
             "messages": messages,
             "temperature": 0.7
         }
+        
+        if is_check:
+            payload["max_tokens"] = 5 # Keep it very short for connectivity check
 
         # Increase timeout for local models that might be slow (like Ollama loading models)
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -265,7 +291,8 @@ class AuditEngine:
                         url = f"{url}/chat/completions"
                 
                 if job_id:
-                    add_log(job_id, "request", f"Target LLM Request: {request.model_name}", {
+                    log_type = "debug" if is_check else "request"
+                    add_log(job_id, log_type, f"Target LLM Request{' (Check)' if is_check else ''}: {request.model_name}", {
                         "url": url,
                         "headers": {**headers, "Authorization": f"Bearer {masked_key}" if masked_key else None},
                         "payload": payload
@@ -279,14 +306,33 @@ class AuditEngine:
                     except:
                         resp_json = {"raw": resp.text[:200]}
                         
-                    add_log(job_id, "response", f"Target LLM Response ({resp.status_code})", {
+                    log_type = "debug" if is_check else "response"
+                    add_log(job_id, log_type, f"Target LLM Response ({resp.status_code})", {
                         "status": resp.status_code,
                         "body": resp_json
                     })
 
                 resp.raise_for_status()
                 data = resp.json()
-                return data["choices"][0]["message"]["content"]
+                content = data["choices"][0]["message"]["content"]
+                
+                # Handle <think> tokens
+                # Regex to find content between <think> and </think> (multiline)
+                think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
+                think_match = think_pattern.search(content)
+                
+                if think_match:
+                    thought_content = think_match.group(1).strip()
+                    if job_id and thought_content:
+                        add_log(job_id, "thought", f"Thinking Process:\n{thought_content}")
+                    
+                    # Remove the thinking block from the content
+                    content = think_pattern.sub('', content).strip()
+                    
+                    if job_id:
+                        add_log(job_id, "info", "Removed <think> block from response for judging")
+
+                return content
             except httpx.ReadTimeout:
                 err_msg = "Target LLM timed out (read timeout). The model might be loading or too slow."
                 print(err_msg)
