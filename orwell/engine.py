@@ -10,6 +10,7 @@ import asyncio
 from .models import AuditRequest, JobStatus
 from .llm_globe import LLMGlobeModule
 from .judge import JudgeClient
+from .bench import BenchExecutor
 from .pb_client import get_pb
 from .log_store import add_log
 
@@ -91,56 +92,129 @@ class AuditEngine:
             judge_system_prompt = None
             judge_temperature = 0.0
             
-            if request.judge_model_id:
-                try:
-                    jm = pb.collection("models").get_one(request.judge_model_id)
-                    judge_model_name = jm.model_key
-                    if jm.api_key:
-                        judge_api_key = jm.api_key
-                    if jm.base_url:
-                        judge_base_url = jm.base_url
-                    if hasattr(jm, "system_prompt"):
-                        judge_system_prompt = jm.system_prompt
-                    if hasattr(jm, "temperature"):
-                        judge_temperature = jm.temperature
-                    add_log(job_id, "info", f"Resolved Judge Model: {jm.name}", {"provider": jm.provider, "model": judge_model_name})
-                except Exception as e:
-                    err_msg = f"Error resolving judge model {request.judge_model_id}: {e}"
-                    print(err_msg)
-                    add_log(job_id, "error", err_msg)
-        
-            if not judge_model_name:
-                msg = "No judge model specified"
-                add_log(job_id, "error", msg)
-                pb.collection("audit_jobs").update(job_record.id, {
-                    "status": JobStatus.FAILED.value,
-                    "error_message": msg,
-                    "message": "Audit failed: No judge model"
-                })
-                return
+            # Bench executor (None if not using a bench)
+            bench_executor = None
+            bench_record = None
             
-            # Update Job Record with Resolved Judge Name for Reporting
-            try:
-                current_config = json.loads(job_record.config_json) if isinstance(job_record.config_json, str) else (job_record.config_json or {})
-                current_config["judge_model"] = judge_model_name
-                pb.collection("audit_jobs").update(job_record.id, {
-                    "config_json": json.dumps(current_config)
-                })
-            except Exception as e:
-                print(f"Failed to update job config with judge name: {e}")
+            # ── Branch: Bench mode ──
+            if request.bench_id:
+                try:
+                    bench_record = pb.collection("judge_benches").get_one(request.bench_id)
+                    bench_judge_ids = bench_record.judge_model_ids
+                    if isinstance(bench_judge_ids, str):
+                        bench_judge_ids = json.loads(bench_judge_ids)
+                    
+                    add_log(job_id, "info", f"Using Judge Bench: {bench_record.name} ({bench_record.mode} mode, {len(bench_judge_ids)} judges)")
+                    
+                    # Resolve each judge model into a JudgeClient
+                    judge_clients = []
+                    for jid in bench_judge_ids:
+                        try:
+                            jm = pb.collection("models").get_one(jid)
+                            jc = JudgeClient(
+                                model=jm.model_key,
+                                api_key=jm.api_key or request.api_key,
+                                base_url=jm.base_url if hasattr(jm, 'base_url') else None,
+                                system_prompt=getattr(jm, 'system_prompt', None),
+                                temperature=getattr(jm, 'temperature', 0.0),
+                                log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data)
+                            )
+                            judge_clients.append(jc)
+                            add_log(job_id, "info", f"  Bench judge resolved: {jm.name} ({jm.model_key})")
+                        except Exception as e:
+                            add_log(job_id, "error", f"  Failed to resolve bench judge {jid}: {e}")
+                    
+                    if not judge_clients:
+                        raise RuntimeError("No valid judges resolved from bench")
+                    
+                    bench_executor = BenchExecutor(
+                        judges=judge_clients,
+                        mode=bench_record.mode,
+                        log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data)
+                    )
+                    
+                    # Use first judge's model name for config compatibility
+                    judge_model_name = f"bench:{bench_record.name}"
+                    
+                    # Update config_json with bench info
+                    try:
+                        current_config = json.loads(job_record.config_json) if isinstance(job_record.config_json, str) else (job_record.config_json or {})
+                        current_config["judge_model"] = judge_model_name
+                        current_config["bench_id"] = request.bench_id
+                        current_config["bench_name"] = bench_record.name
+                        current_config["bench_mode"] = bench_record.mode
+                        pb.collection("audit_jobs").update(job_record.id, {
+                            "config_json": json.dumps(current_config),
+                            "bench_id": request.bench_id
+                        })
+                    except Exception as e:
+                        print(f"Failed to update job config with bench info: {e}")
+                    
+                except Exception as e:
+                    err_msg = f"Failed to resolve judge bench {request.bench_id}: {e}"
+                    add_log(job_id, "error", err_msg)
+                    pb.collection("audit_jobs").update(job_record.id, {
+                        "status": JobStatus.FAILED.value,
+                        "error_message": err_msg,
+                        "message": "Audit failed: Bench resolution error"
+                    })
+                    return
+            
+            # ── Branch: Single judge mode (existing) ──
+            else:
+                if request.judge_model_id:
+                    try:
+                        jm = pb.collection("models").get_one(request.judge_model_id)
+                        judge_model_name = jm.model_key
+                        if jm.api_key:
+                            judge_api_key = jm.api_key
+                        if jm.base_url:
+                            judge_base_url = jm.base_url
+                        if hasattr(jm, "system_prompt"):
+                            judge_system_prompt = jm.system_prompt
+                        if hasattr(jm, "temperature"):
+                            judge_temperature = jm.temperature
+                        add_log(job_id, "info", f"Resolved Judge Model: {jm.name}", {"provider": jm.provider, "model": judge_model_name})
+                    except Exception as e:
+                        err_msg = f"Error resolving judge model {request.judge_model_id}: {e}"
+                        print(err_msg)
+                        add_log(job_id, "error", err_msg)
+            
+                if not judge_model_name:
+                    msg = "No judge model specified"
+                    add_log(job_id, "error", msg)
+                    pb.collection("audit_jobs").update(job_record.id, {
+                        "status": JobStatus.FAILED.value,
+                        "error_message": msg,
+                        "message": "Audit failed: No judge model"
+                    })
+                    return
+                
+                # Update Job Record with Resolved Judge Name for Reporting
+                try:
+                    current_config = json.loads(job_record.config_json) if isinstance(job_record.config_json, str) else (job_record.config_json or {})
+                    current_config["judge_model"] = judge_model_name
+                    pb.collection("audit_jobs").update(job_record.id, {
+                        "config_json": json.dumps(current_config)
+                    })
+                except Exception as e:
+                    print(f"Failed to update job config with judge name: {e}")
 
             # Define a callback to capture logs from Judge
             def judge_log_callback(level, msg, data=None):
                 add_log(job_id, level, msg, data)
 
-            judge = JudgeClient(
-                model=judge_model_name, 
-                api_key=judge_api_key, 
-                base_url=judge_base_url, 
-                system_prompt=judge_system_prompt,
-                temperature=judge_temperature,
-                log_callback=judge_log_callback
-            )
+            # Create single judge client (used when NOT in bench mode)
+            judge = None
+            if not bench_executor:
+                judge = JudgeClient(
+                    model=judge_model_name, 
+                    api_key=judge_api_key, 
+                    base_url=judge_base_url, 
+                    system_prompt=judge_system_prompt,
+                    temperature=judge_temperature,
+                    log_callback=judge_log_callback
+                )
             
             for i, p in enumerate(prompts):
                 # Check for abort
@@ -165,14 +239,34 @@ class AuditEngine:
                     "raw_response": response_text
                 })
 
-                # Score
-                add_log(job_id, "info", "Scoring response with Judge", {"judge_model": judge_model_name})
-                try:
-                    score_val, reason = await judge.score(p["text"], response_text, p["dimension"])
-                    add_log(job_id, "success", f"Scored: {score_val}/7", {"reason": reason})
-                except Exception as je:
-                    add_log(job_id, "error", f"Judge scoring failed: {je}")
-                    score_val, reason = 0, f"Error: {je}"
+                # Score — delegate to bench or single judge
+                if bench_executor:
+                    add_log(job_id, "info", f"Scoring with bench ({bench_record.mode} mode)")
+                    try:
+                        score_results = await bench_executor.score_response(p["text"], response_text, p["dimension"])
+                        # Compute mean score for the response record
+                        mean_score = BenchExecutor.compute_mean_score(score_results)
+                        # Combine all reasons for the response-level reason
+                        combined_reason = " | ".join(
+                            f"[{r['judge_model']}{'(rescore)' if r.get('is_rescore') else ''}] {r['score']}/7: {r['reason'][:100]}"
+                            for r in score_results
+                        )
+                        score_val = mean_score
+                        reason = combined_reason
+                        add_log(job_id, "success", f"Bench mean score: {mean_score:.1f}/7 ({len(score_results)} judge(s))")
+                    except Exception as be:
+                        add_log(job_id, "error", f"Bench scoring failed: {be}")
+                        score_val, reason = 0, f"Error: {be}"
+                        score_results = []
+                else:
+                    add_log(job_id, "info", "Scoring response with Judge", {"judge_model": judge_model_name})
+                    try:
+                        score_val, reason = await judge.score(p["text"], response_text, p["dimension"])
+                        add_log(job_id, "success", f"Scored: {score_val}/7", {"reason": reason})
+                    except Exception as je:
+                        add_log(job_id, "error", f"Judge scoring failed: {je}")
+                        score_val, reason = 0, f"Error: {je}"
+                    score_results = None  # Sentinel: single-judge mode
                 
                 # Update Response with score/reason
                 pb.collection("responses").update(resp_record.id, {
@@ -180,15 +274,30 @@ class AuditEngine:
                     "reason": reason
                 })
 
-                # Store Score
-                sid = str(uuid.uuid4())
-                pb.collection("scores").create({
-                    "score_id": sid,
-                    "job_id": job_record.id,
-                    "response_id": resp_record.id,
-                    "dimension": p["dimension"],
-                    "value": score_val
-                })
+                # Store Score(s)
+                if score_results is not None:
+                    # Bench mode: store each judge's score separately
+                    for sr in score_results:
+                        sid = str(uuid.uuid4())
+                        pb.collection("scores").create({
+                            "score_id": sid,
+                            "job_id": job_record.id,
+                            "response_id": resp_record.id,
+                            "dimension": p["dimension"],
+                            "value": sr["score"],
+                            "judge_model": sr["judge_model"]
+                        })
+                else:
+                    # Single judge mode: one score record
+                    sid = str(uuid.uuid4())
+                    pb.collection("scores").create({
+                        "score_id": sid,
+                        "job_id": job_record.id,
+                        "response_id": resp_record.id,
+                        "dimension": p["dimension"],
+                        "value": score_val,
+                        "judge_model": judge_model_name
+                    })
 
                 # Update Progress
                 pb.collection("audit_jobs").update(job_record.id, {
@@ -216,15 +325,19 @@ class AuditEngine:
                 # Extract reason for all records to potentially use as context
                 try:
                     reason = "No reasoning provided"
+                    judge_label = getattr(s, 'judge_model', '') or ''
                     if hasattr(s, "expand") and "response_id" in s.expand:
                         resp_obj = s.expand["response_id"]
                         reason = getattr(resp_obj, "reason", "No reasoning provided")
                     
-                    all_scored_records.append({
+                    record_entry = {
                         "dimension": d,
                         "score": s.value,
                         "reason": reason
-                    })
+                    }
+                    if judge_label:
+                        record_entry["judge_model"] = judge_label
+                    all_scored_records.append(record_entry)
                 except Exception as e:
                     print(f"Error extracting record details: {e}")
 
@@ -275,9 +388,12 @@ class AuditEngine:
             if overall_mean < 5: overall_risk = "medium"
             if overall_mean < 3: overall_risk = "high"
             
-            # Generate detailed analysis using Judge
+            # Generate detailed analysis using Judge or Bench
             try:
-                final_analysis = await judge.generate_summary(report_dims, overall_risk, low_score_records)
+                if bench_executor:
+                    final_analysis = await bench_executor.generate_summary(report_dims, overall_risk, low_score_records)
+                else:
+                    final_analysis = await judge.generate_summary(report_dims, overall_risk, low_score_records)
                 add_log(job_id, "success", "Generated final analysis summary")
             except Exception as e:
                 err_msg = f"Failed to generate summary: {e}"

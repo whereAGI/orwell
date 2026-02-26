@@ -14,9 +14,10 @@
       grid-template-columns: 280px 1fr 340px;
       /* Use flex layout for height */
       flex: 1;
-      height: 100%; 
+      height: 100%;
       width: 100%;
-      overflow: hidden; /* Prevent body scroll */
+      overflow: hidden;
+      /* Prevent body scroll */
     }
 
     .sidebar {
@@ -26,7 +27,8 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      padding-bottom: 320px; /* Space for terminal (expanded) */
+      padding-bottom: 320px;
+      /* Space for terminal (expanded) */
     }
 
     .rightbar {
@@ -34,13 +36,15 @@
       background: #0d0d13;
       padding: 16px;
       overflow-y: auto;
-      padding-bottom: 320px; /* Space for terminal (expanded) */
+      padding-bottom: 320px;
+      /* Space for terminal (expanded) */
     }
 
     .content {
       padding: 24px;
       overflow-y: auto;
-      padding-bottom: 320px; /* Space for terminal (expanded) */
+      padding-bottom: 320px;
+      /* Space for terminal (expanded) */
     }
 
     .sidebar h2 {
@@ -166,15 +170,19 @@
       z-index: 2000;
       display: flex;
       flex-direction: column;
-      box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.5);
     }
+
     .terminal-panel.collapsed {
-        height: 40px !important;
-        overflow: hidden; /* Ensure content doesn't show */
+      height: 40px !important;
+      overflow: hidden;
+      /* Ensure content doesn't show */
     }
+
     .terminal-panel.collapsed .terminal-content {
-        display: none;
+      display: none;
     }
+
     .terminal-header {
       padding: 0 16px;
       height: 40px;
@@ -188,6 +196,7 @@
       color: #a0a0b8;
       user-select: none;
     }
+
     .terminal-content {
       flex: 1;
       overflow-y: auto;
@@ -198,29 +207,79 @@
       color: #e5e7eb;
       scroll-behavior: smooth;
     }
-    .log-entry { margin-bottom: 8px; font-family: inherit; border-bottom: 1px solid #1a1a20; padding-bottom: 8px; }
-    .log-meta { display: flex; gap: 8px; margin-bottom: 4px; opacity: 0.7; font-size: 11px; }
-    .log-time { color: #666; }
-    .log-type { font-weight: bold; text-transform: uppercase; }
-    .log-content { white-space: pre-wrap; word-break: break-all; }
-    
-    .type-info { color: #60a5fa; }
-    .type-success { color: #4ade80; }
-    .type-warning { color: #facc15; }
-    .type-error { color: #f87171; }
-    .type-request { color: #c084fc; }
-    .type-response { color: #f472b6; }
-    .type-debug { color: #9ca3af; }
-    .type-thought { color: #818cf8; font-style: italic; border-left: 2px solid #818cf8; padding-left: 8px; }
+
+    .log-entry {
+      margin-bottom: 8px;
+      font-family: inherit;
+      border-bottom: 1px solid #1a1a20;
+      padding-bottom: 8px;
+    }
+
+    .log-meta {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 4px;
+      opacity: 0.7;
+      font-size: 11px;
+    }
+
+    .log-time {
+      color: #666;
+    }
+
+    .log-type {
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .log-content {
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .type-info {
+      color: #60a5fa;
+    }
+
+    .type-success {
+      color: #4ade80;
+    }
+
+    .type-warning {
+      color: #facc15;
+    }
+
+    .type-error {
+      color: #f87171;
+    }
+
+    .type-request {
+      color: #c084fc;
+    }
+
+    .type-response {
+      color: #f472b6;
+    }
+
+    .type-debug {
+      color: #9ca3af;
+    }
+
+    .type-thought {
+      color: #818cf8;
+      font-style: italic;
+      border-left: 2px solid #818cf8;
+      padding-left: 8px;
+    }
 
     .json-block {
-        background: #15151a;
-        padding: 8px;
-        border-radius: 4px;
-        margin-top: 4px;
-        font-size: 11px;
-        color: #d1d5db;
-        overflow-x: auto;
+      background: #15151a;
+      padding: 8px;
+      border-radius: 4px;
+      margin-top: 4px;
+      font-size: 11px;
+      color: #d1d5db;
+      overflow-x: auto;
     }
   </style>
 </head>
@@ -239,13 +298,17 @@
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
           <h2 id="auditNameDisplay" style="margin:0; cursor:pointer;" title="Click to rename">Audit Name</h2>
           <div style="display:flex; gap:8px;">
-             <button id="editNameBtn" style="width:auto; padding: 4px 8px; font-size:12px; background:var(--card); border-color:var(--border);">Rename</button>
-             <button id="saveDetailsBtn" style="width:auto; padding: 4px 8px; font-size:12px;">Save Notes</button>
+            <button id="editNameBtn"
+              style="width:auto; padding: 4px 8px; font-size:12px; background:var(--card); border-color:var(--border);">Rename</button>
+            <button id="saveDetailsBtn" style="width:auto; padding: 4px 8px; font-size:12px;">Save Notes</button>
           </div>
         </div>
-        <input id="auditNameInput" type="text" style="display:none; margin-bottom:12px;" placeholder="Enter audit name" />
+        <input id="auditNameInput" type="text" style="display:none; margin-bottom:12px;"
+          placeholder="Enter audit name" />
         <label>Notes</label>
-        <textarea id="auditNotes" style="width:100%; height:80px; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px; resize:vertical;" placeholder="Add notes here..."></textarea>
+        <textarea id="auditNotes"
+          style="width:100%; height:80px; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px; resize:vertical;"
+          placeholder="Add notes here..."></textarea>
       </div>
 
       <div class="grid">
@@ -267,23 +330,28 @@
           <label>Select Dimensions</label>
           <div id="dimList" style="display:flex;flex-wrap:wrap;gap:8px"></div>
           <div style="margin-top:8px">
-            <button id="dimShowAll" style="background:var(--card);border-color:var(--border);color:var(--primary);width:100%;display:none;">Show All...</button>
+            <button id="dimShowAll"
+              style="background:var(--card);border-color:var(--border);color:var(--primary);width:100%;display:none;">Show
+              All...</button>
           </div>
         </div>
         <div style="margin-top:16px">
           <label>System Prompt</label>
-          <select id="systemPromptInput" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
+          <select id="systemPromptInput"
+            style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
             <option value="">None (Default)</option>
           </select>
         </div>
         <div style="margin-top:16px">
           <label>Target Model</label>
-          <select id="targetModelSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
+          <select id="targetModelSelect"
+            style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
             <option value="custom">Custom (Enter manually)</option>
           </select>
         </div>
-        
-        <div id="customTargetFields" style="display:none; padding-left: 12px; border-left: 2px solid var(--border); margin-top: 12px;">
+
+        <div id="customTargetFields"
+          style="display:none; padding-left: 12px; border-left: 2px solid var(--border); margin-top: 12px;">
           <div style="margin-top:12px">
             <label>Target Endpoint</label>
             <input id="endpoint" type="text" placeholder="e.g. https://api.openai.com/v1/chat/completions" />
@@ -298,11 +366,32 @@
           </div>
         </div>
 
+
         <div style="margin-top:16px">
-            <label>Judge Model</label>
-            <select id="judgeModelSelect" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
+          <label>Judge Source</label>
+          <div style="display:flex; gap:16px; margin-top:8px; margin-bottom:12px;">
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; color:var(--text); margin:0;">
+              <input type="radio" name="judgeSource" value="single" checked onchange="toggleJudgeSource()">
+              Single Judge
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; color:var(--text); margin:0;">
+              <input type="radio" name="judgeSource" value="bench" onchange="toggleJudgeSource()">
+              Bench
+            </label>
+          </div>
+          <div id="singleJudgeWrap">
+            <select id="judgeModelSelect"
+              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
               <option value="" disabled selected>Select a Judge Model</option>
             </select>
+          </div>
+          <div id="benchJudgeWrap" style="display:none;">
+            <select id="benchSelect"
+              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
+              <option value="" disabled selected>Select a Bench</option>
+            </select>
+            <div id="benchInfo" style="font-size:12px; color:var(--muted); margin-top:4px;"></div>
+          </div>
         </div>
         <div style="margin-top:16px">
           <label>Sample Size</label>
@@ -338,13 +427,17 @@
     </div>
   </div>
 
-  <div id="systemPromptModal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:1000">
+  <div id="systemPromptModal"
+    style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:1000">
     <div class="card" style="width:800px;max-width:95vw;max-height:90vh;display:flex;flex-direction:column">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-            <h3 style="margin:0">System Prompt</h3>
-            <button onclick="document.getElementById('systemPromptModal').style.display='none'" style="width:auto;padding:6px 10px;background:#1f2937;border-color:#1f2937">Close</button>
-        </div>
-        <div id="fullSystemPrompt" style="overflow-y:auto;white-space:pre-wrap;font-family:monospace;background:#0e0e14;padding:12px;border-radius:6px;border:1px solid var(--border);font-size:13px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <h3 style="margin:0">System Prompt</h3>
+        <button onclick="document.getElementById('systemPromptModal').style.display='none'"
+          style="width:auto;padding:6px 10px;background:#1f2937;border-color:#1f2937">Close</button>
+      </div>
+      <div id="fullSystemPrompt"
+        style="overflow-y:auto;white-space:pre-wrap;font-family:monospace;background:#0e0e14;padding:12px;border-radius:6px;border:1px solid var(--border);font-size:13px">
+      </div>
     </div>
   </div>
 
@@ -352,16 +445,18 @@
   <div id="terminal" class="terminal-panel collapsed">
     <div class="terminal-header" id="terminalHeader">
       <div style="display:flex;align-items:center;gap:12px">
-          <span style="font-weight:bold;color:#fff">TERMINAL</span>
-          <span id="logStatus" style="font-size:11px;opacity:0.6">Ready</span>
+        <span style="font-weight:bold;color:#fff">TERMINAL</span>
+        <span id="logStatus" style="font-size:11px;opacity:0.6">Ready</span>
       </div>
       <div style="display:flex;gap:8px">
-          <button id="clearLogsBtn" style="width:auto;padding:2px 8px;font-size:10px;background:#333;border:none;">CLEAR</button>
-          <button id="toggleTerminalBtn" style="width:auto;padding:2px 8px;font-size:10px;background:#333;border:none;">[]</button>
+        <button id="clearLogsBtn"
+          style="width:auto;padding:2px 8px;font-size:10px;background:#333;border:none;">CLEAR</button>
+        <button id="toggleTerminalBtn"
+          style="width:auto;padding:2px 8px;font-size:10px;background:#333;border:none;">[]</button>
       </div>
     </div>
     <div id="terminalContent" class="terminal-content">
-        <div style="color:#666;font-style:italic;padding:12px">Waiting for logs...</div>
+      <div style="color:#666;font-style:italic;padding:12px">Waiting for logs...</div>
     </div>
   </div>
 
@@ -381,14 +476,18 @@
   <div id="dimModal" class="modal">
     <div class="card" style="width: 600px; margin: 0; max-height: 80vh; display: flex; flex-direction: column;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h3 style="margin:0">Select Dimensions</h3>
-          <div style="display:flex;gap:8px">
-              <button id="modalSelectAll" style="width:auto;padding:4px 8px;font-size:12px;background:#1f2937;border-color:#1f2937">Select All</button>
-              <button id="modalClear" style="width:auto;padding:4px 8px;font-size:12px;background:#1f2937;border-color:#1f2937">Clear</button>
-          </div>
+        <h3 style="margin:0">Select Dimensions</h3>
+        <div style="display:flex;gap:8px">
+          <button id="modalSelectAll"
+            style="width:auto;padding:4px 8px;font-size:12px;background:#1f2937;border-color:#1f2937">Select
+            All</button>
+          <button id="modalClear"
+            style="width:auto;padding:4px 8px;font-size:12px;background:#1f2937;border-color:#1f2937">Clear</button>
+        </div>
       </div>
-      <div id="modalDimList" style="display:flex;flex-wrap:wrap;gap:8px; overflow-y: auto; padding: 10px 0; min-height: 100px;">
-          <!-- All dimensions injected here -->
+      <div id="modalDimList"
+        style="display:flex;flex-wrap:wrap;gap:8px; overflow-y: auto; padding: 10px 0; min-height: 100px;">
+        <!-- All dimensions injected here -->
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
         <button class="secondary" onclick="closeDimModal()">Cancel</button>

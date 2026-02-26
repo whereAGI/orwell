@@ -20,10 +20,17 @@ class ModelConfig(BaseModel):
     api_key: Optional[str] = None
     system_prompt: Optional[str] = None
 
+class JudgeBench(BaseModel):
+    id: Optional[str] = None
+    name: str
+    mode: str  # "random" or "all"
+    judge_model_ids: List[str]  # max 5 judge model record IDs
+
 class AuditRequest(BaseModel):
     # Support selecting stored models
     target_model_id: Optional[str] = None
     judge_model_id: Optional[str] = None
+    bench_id: Optional[str] = None  # Optional: use a judge bench instead of a single judge
 
     # Fallback / Custom fields
     target_endpoint: Optional[HttpUrl] = None
@@ -65,3 +72,5 @@ class AuditReport(BaseModel):
     execution_time_seconds: int
     generated_at: datetime
     final_analysis: Optional[str] = None
+    bench_name: Optional[str] = None
+    bench_mode: Optional[str] = None

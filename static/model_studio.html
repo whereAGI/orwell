@@ -30,27 +30,83 @@
         .form-group {
             margin-bottom: 16px;
         }
+
+        .bench-judge-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+            padding: 8px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #0e0e14;
+        }
+
+        .bench-judge-item {
+            display: grid;
+            grid-template-columns: 16px 1fr auto;
+            align-items: center;
+            column-gap: 8px;
+            cursor: pointer;
+            padding: 4px 0;
+            font-size: 14px;
+            color: var(--text);
+        }
+
+        .bench-judge-cb {
+            width: 14px;
+            height: 14px;
+            margin: 0;
+            accent-color: var(--primary);
+        }
+
+        .bench-judge-name {
+            min-width: 0;
+        }
+
+        .bench-judge-key {
+            font-size: 11px;
+            color: var(--muted);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+        }
     </style>
 </head>
 
 <body>
     <header></header>
-    
+
     <div class="app-container">
-            <div class="card">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
                 <div class="tabs" style="margin-bottom:0; border-bottom:none;">
                     <div class="tab active" onclick="switchTab('target')">Target Models</div>
                     <div class="tab" onclick="switchTab('judge')">Judge Models</div>
                 </div>
-                <button onclick="openModal()" style="width:auto; padding:8px 16px;">+ Add Model</button>
-            </div>
-            <div style="border-bottom:1px solid var(--border); margin-bottom:16px;"></div>
-            
-       <div id="modelList">
-                    <!-- Table will be populated here -->
+                <div style="display:flex; gap:8px;">
+                    <button id="createBenchBtn" onclick="openBenchModal()"
+                        style="width:auto; padding:8px 16px; display:none; background:#2d3748; border-color:#4a5568;">⚖
+                        Create Bench</button>
+                    <button onclick="openModal()" style="width:auto; padding:8px 16px;">+ Add Model</button>
                 </div>
             </div>
+            <div style="border-bottom:1px solid var(--border); margin-bottom:16px;"></div>
+
+            <!-- Bench List (shown only on Judge tab) -->
+            <div id="benchSection" style="display:none; margin-bottom:24px;">
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+                    <h3 style="margin:0; font-size:14px; color:var(--muted); text-transform:uppercase;">Judge Benches
+                    </h3>
+                </div>
+                <div id="benchList"></div>
+                <div style="border-bottom:1px solid var(--border); margin:16px 0;"></div>
+            </div>
+
+            <div id="modelList">
+                <!-- Table will be populated here -->
+            </div>
+        </div>
     </div>
     <!-- Add/Edit Model Modal -->
     <div id="modelModal" class="modal">
@@ -63,7 +119,7 @@
             </div>
             <!-- Category is hidden and set programmatically -->
             <input type="hidden" id="modelCategory">
-            
+
             <div class="form-group">
                 <label>Provider</label>
                 <select id="modelProvider" style="width:100%" onchange="updateProviderDefaults()">
@@ -86,24 +142,30 @@
                 <select id="modelKeySelect" style="width:100%; display:none;">
                     <option value="" disabled selected>Select a local model...</option>
                 </select>
-                <div id="modelKeyHelp" style="font-size:12px; color:var(--muted); margin-top:4px; display:none;">Fetching local models...</div>
+                <div id="modelKeyHelp" style="font-size:12px; color:var(--muted); margin-top:4px; display:none;">
+                    Fetching local models...</div>
             </div>
             <div class="form-group">
                 <label>API Key (Optional)</label>
                 <input type="password" id="modelApiKey" style="width:100%" placeholder="e.g. sk-...">
-                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Left blank for Ollama or if using environment variables.</div>
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Left blank for Ollama or if using
+                    environment variables.</div>
             </div>
-            
+
             <div id="judgeSystemPromptContainer" class="form-group" style="display:none;">
                 <label>Judge System Prompt (Optional)</label>
-                <textarea id="modelSystemPrompt" style="width:100%; height:100px; resize:vertical; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px;" placeholder="Override the default scoring instructions..."></textarea>
-                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Customize how the judge evaluates responses. Leave blank to use the default system prompt.</div>
+                <textarea id="modelSystemPrompt"
+                    style="width:100%; height:100px; resize:vertical; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px;"
+                    placeholder="Override the default scoring instructions..."></textarea>
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Customize how the judge evaluates
+                    responses. Leave blank to use the default system prompt.</div>
             </div>
 
             <div class="form-group">
                 <label>Temperature (0.0 - 2.0)</label>
                 <input type="number" id="modelTemperature" style="width:100%" step="0.1" min="0" max="2" value="0.7">
-                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Controls randomness. Lower values are more deterministic.</div>
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Controls randomness. Lower values are
+                    more deterministic.</div>
             </div>
 
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
@@ -117,10 +179,62 @@
     <div id="deleteModal" class="modal">
         <div class="card" style="width: 400px; margin: 0;">
             <h3 style="color:var(--danger)">Confirm Deletion</h3>
-            <p id="deleteMessage">Are you sure you want to delete this model? This action cannot be undone and might affect existing audits.</p>
+            <p id="deleteMessage">Are you sure you want to delete this model? This action cannot be undone and might
+                affect existing audits.</p>
             <div style="display:flex;gap:8px;margin-top:16px;">
                 <button class="danger" id="confirmDeleteBtn">Delete</button>
                 <button class="secondary" onclick="closeDeleteModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bench Create/Edit Modal -->
+    <div id="benchModal" class="modal">
+        <div class="modal-content" style="max-width:500px;">
+            <h2 id="benchModalTitle" style="margin-top:0">Create Judge Bench</h2>
+            <input type="hidden" id="benchId">
+            <div class="form-group">
+                <label>Bench Name</label>
+                <input type="text" id="benchName" style="width:100%" placeholder="e.g. Balanced Bias Panel">
+            </div>
+            <div class="form-group">
+                <label>Mode</label>
+                <div style="display:flex; gap:16px; margin-top:4px;">
+                    <label
+                        style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:14px; color:var(--text);">
+                        <input type="radio" name="benchMode" value="random" checked>
+                        Random
+                    </label>
+                    <label
+                        style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:14px; color:var(--text);">
+                        <input type="radio" name="benchMode" value="all">
+                        All
+                    </label>
+                </div>
+                <div id="benchModeDesc" style="font-size:12px; color:var(--muted); margin-top:6px;">
+                    Random: A random judge scores each response. Low scores (&lt;4) trigger a re-score by another judge.
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Select Judge Models (max 5)</label>
+                <div id="benchJudgeList" class="bench-judge-list">
+                    <!-- Checkboxes populated dynamically -->
+                </div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
+                <button class="secondary" onclick="closeBenchModal()">Cancel</button>
+                <button onclick="saveBench()">Save Bench</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert/Error Modal -->
+    <div id="alertModal" class="modal">
+        <div class="card" style="width: 400px; margin: 0; background: var(--card); border: 1px solid var(--border);">
+            <h3 id="alertTitle" style="color:var(--text); margin-top:0;">Alert</h3>
+            <p id="alertMessage" style="color:var(--text)"></p>
+            <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+                <button onclick="closeAlertModal()">OK</button>
             </div>
         </div>
     </div>
@@ -138,4 +252,5 @@
     <script>renderNavbar('model_studio');</script>
     <script src="/static/modelstudio.js"></script>
 </body>
+
 </html>

@@ -9,7 +9,7 @@ import io
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig
+from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig, JudgeBench
 from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
 from .judge import DEFAULT_JUDGE_SYSTEM_PROMPT
@@ -227,6 +227,112 @@ async def delete_model(model_id: str):
 async def get_default_judge_prompt():
     return {"prompt": DEFAULT_JUDGE_SYSTEM_PROMPT}
 
+# ──────────────────────────────────────────────────
+# Judge Bench CRUD Endpoints
+# ──────────────────────────────────────────────────
+
+@app.get("/api/benches", response_model=List[JudgeBench])
+async def list_benches():
+    pb = get_pb()
+    try:
+        records = pb.collection("judge_benches").get_full_list(query_params={"sort": "name"})
+        return [
+            JudgeBench(
+                id=r.id,
+                name=r.name,
+                mode=r.mode,
+                judge_model_ids=json.loads(r.judge_model_ids) if isinstance(r.judge_model_ids, str) else r.judge_model_ids
+            ) for r in records
+        ]
+    except Exception as e:
+        print(f"Error fetching benches: {e}")
+        return []
+
+@app.post("/api/benches", response_model=JudgeBench)
+async def create_bench(bench: JudgeBench):
+    pb = get_pb()
+    
+    # Validate
+    if len(bench.judge_model_ids) < 1:
+        raise HTTPException(status_code=400, detail="A bench must have at least 1 judge model")
+    if len(bench.judge_model_ids) > 5:
+        raise HTTPException(status_code=400, detail="A bench can have at most 5 judge models")
+    if bench.mode not in ("random", "all"):
+        raise HTTPException(status_code=400, detail="Mode must be 'random' or 'all'")
+    
+    # Verify all judge model IDs exist and are judge category
+    for jid in bench.judge_model_ids:
+        try:
+            m = pb.collection("models").get_one(jid)
+            if m.category != "judge":
+                raise HTTPException(status_code=400, detail=f"Model {m.name} is not a judge model")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Judge model with ID {jid} not found")
+    
+    try:
+        record = pb.collection("judge_benches").create({
+            "name": bench.name,
+            "mode": bench.mode,
+            "judge_model_ids": json.dumps(bench.judge_model_ids)
+        })
+        return JudgeBench(
+            id=record.id,
+            name=record.name,
+            mode=record.mode,
+            judge_model_ids=json.loads(record.judge_model_ids) if isinstance(record.judge_model_ids, str) else record.judge_model_ids
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create bench: {str(e)}")
+
+@app.put("/api/benches/{bench_id}", response_model=JudgeBench)
+async def update_bench(bench_id: str, bench: JudgeBench):
+    pb = get_pb()
+    
+    # Validate
+    if len(bench.judge_model_ids) < 1:
+        raise HTTPException(status_code=400, detail="A bench must have at least 1 judge model")
+    if len(bench.judge_model_ids) > 5:
+        raise HTTPException(status_code=400, detail="A bench can have at most 5 judge models")
+    if bench.mode not in ("random", "all"):
+        raise HTTPException(status_code=400, detail="Mode must be 'random' or 'all'")
+    
+    # Verify all judge model IDs exist and are judge category
+    for jid in bench.judge_model_ids:
+        try:
+            m = pb.collection("models").get_one(jid)
+            if m.category != "judge":
+                raise HTTPException(status_code=400, detail=f"Model {m.name} is not a judge model")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Judge model with ID {jid} not found")
+    
+    try:
+        pb.collection("judge_benches").update(bench_id, {
+            "name": bench.name,
+            "mode": bench.mode,
+            "judge_model_ids": json.dumps(bench.judge_model_ids)
+        })
+        return JudgeBench(
+            id=bench_id,
+            name=bench.name,
+            mode=bench.mode,
+            judge_model_ids=bench.judge_model_ids
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update bench: {str(e)}")
+
+@app.delete("/api/benches/{bench_id}")
+async def delete_bench(bench_id: str):
+    pb = get_pb()
+    try:
+        pb.collection("judge_benches").delete(bench_id)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete bench: {str(e)}")
+
 @app.post("/api/audit/create", response_model=JobResponse)
 async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks):
     try:
@@ -410,7 +516,9 @@ async def get_audit_report(job_id: str):
             overall_risk=report.overall_risk,
             dimensions=report.dimensions,
             final_analysis=report.final_analysis,
-            generated_at=report.created
+            generated_at=report.created,
+            bench_name=config.get('bench_name', None),
+            bench_mode=config.get('bench_mode', None)
         )
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Report not found: {e}")
