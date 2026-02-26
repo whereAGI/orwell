@@ -1,5 +1,5 @@
 from pydantic import BaseModel, HttpUrl
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 from datetime import datetime
 from enum import Enum
 
@@ -18,7 +18,9 @@ class ModelConfig(BaseModel):
     base_url: str
     model_key: str
     api_key: Optional[str] = None
-    system_prompt: Optional[str] = None
+    system_prompt: Optional[str] = None       # Scoring instructions (used during score() calls)
+    analysis_persona: Optional[str] = None    # Analysis persona (used during generate_report_sections() calls)
+    temperature: Optional[float] = 0.7
 
 class JudgeBench(BaseModel):
     id: Optional[str] = None
@@ -71,6 +73,6 @@ class AuditReport(BaseModel):
     total_prompts: int
     execution_time_seconds: int
     generated_at: datetime
-    final_analysis: Optional[str] = None
+    report_json: Optional[Dict[str, Any]] = None
     bench_name: Optional[str] = None
     bench_mode: Optional[str] = None

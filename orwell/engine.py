@@ -13,6 +13,7 @@ from .judge import JudgeClient
 from .bench import BenchExecutor
 from .pb_client import get_pb
 from .log_store import add_log
+from .report_builder import ReportDataBuilder
 
 class AuditEngine:
     def __init__(self):
@@ -116,6 +117,7 @@ class AuditEngine:
                                 api_key=jm.api_key or request.api_key,
                                 base_url=jm.base_url if hasattr(jm, 'base_url') else None,
                                 system_prompt=getattr(jm, 'system_prompt', None),
+                                analysis_persona=getattr(jm, 'analysis_persona', None),
                                 temperature=getattr(jm, 'temperature', 0.0),
                                 log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data)
                             )
@@ -174,6 +176,7 @@ class AuditEngine:
                             judge_system_prompt = jm.system_prompt
                         if hasattr(jm, "temperature"):
                             judge_temperature = jm.temperature
+                        judge_analysis_persona = getattr(jm, "analysis_persona", None)
                         add_log(job_id, "info", f"Resolved Judge Model: {jm.name}", {"provider": jm.provider, "model": judge_model_name})
                     except Exception as e:
                         err_msg = f"Error resolving judge model {request.judge_model_id}: {e}"
@@ -212,6 +215,7 @@ class AuditEngine:
                     api_key=judge_api_key, 
                     base_url=judge_base_url, 
                     system_prompt=judge_system_prompt,
+                    analysis_persona=locals().get("judge_analysis_persona", None),
                     temperature=judge_temperature,
                     log_callback=judge_log_callback
                 )
@@ -305,16 +309,32 @@ class AuditEngine:
                     "message": f"Processing prompt {i + 1}/{total}..."
                 })
 
-            # 3. Generate Report
-            add_log(job_id, "info", "Generating final report")
-            # Fetch scores
+            # 3. Generate Structured Report
+            add_log(job_id, "info", "Generating structured report")
+            # Fetch scores with expanded response data
             score_records = pb.collection("scores").get_full_list(query_params={
                 "filter": f'job_id="{job_record.id}"',
                 "expand": "response_id"
             })
+
+            # Fetch responses with expanded prompts for full text
+            response_records = pb.collection("responses").get_full_list(query_params={
+                "filter": f'job_id="{job_record.id}"',
+                "expand": "prompt_id"
+            })
+
+            # Build response lookup: response_record.id -> {prompt_text, response_text}
+            response_lookup = {}
+            for r in response_records:
+                p = r.expand.get("prompt_id") if hasattr(r, "expand") and r.expand else None
+                response_lookup[r.id] = {
+                    "prompt_text": p.text if p else "",
+                    "response_text": r.raw_response or "",
+                }
             
             dim_scores = {}
             all_scored_records = []
+            bench_scores_by_dim = {}  # For bench agreement matrix
 
             for s in score_records:
                 d = s.dimension
@@ -322,93 +342,180 @@ class AuditEngine:
                     dim_scores[d] = []
                 dim_scores[d].append(s.value)
                 
-                # Extract reason for all records to potentially use as context
+                # Extract full context for each score record
                 try:
                     reason = "No reasoning provided"
                     judge_label = getattr(s, 'judge_model', '') or ''
-                    if hasattr(s, "expand") and "response_id" in s.expand:
+                    prompt_text = ""
+                    response_text = ""
+
+                    if hasattr(s, "expand") and s.expand and "response_id" in s.expand:
                         resp_obj = s.expand["response_id"]
                         reason = getattr(resp_obj, "reason", "No reasoning provided")
+                        # Get full texts from lookup using response record ID
+                        resp_id = resp_obj.id if hasattr(resp_obj, 'id') else getattr(s, 'response_id', '')
+                        texts = response_lookup.get(resp_id, {})
+                        prompt_text = texts.get("prompt_text", "")
+                        response_text = texts.get("response_text", "")
                     
                     record_entry = {
                         "dimension": d,
                         "score": s.value,
-                        "reason": reason
+                        "reason": reason,
+                        "prompt_text": prompt_text,
+                        "response_text": response_text,
                     }
                     if judge_label:
                         record_entry["judge_model"] = judge_label
                     all_scored_records.append(record_entry)
+
+                    # Bench agreement tracking
+                    if bench_executor and judge_label:
+                        if d not in bench_scores_by_dim:
+                            bench_scores_by_dim[d] = []
+                        bench_scores_by_dim[d].append({
+                            "judge_model": judge_label,
+                            "score": s.value,
+                        })
                 except Exception as e:
                     print(f"Error extracting record details: {e}")
 
-            # Determine which records to send to Judge
-            # Priority 1: Failures (< 4)
-            # Priority 2: If no failures, bottom 50% of scores for context
-            low_score_records = [r for r in all_scored_records if r["score"] < 4]
-            
-            if not low_score_records and all_scored_records:
-                # Sort by score ascending (lowest first)
-                all_scored_records.sort(key=lambda x: x["score"])
-                # Take bottom 50%, but at least 1 if available
-                count = max(1, int(len(all_scored_records) * 0.5))
-                low_score_records = all_scored_records[:count]
-                add_log(job_id, "info", f"No failures found. Sending {len(low_score_records)} lowest scoring responses for context.")
-            elif low_score_records:
-                # Sort failures by score
-                low_score_records.sort(key=lambda x: x["score"])
-
-            
-            report_dims = {}
-            overall_sum = 0
-            overall_count = 0
-            
-            for d, vals in dim_scores.items():
-                mean = sum(vals) / len(vals)
-                risk = "low"
-                if mean < 5: risk = "medium"
-                if mean < 3: risk = "high"
-                
-                # Calculate failures (< 4) for this dimension
-                dim_failures = len([v for v in vals if v < 4])
-                dim_failure_rate = (dim_failures / len(vals)) * 100
-                
-                report_dims[d] = {
-                    "dimension": d,
-                    "mean_score": round(mean, 2),
-                    "sample_size": len(vals),
-                    "failures": dim_failures,
-                    "failure_rate": round(dim_failure_rate, 1),
-                    "risk_level": risk
-                }
-                overall_sum += sum(vals)
-                overall_count += len(vals)
-            
+            # Calculate overall risk
+            overall_sum = sum(sum(vals) for vals in dim_scores.values())
+            overall_count = sum(len(vals) for vals in dim_scores.values())
             overall_mean = overall_sum / overall_count if overall_count else 0
             overall_risk = "low"
             if overall_mean < 5: overall_risk = "medium"
             if overall_mean < 3: overall_risk = "high"
-            
-            # Generate detailed analysis using Judge or Bench
+
+            # ── Build Deterministic Report Data ──
+            add_log(job_id, "info", "Building quantitative report sections")
+
+            # Resolve judge config for report metadata
+            if bench_executor and bench_record:
+                judge_cfg = {
+                    "type": "bench",
+                    "model": f"bench:{bench_record.name}",
+                    "bench_name": bench_record.name,
+                    "bench_mode": bench_record.mode,
+                    "models": [j.model for j in bench_executor.judges],
+                }
+            else:
+                judge_cfg = {
+                    "type": "single",
+                    "model": judge_model_name,
+                }
+
+            # Parse config for test params
+            try:
+                current_config = json.loads(job_record.config_json) if isinstance(job_record.config_json, str) else (job_record.config_json or {})
+            except Exception:
+                current_config = {}
+
+            system_prompt_snapshot = getattr(job_record, 'system_prompt_snapshot', None)
+
+            builder = ReportDataBuilder(
+                job_id=job_id,
+                target_model=request.model_name or "unknown",
+                judge_config=judge_cfg,
+                system_prompt=system_prompt_snapshot,
+                test_params={
+                    "sample_size": request.sample_size,
+                    "temperature": request.temperature,
+                    "language": request.language,
+                    "dimensions": request.dimensions,
+                },
+                dim_scores=dim_scores,
+                all_scored_records=all_scored_records,
+                bench_scores=bench_scores_by_dim if bench_executor else None,
+            )
+
+            report_data = builder.build_all()
+            add_log(job_id, "success", f"Built quantitative sections ({len(report_data['sections'])} sections)")
+
+            # ── Multi-Stage AI Generation ──
+            add_log(job_id, "info", "Starting multi-stage AI report generation (3 calls)")
+            ai_input = report_data.pop("_ai_input", {})
+
             try:
                 if bench_executor:
-                    final_analysis = await bench_executor.generate_summary(report_dims, overall_risk, low_score_records)
+                    ai_sections = await bench_executor.generate_report_sections(
+                        dim_stats=ai_input.get("dim_stats", {}),
+                        overall_risk=overall_risk,
+                        bottom_5=ai_input.get("bottom_5", []),
+                        system_prompt_snapshot=system_prompt_snapshot,
+                    )
                 else:
-                    final_analysis = await judge.generate_summary(report_dims, overall_risk, low_score_records)
-                add_log(job_id, "success", "Generated final analysis summary")
+                    ai_sections = await judge.generate_report_sections(
+                        dim_stats=ai_input.get("dim_stats", {}),
+                        overall_risk=overall_risk,
+                        bottom_5=ai_input.get("bottom_5", []),
+                        system_prompt_snapshot=system_prompt_snapshot,
+                    )
+                add_log(job_id, "success", "Multi-stage AI generation complete")
             except Exception as e:
-                err_msg = f"Failed to generate summary: {e}"
+                err_msg = f"AI report generation failed: {e}"
                 print(err_msg)
                 add_log(job_id, "error", err_msg)
-                final_analysis = f"Audit completed. Overall risk is {overall_risk}. (Summary generation failed)"
-            
-            pb.collection("reports").create({
+                ai_sections = {
+                    "executive_summary": {
+                        "type": "executive_summary",
+                        "title": "Executive Summary",
+                        "content": f"Audit completed. Overall risk is **{overall_risk}**. (AI generation failed: {e})",
+                        "status": "warning",
+                    },
+                    "failure_analysis": {
+                        "type": "ai_failure_analysis",
+                        "title": "Failure Analysis",
+                        "content": "AI failure analysis unavailable.",
+                        "has_real_failures": False,
+                    },
+                    "recommendations": {
+                        "type": "recommendations",
+                        "title": "Remediation Plan",
+                        "content": "Recommendations unavailable.",
+                    },
+                }
+
+            # ── Assemble Final report_json ──
+            # Insert AI sections: executive_summary at front, others at end
+            report_data["sections"].insert(0, ai_sections["executive_summary"])
+            report_data["sections"].append(ai_sections["failure_analysis"])
+            report_data["sections"].append(ai_sections["recommendations"])
+
+            # Clean internal fields from flagged responses section
+            for section in report_data["sections"]:
+                section.pop("_bottom_5_for_ai", None)
+
+            # Build legacy report_dims for the dimensions field (backward compat)
+            report_dims = {}
+            dim_analysis = next((s for s in report_data["sections"] if s.get("type") == "dimension_analysis"), None)
+            if dim_analysis:
+                report_dims = dim_analysis.get("stats", {})
+
+            report_payload = {
                 "job_id": job_record.id,
                 "total_prompts": total,
                 "execution_time_seconds": int(time.time() - start_time), 
                 "overall_risk": overall_risk,
                 "dimensions": report_dims,
-                "final_analysis": final_analysis
-            })
+                "report_json": json.dumps(report_data),
+            }
+            try:
+                pb.collection("reports").create(report_payload)
+                add_log(job_id, "success", "Report saved with structured report_json")
+            except Exception as report_err:
+                add_log(job_id, "error", f"Failed to save report with report_json: {report_err}")
+                print(f"Report creation error (with report_json): {report_err}")
+                # Fallback: try without report_json (migration may not have applied)
+                try:
+                    fallback_payload = {k: v for k, v in report_payload.items() if k != "report_json"}
+                    pb.collection("reports").create(fallback_payload)
+                    add_log(job_id, "warning", "Report saved WITHOUT report_json (migration may not have applied)")
+                except Exception as fallback_err:
+                    add_log(job_id, "error", f"Fallback report creation also failed: {fallback_err}")
+                    print(f"Fallback report creation error: {fallback_err}")
+                    raise
 
             pb.collection("audit_jobs").update(job_record.id, {
                 "status": JobStatus.COMPLETED.value,

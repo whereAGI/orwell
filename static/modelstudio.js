@@ -97,18 +97,21 @@ function openModal() {
     document.getElementById('modelKeyInput').value = '';
     document.getElementById('modelApiKey').value = '';
     document.getElementById('modelSystemPrompt').value = '';
+    document.getElementById('modelAnalysisPersona').value = '';
 
-    // For judge models, fetch and set the default system prompt
+    // For judge models, prefill both prompts with current defaults as a starting point
     if (currentTab === 'judge') {
         fetch('/api/models/judge/default-prompt')
             .then(res => res.json())
             .then(data => {
-                // Check if user hasn't typed anything yet (though it should be empty since we just cleared it)
                 if (!document.getElementById('modelSystemPrompt').value) {
-                    document.getElementById('modelSystemPrompt').value = data.prompt;
+                    document.getElementById('modelSystemPrompt').value = data.prompt || '';
+                }
+                if (!document.getElementById('modelAnalysisPersona').value) {
+                    document.getElementById('modelAnalysisPersona').value = data.analysis_persona || '';
                 }
             })
-            .catch(err => console.error('Failed to load default judge prompt', err));
+            .catch(err => console.error('Failed to load default judge prompts', err));
     }
 
     toggleJudgeFields();
@@ -129,19 +132,20 @@ function editModel(model) {
 
     // Set existing prompt first
     document.getElementById('modelSystemPrompt').value = model.system_prompt || '';
+    document.getElementById('modelAnalysisPersona').value = model.analysis_persona || '';
     document.getElementById('modelTemperature').value = (model.temperature !== undefined && model.temperature !== null) ? model.temperature : 0.7;
 
-    // If it's a judge model and has no prompt, fetch default
+    // If it's a judge model and has no scoring prompt, fetch the default as a starting point
     if (model.category === 'judge' && !model.system_prompt) {
         fetch('/api/models/judge/default-prompt')
             .then(res => res.json())
             .then(data => {
-                // Only set if still empty (race condition check)
-                if (!document.getElementById('modelSystemPrompt').value) {
-                    document.getElementById('modelSystemPrompt').value = data.prompt;
-                }
+                if (!document.getElementById('modelSystemPrompt').value)
+                    document.getElementById('modelSystemPrompt').value = data.prompt || '';
+                if (!document.getElementById('modelAnalysisPersona').value)
+                    document.getElementById('modelAnalysisPersona').value = data.analysis_persona || '';
             })
-            .catch(err => console.error('Failed to load default judge prompt', err));
+            .catch(err => console.error('Failed to load default judge prompts', err));
     }
 
     toggleJudgeFields();
@@ -173,15 +177,18 @@ function closeModal() {
     document.getElementById('modelKeySelect').innerHTML = '<option value="" disabled selected>Select a local model...</option>';
     document.getElementById('modelApiKey').value = '';
     document.getElementById('modelSystemPrompt').value = '';
+    document.getElementById('modelAnalysisPersona').value = '';
     document.getElementById('modelTemperature').value = '0.7';
 }
 
 function toggleJudgeFields() {
     const category = document.getElementById('modelCategory').value;
-    const container = document.getElementById('judgeSystemPromptContainer');
-    if (container) {
-        container.style.display = category === 'judge' ? 'block' : 'none';
-    }
+    const isJudge = category === 'judge';
+    const containers = ['judgeSystemPromptContainer', 'judgeAnalysisPersonaContainer'];
+    containers.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = isJudge ? 'block' : 'none';
+    });
 }
 
 async function updateProviderDefaults() {
@@ -279,7 +286,8 @@ async function saveModel() {
         base_url: document.getElementById('modelBaseUrl').value,
         model_key: modelKey,
         api_key: document.getElementById('modelApiKey').value || null,
-        system_prompt: document.getElementById('modelSystemPrompt').value || null
+        system_prompt: document.getElementById('modelSystemPrompt').value || null,
+        analysis_persona: document.getElementById('modelAnalysisPersona').value || null,
     };
 
     if (!model.name || !model.base_url || !model.model_key) {
@@ -511,14 +519,14 @@ function showInAppAlert(message, title = 'Alert') {
     const modal = document.getElementById('alertModal');
     const titleEl = document.getElementById('alertTitle');
     const msgEl = document.getElementById('alertMessage');
-    
+
     if (modal && titleEl && msgEl) {
         titleEl.textContent = title;
         // If it's an error, maybe style it differently, but for now just text
         msgEl.textContent = message;
-        
+
         // Ensure z-index is higher than bench modal (which is 1000)
-        modal.style.zIndex = '1100'; 
+        modal.style.zIndex = '1100';
         modal.style.display = 'flex';
     } else {
         // Fallback

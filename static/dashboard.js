@@ -161,33 +161,403 @@ async function pollStatus() {
 async function loadReport() {
   try {
     const response = await fetch(`/api/audit/${currentJobId}/report`);
+    if (!response.ok) {
+      console.warn(`Report not available yet (${response.status})`);
+      return;
+    }
     const report = await response.json();
+
+    // Destroy any existing chart instances
+    if (window._orwellCharts) {
+      window._orwellCharts.forEach(c => { try { c.destroy(); } catch (e) { } });
+    }
+    window._orwellCharts = [];
+
+    // ─── If structured report_json exists, render multi-section ───
+    if (report.report_json && report.report_json.sections) {
+      const rj = report.report_json;
+      let html = '';
+
+      // Report header with risk banner
+      html += `<div style="padding:15px;background:${getRiskColor(report.overall_risk)};color:white;border-radius:8px;margin-bottom:16px;">` +
+        `<h4 style="margin:0;">Overall Risk: ${report.overall_risk.toUpperCase()}</h4>` +
+        `<p style="margin:5px 0 0 0;">${report.total_prompts} prompts in ${report.execution_time_seconds}s</p>` +
+        `</div>`;
+
+      // Show bench/judge info
+      let judgeLabel = report.judge_model || '-';
+      if (report.bench_name) {
+        judgeLabel = `⚖ Bench: ${report.bench_name} (${report.bench_mode} mode)`;
+      }
+      html += `<div class="mono" style="color:#a0a0b8;margin-bottom:16px;">Target Model: ${report.target_model || '-'} • Judge: ${judgeLabel}</div>`;
+
+      // Render each section
+      for (const section of rj.sections) {
+        html += renderReportSection(section);
+      }
+
+      document.getElementById('reportContent').innerHTML = html;
+      document.getElementById('report').style.display = 'block';
+
+      // Initialize charts after DOM is ready
+      setTimeout(() => initReportCharts(rj.sections), 100);
+      return;
+    }
+
+    // ─── Legacy fallback (no report_json) ───
     let html = `<div style="padding:15px;background:${getRiskColor(report.overall_risk)};color:white;border-radius:4px;margin-bottom:12px;">` +
       `<h4 style="margin:0;">Overall Risk: ${report.overall_risk.toUpperCase()}</h4>` +
       `<p style="margin:5px 0 0 0;">${report.total_prompts} prompts in ${report.execution_time_seconds}s</p>` +
       `</div>`;
-    // Show bench info in report if applicable
     let judgeLabel = report.judge_model || '-';
     if (report.bench_name) {
       judgeLabel = `⚖ Bench: ${report.bench_name} (${report.bench_mode} mode)`;
     }
     html += `<div class="mono" style="color:#a0a0b8;margin-bottom:12px;">Target Model: ${report.target_model || '-'} • Judge: ${judgeLabel} • Endpoint: ${report.target_endpoint || '-'}</div>`;
     html += `<h4>Dimension Scores</h4>`;
-    for (const [dim, score] of Object.entries(report.dimensions)) {
+    for (const [dim, score] of Object.entries(report.dimensions || {})) {
       html += `<div class="dimension"><strong>${score.dimension}</strong><br>` +
         `Mean Score: ${score.mean_score}/7 (n=${score.sample_size}, risk: ${score.risk_level})</div>`;
     }
-    if (report.final_analysis) {
-      html += `<h4 style="margin-top:16px">Final Analysis</h4>`;
-      html += `<div class="reason">${renderMarkdown(report.final_analysis)}</div>`;
-    }
-    if ((report.total_prompts || 0) === 0 && /aborted/i.test(report.final_analysis || '')) {
-      html = `<div class="reason">${renderMarkdown(report.final_analysis)}</div>`;
-    }
+    html += `<p style="color:var(--muted);font-style:italic;margin-top:16px;">This is a legacy report without structured sections.</p>`;
     document.getElementById('reportContent').innerHTML = html;
     document.getElementById('report').style.display = 'block';
   } catch (err) {
     console.error('Error loading report:', err);
+  }
+}
+
+// ─── Section Renderers ───
+
+function renderReportSection(section) {
+  const type = section.type;
+  let html = '';
+
+  switch (type) {
+    case 'executive_summary':
+      html += renderExecutiveSummary(section);
+      break;
+    case 'context_methodology':
+      html += renderContextMethodology(section);
+      break;
+    case 'dimension_analysis':
+      html += renderDimensionAnalysis(section);
+      break;
+    case 'score_distribution':
+      html += renderScoreDistribution(section);
+      break;
+    case 'bench_agreement':
+      html += renderBenchAgreement(section);
+      break;
+    case 'failure_analysis':
+      html += renderFlaggedResponses(section);
+      break;
+    case 'ai_failure_analysis':
+      html += renderAIFailureAnalysis(section);
+      break;
+    case 'recommendations':
+      html += renderRecommendations(section);
+      break;
+    default:
+      html += `<div class="reason" style="margin-bottom:12px;">${renderMarkdown(JSON.stringify(section, null, 2))}</div>`;
+  }
+  return html;
+}
+
+function renderExecutiveSummary(section) {
+  const statusColors = { pass: '#28a745', fail: '#dc3545', warning: '#ffc107' };
+  const statusColor = statusColors[section.status] || '#6c757d';
+  const statusLabel = (section.status || 'info').toUpperCase();
+
+  return `
+    <div style="border-left:4px solid ${statusColor};padding:16px;background:#0f1018;border-radius:0 8px 8px 0;margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="background:${statusColor};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${statusLabel}</span>
+        <h4 style="margin:0;">${escapeHtml(section.title)}</h4>
+      </div>
+      <div class="reason">${renderMarkdown(section.content)}</div>
+    </div>`;
+}
+
+function renderContextMethodology(section) {
+  const sp = section.system_prompt_card;
+  const jp = section.judge_profile;
+  const tp = section.test_parameters;
+
+  let spDisplay = '';
+  if (sp.text) {
+    const preview = sp.text.length > 200 ? sp.text.slice(0, 200) + '...' : sp.text;
+    spDisplay = `<div style="font-family:monospace;white-space:pre-wrap;font-size:12px;color:var(--text);opacity:0.9;background:#0e0e14;padding:10px;border-radius:6px;border:1px solid var(--border);">${escapeHtml(preview)}</div>`;
+  } else {
+    spDisplay = `<div style="color:var(--muted);font-style:italic;">${escapeHtml(sp.note || 'None')}</div>`;
+  }
+
+  let judgeDisplay = `<strong>${escapeHtml(jp.model)}</strong>`;
+  if (jp.type === 'bench') {
+    judgeDisplay = `<strong>⚖ ${escapeHtml(jp.bench_name || '')}</strong> (${escapeHtml(jp.bench_mode || '')} mode)<br>`;
+    judgeDisplay += `<span style="color:var(--muted);font-size:12px;">Judges: ${(jp.models || []).map(m => escapeHtml(m)).join(', ')}</span>`;
+  }
+
+  return `
+    <div style="margin-bottom:16px;padding:16px;background:#0f1018;border-radius:8px;border:1px solid var(--border);">
+      <h4 style="margin:0 0 12px;color:var(--muted);font-size:12px;text-transform:uppercase;">${escapeHtml(section.title)}</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div>
+          <div style="font-weight:600;margin-bottom:6px;font-size:13px;">System Prompt</div>
+          ${spDisplay}
+        </div>
+        <div>
+          <div style="font-weight:600;margin-bottom:6px;font-size:13px;">Judge Profile</div>
+          <div>${judgeDisplay}</div>
+          <div style="margin-top:12px;font-weight:600;margin-bottom:6px;font-size:13px;">Test Parameters</div>
+          <div style="font-size:12px;color:var(--muted);">
+            Sample Size: ${tp.sample_size || '-'} • Temperature: ${tp.temperature || '-'} • Language: ${tp.language || '-'}
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderDimensionAnalysis(section) {
+  // Render dimension stats table + placeholder for radar chart
+  let tableRows = '';
+  for (const [dim, data] of Object.entries(section.stats || {})) {
+    const riskColor = data.risk_level === 'high' ? '#dc3545' : (data.risk_level === 'medium' ? '#ffc107' : '#28a745');
+    tableRows += `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid var(--border);">${escapeHtml(dim)}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;">${data.mean_score}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;">${data.median_score}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;">${data.std_dev}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;">${data.failures}/${data.sample_size}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;"><span style="color:${riskColor};font-weight:600;">${data.risk_level.toUpperCase()}</span></td>
+      </tr>`;
+  }
+
+  return `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;">
+          <canvas id="radarChart" width="400" height="400"></canvas>
+        </div>
+        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead>
+              <tr style="color:var(--muted);text-transform:uppercase;font-size:11px;">
+                <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Dimension</th>
+                <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Mean</th>
+                <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Median</th>
+                <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Std Dev</th>
+                <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Failures</th>
+                <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Risk</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderScoreDistribution(section) {
+  return `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
+      <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;max-width:600px;">
+        <canvas id="histogramChart" width="600" height="300"></canvas>
+      </div>
+    </div>`;
+}
+
+function renderBenchAgreement(section) {
+  const matrix = section.matrix || {};
+  let rows = '';
+  for (const [dim, data] of Object.entries(matrix)) {
+    const judges = data.judge_means || {};
+    const judgeScores = Object.entries(judges).map(([j, s]) => `${escapeHtml(j)}: ${s}`).join(' | ');
+    const agreeColor = data.agreement_level === 'high' ? '#28a745' : (data.agreement_level === 'medium' ? '#ffc107' : '#dc3545');
+    rows += `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid var(--border);">${escapeHtml(dim)}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);font-size:12px;">${judgeScores}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;">${data.variance}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;"><span style="color:${agreeColor};font-weight:600;">${(data.agreement_level || '').toUpperCase()}</span></td>
+      </tr>`;
+  }
+
+  return `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
+      <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="color:var(--muted);text-transform:uppercase;font-size:11px;">
+              <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Dimension</th>
+              <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Judge Means</th>
+              <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Variance</th>
+              <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Agreement</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function renderFlaggedResponses(section) {
+  const table = section.table || {};
+  const rows = table.rows || [];
+
+  if (rows.length === 0) {
+    return `
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px;">${escapeHtml(section.title)} <span style="color:var(--muted);font-size:13px;">(${section.total_flagged || 0} flagged)</span></h4>
+        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;color:#28a745;">
+          ✓ No responses scored below threshold (< 4/7). All responses are within acceptable range.
+        </div>
+      </div>`;
+  }
+
+  let tableRows = '';
+  for (const row of rows.slice(0, 20)) {  // Limit display to 20
+    const promptPreview = (row.prompt || '').slice(0, 100) + ((row.prompt || '').length > 100 ? '...' : '');
+    const responsePreview = (row.response || '').slice(0, 150) + ((row.response || '').length > 150 ? '...' : '');
+    tableRows += `
+      <tr>
+        <td style="padding:8px;border-bottom:1px solid var(--border);font-size:12px;">${escapeHtml(row.dimension)}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);font-size:12px;">${escapeHtml(promptPreview)}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);font-size:12px;">${escapeHtml(responsePreview)}</td>
+        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;font-weight:600;color:#dc3545;">${row.score}/7</td>
+      </tr>`;
+  }
+
+  return `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">${escapeHtml(section.title)} <span style="color:var(--muted);font-size:13px;">(${section.total_flagged} flagged)</span></h4>
+      <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="color:var(--muted);text-transform:uppercase;font-size:11px;">
+              <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Dimension</th>
+              <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Prompt</th>
+              <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Response</th>
+              <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Score</th>
+            </tr>
+          </thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+        ${rows.length > 20 ? `<div style="color:var(--muted);font-size:12px;margin-top:8px;">Showing 20 of ${rows.length} flagged responses</div>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderAIFailureAnalysis(section) {
+  return `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
+      <div class="reason">${renderMarkdown(section.content)}</div>
+    </div>`;
+}
+
+function renderRecommendations(section) {
+  return `
+    <div style="margin-bottom:16px;border-left:4px solid var(--primary);padding:16px;background:#0f1018;border-radius:0 8px 8px 0;">
+      <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
+      <div class="reason">${renderMarkdown(section.content)}</div>
+    </div>`;
+}
+
+// ─── Chart.js Initialization ───
+
+function initReportCharts(sections) {
+  const chartDefaults = {
+    color: '#a0a0b8',
+    borderColor: '#2e2e48',
+    font: { family: 'system-ui, sans-serif' }
+  };
+
+  // Radar Chart
+  const dimSection = sections.find(s => s.type === 'dimension_analysis');
+  if (dimSection && dimSection.radar_chart) {
+    const radarCanvas = document.getElementById('radarChart');
+    if (radarCanvas) {
+      const radarChart = new Chart(radarCanvas, {
+        type: 'radar',
+        data: {
+          labels: dimSection.radar_chart.labels,
+          datasets: dimSection.radar_chart.datasets.map(ds => ({
+            label: ds.label,
+            data: ds.data,
+            backgroundColor: 'rgba(99, 102, 241, 0.15)',
+            borderColor: 'rgba(99, 102, 241, 0.8)',
+            borderWidth: 2,
+            pointBackgroundColor: 'rgba(99, 102, 241, 1)',
+            pointBorderColor: '#fff',
+            pointHoverRadius: 6,
+          }))
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          scales: {
+            r: {
+              min: 0,
+              max: 7,
+              ticks: { stepSize: 1, color: '#666', backdropColor: 'transparent' },
+              grid: { color: '#2e2e48' },
+              angleLines: { color: '#2e2e48' },
+              pointLabels: { color: '#a0a0b8', font: { size: 11 } }
+            }
+          },
+          plugins: {
+            legend: { labels: { color: '#a0a0b8' } }
+          }
+        }
+      });
+      window._orwellCharts.push(radarChart);
+    }
+  }
+
+  // Histogram (Score Distribution)
+  const histSection = sections.find(s => s.type === 'score_distribution');
+  if (histSection && histSection.histogram) {
+    const histCanvas = document.getElementById('histogramChart');
+    if (histCanvas) {
+      const histData = histSection.histogram.datasets[0].data;
+      const barColors = histData.map((_, i) => {
+        const score = i + 1;
+        if (score <= 2) return 'rgba(220, 53, 69, 0.7)';
+        if (score <= 3) return 'rgba(255, 193, 7, 0.7)';
+        return 'rgba(40, 167, 69, 0.7)';
+      });
+
+      const histChart = new Chart(histCanvas, {
+        type: 'bar',
+        data: {
+          labels: histSection.histogram.labels.map(l => `Score ${l}`),
+          datasets: [{
+            label: 'Response Count',
+            data: histData,
+            backgroundColor: barColors,
+            borderColor: barColors.map(c => c.replace('0.7', '1')),
+            borderWidth: 1,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          scales: {
+            y: { beginAtZero: true, ticks: { color: '#666', stepSize: 1 }, grid: { color: '#1a1a23' } },
+            x: { ticks: { color: '#a0a0b8' }, grid: { display: false } }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
+      window._orwellCharts.push(histChart);
+    }
   }
 }
 

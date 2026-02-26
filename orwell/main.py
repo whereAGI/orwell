@@ -8,6 +8,7 @@ import csv
 import io
 from datetime import datetime, timezone
 from typing import List, Optional
+import os
 
 from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig, JudgeBench
 from .engine import AuditEngine
@@ -154,7 +155,9 @@ async def list_models(category: Optional[str] = None):
                 base_url=r.base_url,
                 model_key=r.model_key,
                 api_key=r.api_key,
-                system_prompt=getattr(r, "system_prompt", None)
+                system_prompt=getattr(r, "system_prompt", None),
+                analysis_persona=getattr(r, "analysis_persona", None),
+                temperature=getattr(r, "temperature", 0.7),
             ) for r in records
         ]
     except Exception as e:
@@ -174,7 +177,10 @@ async def create_model(config: ModelConfig):
             "provider": config.provider,
             "base_url": config.base_url,
             "model_key": config.model_key,
-            "api_key": config.api_key
+            "api_key": config.api_key,
+            "system_prompt": config.system_prompt,
+            "analysis_persona": config.analysis_persona,
+            "temperature": config.temperature if config.temperature is not None else 0.7,
         })
         return ModelConfig(
             id=record.id,
@@ -184,7 +190,9 @@ async def create_model(config: ModelConfig):
             base_url=record.base_url,
             model_key=record.model_key,
             api_key=record.api_key,
-            temperature=getattr(record, "temperature", 0.7)
+            system_prompt=getattr(record, "system_prompt", None),
+            analysis_persona=getattr(record, "analysis_persona", None),
+            temperature=getattr(record, "temperature", 0.7),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create model: {str(e)}")
@@ -204,9 +212,10 @@ async def update_model(model_id: str, config: ModelConfig):
             "base_url": config.base_url,
             "model_key": config.model_key,
             "api_key": config.api_key,
-            "system_prompt": config.system_prompt
+            "system_prompt": config.system_prompt,
+            "analysis_persona": config.analysis_persona,
         }
-        if hasattr(config, "temperature") and config.temperature is not None:
+        if config.temperature is not None:
             data["temperature"] = config.temperature
 
         pb.collection("models").update(model_id, data)
@@ -225,7 +234,11 @@ async def delete_model(model_id: str):
 
 @app.get("/api/models/judge/default-prompt")
 async def get_default_judge_prompt():
-    return {"prompt": DEFAULT_JUDGE_SYSTEM_PROMPT}
+    from .judge import DEFAULT_ANALYSIS_PERSONA
+    return {
+        "prompt": DEFAULT_JUDGE_SYSTEM_PROMPT,
+        "analysis_persona": DEFAULT_ANALYSIS_PERSONA,
+    }
 
 # ──────────────────────────────────────────────────
 # Judge Bench CRUD Endpoints
@@ -515,12 +528,14 @@ async def get_audit_report(job_id: str):
             execution_time_seconds=report.execution_time_seconds,
             overall_risk=report.overall_risk,
             dimensions=report.dimensions,
-            final_analysis=report.final_analysis,
+            report_json=json.loads(rj) if isinstance((rj := getattr(report, 'report_json', None)), str) else rj if rj else None,
             generated_at=report.created,
             bench_name=config.get('bench_name', None),
             bench_mode=config.get('bench_mode', None)
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=404, detail=f"Report not found: {e}")
 
 @app.get("/api/audit/{job_id}/details")

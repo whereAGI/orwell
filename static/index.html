@@ -370,11 +370,13 @@
         <div style="margin-top:16px">
           <label>Judge Source</label>
           <div style="display:flex; gap:16px; margin-top:8px; margin-bottom:12px;">
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; color:var(--text); margin:0;">
+            <label
+              style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; color:var(--text); margin:0;">
               <input type="radio" name="judgeSource" value="single" checked onchange="toggleJudgeSource()">
               Single Judge
             </label>
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; color:var(--text); margin:0;">
+            <label
+              style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:14px; color:var(--text); margin:0;">
               <input type="radio" name="judgeSource" value="bench" onchange="toggleJudgeSource()">
               Bench
             </label>
@@ -507,6 +509,7 @@
   </script>
   <script src="/static/nav.js"></script>
   <script>renderNavbar('playground');</script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="/static/dashboard.js"></script>
 </body>
 

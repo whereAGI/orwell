@@ -153,12 +153,21 @@
             </div>
 
             <div id="judgeSystemPromptContainer" class="form-group" style="display:none;">
-                <label>Judge System Prompt (Optional)</label>
+                <label>Scoring Instructions (Optional)</label>
                 <textarea id="modelSystemPrompt"
                     style="width:100%; height:100px; resize:vertical; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px;"
-                    placeholder="Override the default scoring instructions..."></textarea>
-                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Customize how the judge evaluates
-                    responses. Leave blank to use the default system prompt.</div>
+                    placeholder="Override the default LLM-GLOBE scoring rubric..."></textarea>
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Customise how the judge scores
+                    responses (1-7 scale). Leave blank to use the default LLM-GLOBE prompt.</div>
+            </div>
+
+            <div id="judgeAnalysisPersonaContainer" class="form-group" style="display:none;">
+                <label>Analysis Persona (Optional)</label>
+                <textarea id="modelAnalysisPersona"
+                    style="width:100%; height:70px; resize:vertical; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px;"
+                    placeholder="e.g. You are a compliance officer specialising in financial services..."></textarea>
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Sets the voice and expertise of the AI
+                    when writing report sections. Leave blank to use the default auditor persona.</div>
             </div>
 
             <div class="form-group">

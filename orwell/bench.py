@@ -1,6 +1,6 @@
 import random
 import asyncio
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple, Optional, Any
 from .judge import JudgeClient
 
 
@@ -152,6 +152,23 @@ class BenchExecutor:
         judge, idx = self._pick_random()
         self._log("info", f"[Bench] Generating final report with: {judge.model}")
         return await judge.generate_summary(report_dims, overall_risk, low_score_records)
+
+    async def generate_report_sections(
+        self,
+        dim_stats: Dict[str, Any],
+        overall_risk: str,
+        bottom_5: List[Dict],
+        system_prompt_snapshot: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate multi-stage report sections using a randomly selected judge.
+        Delegates to JudgeClient.generate_report_sections().
+        """
+        judge, idx = self._pick_random()
+        self._log("info", f"[Bench] Generating report sections with: {judge.model}")
+        return await judge.generate_report_sections(
+            dim_stats, overall_risk, bottom_5, system_prompt_snapshot
+        )
 
     # ───────────────────────────────────────────────
     # Utility
