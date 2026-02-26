@@ -100,6 +100,12 @@
                 <div style="font-size:12px; color:var(--muted); margin-top:4px;">Customize how the judge evaluates responses. Leave blank to use the default system prompt.</div>
             </div>
 
+            <div class="form-group">
+                <label>Temperature (0.0 - 2.0)</label>
+                <input type="number" id="modelTemperature" style="width:100%" step="0.1" min="0" max="2" value="0.7">
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Controls randomness. Lower values are more deterministic.</div>
+            </div>
+
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
                 <button class="secondary" onclick="closeModal()">Cancel</button>
                 <button onclick="saveModel()">Save Model</button>
@@ -120,6 +126,7 @@
     </div>
 
     <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
+    <script src="/config.js"></script>
     <script src="/static/auth.js"></script>
     <script>
         // Protect route

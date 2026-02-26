@@ -1,4 +1,4 @@
-const pb = new PocketBase('http://127.0.0.1:8090');
+const pb = new PocketBase(window.ORWELL_CONFIG?.pocketbase_url || 'http://127.0.0.1:8090');
 
 // Check if already logged in
 if (pb.authStore.isValid && window.location.pathname === '/login') {

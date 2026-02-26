@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File, Response
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -13,7 +13,7 @@ from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConf
 from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
 from .judge import DEFAULT_JUDGE_SYSTEM_PROMPT
-from .pb_client import get_pb
+from .pb_client import get_pb, PB_URL
 from .log_store import get_logs
 import httpx
 
@@ -96,6 +96,26 @@ class CreateSystemPromptRequest(BaseModel):
 app = FastAPI(title="Orwell POC", version="0.1.0")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+@app.get("/config.js")
+async def get_config_js():
+    # Return a JS file that sets global config
+    # We use the public URL here. If running in Docker, this should be the browser-accessible URL.
+    # For local dev, it's http://127.0.0.1:8090.
+    # We can default to relative if proxied, or use an env var for PUBLIC_PB_URL.
+    
+    # In docker-compose, we map 8090:8090, so localhost:8090 works for the browser.
+    # But if deployed on a server, it should be that server's IP/domain.
+    # We'll use an env var PUBLIC_POCKETBASE_URL, default to http://127.0.0.1:8090
+    
+    pb_url = os.getenv("PUBLIC_POCKETBASE_URL", "http://127.0.0.1:8090")
+    
+    content = f"""
+    window.ORWELL_CONFIG = {{
+        pocketbase_url: "{pb_url}"
+    }};
+    """
+    return Response(content=content, media_type="application/javascript")
+
 @app.get("/")
 async def root():
     return FileResponse("static/index.html")
@@ -163,7 +183,8 @@ async def create_model(config: ModelConfig):
             provider=record.provider,
             base_url=record.base_url,
             model_key=record.model_key,
-            api_key=record.api_key
+            api_key=record.api_key,
+            temperature=getattr(record, "temperature", 0.7)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create model: {str(e)}")
@@ -176,7 +197,7 @@ async def update_model(model_id: str, config: ModelConfig):
     pb = get_pb()
     try:
         # Update existing record
-        pb.collection("models").update(model_id, {
+        data = {
             "name": config.name,
             "category": config.category,
             "provider": config.provider,
@@ -184,7 +205,11 @@ async def update_model(model_id: str, config: ModelConfig):
             "model_key": config.model_key,
             "api_key": config.api_key,
             "system_prompt": config.system_prompt
-        })
+        }
+        if hasattr(config, "temperature") and config.temperature is not None:
+            data["temperature"] = config.temperature
+
+        pb.collection("models").update(model_id, data)
         return config
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update model: {str(e)}")
@@ -536,7 +561,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = credentials.credentials
-    client = PocketBase("http://127.0.0.1:8090")
+    client = PocketBase(PB_URL)
     client.auth_store.save(token, None)
     try:
         auth_data = client.collection("users").authRefresh()
@@ -548,7 +573,7 @@ def get_optional_current_user(credentials: Optional[HTTPAuthorizationCredentials
     if not credentials:
         return None
     token = credentials.credentials
-    client = PocketBase("http://127.0.0.1:8090")
+    client = PocketBase(PB_URL)
     client.auth_store.save(token, None)
     try:
         auth_data = client.collection("users").authRefresh()
@@ -604,11 +629,14 @@ async def list_dimensions():
     # Fetch unique dimensions directly from SQLite for performance
     try:
         import aiosqlite
-        from .config import get_db_path # Assuming get_db_path is available or define it
+        from .config import get_db_path
         
-        # Determine DB path (usually pb_data/data.db relative to CWD)
-        db_path = "pb_data/data.db"
+        db_path = get_db_path()
         
+        if not os.path.exists(db_path):
+             # Fallback if DB not found (e.g. first run)
+             return []
+             
         async with aiosqlite.connect(db_path) as db:
             async with db.execute("SELECT DISTINCT dimension FROM custom_prompts WHERE dimension IS NOT NULL AND dimension != '' ORDER BY dimension") as cursor:
                 rows = await cursor.fetchall()

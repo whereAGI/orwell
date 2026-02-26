@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - POCKETBASE_URL=http://pocketbase:8090
+      - PUBLIC_POCKETBASE_URL=${PUBLIC_POCKETBASE_URL:-http://127.0.0.1:8090}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@orwell.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-1234567890}
+      - TEST_USER_EMAIL=${TEST_USER_EMAIL:-test@example.com}
+      - TEST_USER_PASSWORD=${TEST_USER_PASSWORD:-password123456}
+    depends_on:
+      - pocketbase
+    volumes:
+      - ./data:/app/data
+      - ./pb_data:/app/pb_data
+
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./pb_data:/pb_data
+    command: --http=0.0.0.0:8090

@@ -29,6 +29,7 @@ class AuditRequest(BaseModel):
     target_endpoint: Optional[HttpUrl] = None
     api_key: Optional[str] = ""
     model_name: Optional[str] = None
+    temperature: Optional[float] = 0.7
     language: str = "en"
     sample_size: Optional[int] = 50
     dimensions: Optional[List[str]] = None

@@ -40,33 +40,52 @@ fi
 # Check if virtual environment exists
 if [ ! -d ".venv" ]; then
     echo -e "${RED}Error: Virtual environment not found${NC}"
-    echo "Please run: python -m venv .venv && .venv/bin/pip install -r requirements.txt"
+    echo "Please run: python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
     exit 1
+fi
+
+# Get config from .env if available
+PB_BIND="127.0.0.1:8090"
+PB_URL="http://127.0.0.1:8090"
+APP_PORT="8000"
+
+if [ -f ".env" ]; then
+    echo -e "${GREEN}Loading configuration from .env...${NC}"
+    # Use python to safely parse .env
+    eval $(.venv/bin/python -c "
+import os
+from dotenv import load_dotenv
+load_dotenv()
+pb_url = os.getenv('POCKETBASE_URL', 'http://127.0.0.1:8090')
+pb_bind = pb_url.replace('http://', '').replace('https://', '')
+print(f'PB_BIND={pb_bind}')
+print(f'PB_URL={pb_url}')
+")
 fi
 
 # Start PocketBase
 echo -e "${GREEN}▶ Starting PocketBase...${NC}"
-./pocketbase serve --http=127.0.0.1:8090 > /tmp/pocketbase.log 2>&1 &
+./pocketbase serve --http=${PB_BIND} > /tmp/pocketbase.log 2>&1 &
 POCKETBASE_PID=$!
-echo -e "  PocketBase running at ${BLUE}http://127.0.0.1:8090${NC} (PID: $POCKETBASE_PID)"
-echo -e "  Admin UI: ${BLUE}http://127.0.0.1:8090/_/${NC}"
+echo -e "  PocketBase running at ${BLUE}${PB_URL}${NC} (PID: $POCKETBASE_PID)"
+echo -e "  Admin UI: ${BLUE}${PB_URL}/_/${NC}"
 
 # Wait for PocketBase to be ready
 sleep 2
 
 # Start FastAPI app
 echo -e "${GREEN}▶ Starting FastAPI app...${NC}"
-.venv/bin/uvicorn orwell.main:app --reload --port 8000 > /tmp/uvicorn.log 2>&1 &
+.venv/bin/uvicorn orwell.main:app --reload --port ${APP_PORT} > /tmp/uvicorn.log 2>&1 &
 UVICORN_PID=$!
-echo -e "  FastAPI running at ${BLUE}http://127.0.0.1:8000${NC} (PID: $UVICORN_PID)"
+echo -e "  FastAPI running at ${BLUE}http://127.0.0.1:${APP_PORT}${NC} (PID: $UVICORN_PID)"
 
 echo ""
 echo -e "${GREEN}✓ All services started successfully!${NC}"
 echo ""
 echo -e "${BLUE}URLs:${NC}"
-echo -e "  Playground:  http://127.0.0.1:8000"
-echo -e "  Data Studio: http://127.0.0.1:8000/studio"
-echo -e "  PocketBase:  http://127.0.0.1:8090/_/"
+echo -e "  Playground:  http://127.0.0.1:${APP_PORT}"
+echo -e "  Data Studio: http://127.0.0.1:${APP_PORT}/studio"
+echo -e "  PocketBase:  ${PB_URL}/_/"
 echo ""
 echo -e "${BLUE}Logs:${NC}"
 echo -e "  PocketBase: tail -f /tmp/pocketbase.log"

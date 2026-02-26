@@ -1,19 +1,28 @@
 import asyncio
 from pocketbase import PocketBase
 from pocketbase.utils import ClientResponseError
+import os
+from dotenv import load_dotenv
 
-URL = "http://127.0.0.1:8090"
-ADMIN_EMAIL = "admin@orwell.com"
-ADMIN_PASS = "1234567890"
+load_dotenv()
+
+URL = os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@orwell.com")
+ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "1234567890")
 
 async def main():
     pb = PocketBase(URL)
 
     # Authenticate
-    # Manually save token from curl response to bypass SDK auth issue
-    token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjU5OTgwNzMsImlkIjoiaHY1c2R2NWplYmFwb29yIiwidHlwZSI6ImFkbWluIn0.M7hNJxurmrS1-m76yOSDL1fRFpz7__cuAWnFkIW74Qk"
-    pb.auth_store.save(token, None)
-    print("Authenticated via manual token.")
+    # Try to authenticate with password first, if that fails, maybe manual token?
+    # But manual token is hardcoded and specific to a user/session.
+    # It's better to use admin login.
+    try:
+        pb.admins.auth_with_password(ADMIN_EMAIL, ADMIN_PASS)
+        print(f"Authenticated as {ADMIN_EMAIL}")
+    except Exception as e:
+        print(f"Failed to authenticate as admin: {e}")
+        return
 
     # Helper to get collection ID
     def get_id(name):

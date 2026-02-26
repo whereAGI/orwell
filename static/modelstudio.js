@@ -116,6 +116,7 @@ function editModel(model) {
     
     // Set existing prompt first
     document.getElementById('modelSystemPrompt').value = model.system_prompt || '';
+    document.getElementById('modelTemperature').value = (model.temperature !== undefined && model.temperature !== null) ? model.temperature : 0.7;
 
     // If it's a judge model and has no prompt, fetch default
     if (model.category === 'judge' && !model.system_prompt) {
@@ -159,6 +160,7 @@ function closeModal() {
     document.getElementById('modelKeySelect').innerHTML = '<option value="" disabled selected>Select a local model...</option>';
     document.getElementById('modelApiKey').value = '';
     document.getElementById('modelSystemPrompt').value = '';
+    document.getElementById('modelTemperature').value = '0.7';
 }
 
 function toggleJudgeFields() {

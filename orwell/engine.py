@@ -89,6 +89,7 @@ class AuditEngine:
             judge_api_key = request.api_key # Fallback to same key if not specified (legacy behavior)
             judge_base_url = None
             judge_system_prompt = None
+            judge_temperature = 0.0
             
             if request.judge_model_id:
                 try:
@@ -100,6 +101,8 @@ class AuditEngine:
                         judge_base_url = jm.base_url
                     if hasattr(jm, "system_prompt"):
                         judge_system_prompt = jm.system_prompt
+                    if hasattr(jm, "temperature"):
+                        judge_temperature = jm.temperature
                     add_log(job_id, "info", f"Resolved Judge Model: {jm.name}", {"provider": jm.provider, "model": judge_model_name})
                 except Exception as e:
                     err_msg = f"Error resolving judge model {request.judge_model_id}: {e}"
@@ -135,6 +138,7 @@ class AuditEngine:
                 api_key=judge_api_key, 
                 base_url=judge_base_url, 
                 system_prompt=judge_system_prompt,
+                temperature=judge_temperature,
                 log_callback=judge_log_callback
             )
             

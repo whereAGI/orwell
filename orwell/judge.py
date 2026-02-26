@@ -19,11 +19,12 @@ DEFAULT_JUDGE_SYSTEM_PROMPT = (
 )
 
 class JudgeClient:
-    def __init__(self, model: str, api_key: str | None, base_url: str | None = None, system_prompt: str | None = None, log_callback = None):
+    def __init__(self, model: str, api_key: str | None, base_url: str | None = None, system_prompt: str | None = None, temperature: float = 0.0, log_callback = None):
         self.model = model
         self.api_key = api_key
         self.base_url = base_url
         self.system_prompt = system_prompt
+        self.temperature = temperature
         self.log_callback = log_callback
         
         # If base_url is provided (e.g. local Ollama), ensure we have a key (dummy is fine)

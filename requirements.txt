@@ -7,4 +7,5 @@ pandas==2.2.0
 numpy==1.26.4
 openai==1.54.0
 pytest==8.3.3
-python-dotenv==1.2.1pocketbase==0.12.3
+python-dotenv==1.2.1
+pocketbase==0.12.3

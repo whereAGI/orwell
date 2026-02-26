@@ -1,0 +1,11 @@
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+.env
+pb_data
+data
+pocketbase
+start.sh
+README.md

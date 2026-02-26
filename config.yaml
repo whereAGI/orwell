@@ -3,7 +3,7 @@ orwell:
   environment: "demo"
 
 database:
-  path: "orwell.db"
+  path: "pb_data/data.db"
 
 server:
   host: "0.0.0.0"

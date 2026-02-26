@@ -1,11 +1,13 @@
 from pocketbase import PocketBase
 import os
+from dotenv import load_dotenv
 
-# Hardcoded for now, ideally from config
-PB_URL = "http://127.0.0.1:8090"
-ADMIN_EMAIL = "admin@orwell.com"
-# In a real app, use env vars
-ADMIN_PASS = "1234567890"
+load_dotenv()
+
+# Configuration from environment variables
+PB_URL = os.getenv("POCKETBASE_URL", "http://127.0.0.1:8090")
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "admin@orwell.com")
+ADMIN_PASS = os.getenv("ADMIN_PASSWORD", "1234567890")
 
 class PBClient:
     _instance = None
