@@ -170,6 +170,18 @@ class BenchExecutor:
             dim_stats, overall_risk, bottom_5, system_prompt_snapshot
         )
 
+    async def generate_section_explanations(
+        self,
+        sections: List[Dict[str, Any]],
+        overall_risk: str,
+    ) -> Dict[str, str]:
+        """
+        Delegates explanation generation to a random judge.
+        """
+        judge, idx = self._pick_random()
+        self._log("info", f"[Bench] Generating explanations with: {judge.model}")
+        return await judge.generate_section_explanations(sections, overall_risk)
+
     # ───────────────────────────────────────────────
     # Utility
     # ───────────────────────────────────────────────

@@ -401,10 +401,28 @@ class AuditEngine:
                     "models": [j.model for j in bench_executor.judges],
                 }
             else:
+                judge_source_url = None
+                if request.judge_model_id:
+                    try:
+                        jm_rec = pb.collection("models").get_one(request.judge_model_id)
+                        judge_source_url = getattr(jm_rec, "source_url", None)
+                    except:
+                        pass
+                
                 judge_cfg = {
                     "type": "single",
                     "model": judge_model_name,
+                    "source_url": judge_source_url,
                 }
+
+            # Resolve target model source
+            target_source_url = None
+            if request.target_model_id and request.target_model_id != "custom":
+                try:
+                    tm_rec = pb.collection("models").get_one(request.target_model_id)
+                    target_source_url = getattr(tm_rec, "source_url", None)
+                except:
+                    pass
 
             # Parse config for test params
             try:
@@ -428,30 +446,67 @@ class AuditEngine:
                 dim_scores=dim_scores,
                 all_scored_records=all_scored_records,
                 bench_scores=bench_scores_by_dim if bench_executor else None,
+                target_model_source=target_source_url,
             )
 
             report_data = builder.build_all()
             add_log(job_id, "success", f"Built quantitative sections ({len(report_data['sections'])} sections)")
 
             # ── Multi-Stage AI Generation ──
-            add_log(job_id, "info", "Starting multi-stage AI report generation (3 calls)")
+            add_log(job_id, "info", "Starting multi-stage AI report generation")
             ai_input = report_data.pop("_ai_input", {})
 
             try:
+                # Define tasks for parallel execution
+                tasks = []
+                
+                # Task 1: Main report sections (Executive Summary, Failure Analysis, Recommendations)
                 if bench_executor:
-                    ai_sections = await bench_executor.generate_report_sections(
+                    tasks.append(bench_executor.generate_report_sections(
                         dim_stats=ai_input.get("dim_stats", {}),
                         overall_risk=overall_risk,
                         bottom_5=ai_input.get("bottom_5", []),
                         system_prompt_snapshot=system_prompt_snapshot,
-                    )
+                    ))
+                    # Task 2: Section Explanations
+                    tasks.append(bench_executor.generate_section_explanations(
+                        sections=report_data["sections"],
+                        overall_risk=overall_risk,
+                    ))
                 else:
-                    ai_sections = await judge.generate_report_sections(
+                    tasks.append(judge.generate_report_sections(
                         dim_stats=ai_input.get("dim_stats", {}),
                         overall_risk=overall_risk,
                         bottom_5=ai_input.get("bottom_5", []),
                         system_prompt_snapshot=system_prompt_snapshot,
-                    )
+                    ))
+                    # Task 2: Section Explanations
+                    tasks.append(judge.generate_section_explanations(
+                        sections=report_data["sections"],
+                        overall_risk=overall_risk,
+                    ))
+                
+                # Execute tasks concurrently
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                
+                # Process Main Report Sections
+                ai_sections = results[0]
+                if isinstance(ai_sections, Exception):
+                    raise ai_sections
+                
+                # Process Section Explanations
+                explanations = results[1]
+                if isinstance(explanations, Exception):
+                    add_log(job_id, "warning", f"Failed to generate explanations: {explanations}")
+                elif isinstance(explanations, dict):
+                    count = 0
+                    for section in report_data["sections"]:
+                        sType = section.get("type")
+                        if sType in explanations:
+                            section["explanation"] = explanations[sType]
+                            count += 1
+                    add_log(job_id, "success", f"Added explanations to {count} sections")
+                
                 add_log(job_id, "success", "Multi-stage AI generation complete")
             except Exception as e:
                 err_msg = f"AI report generation failed: {e}"

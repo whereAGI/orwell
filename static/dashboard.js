@@ -186,10 +186,21 @@ async function loadReport() {
 
       // Show bench/judge info
       let judgeLabel = report.judge_model || '-';
+      let judgeSource = rj.meta && rj.meta.judge_config && rj.meta.judge_config.source_url;
+      
       if (report.bench_name) {
         judgeLabel = `⚖ Bench: ${report.bench_name} (${report.bench_mode} mode)`;
+      } else if (judgeSource) {
+        judgeLabel = `<a href="${judgeSource}" target="_blank" style="color:#a0a0b8;text-decoration:underline;">${judgeLabel}</a>`;
       }
-      html += `<div class="mono" style="color:#a0a0b8;margin-bottom:16px;">Target Model: ${report.target_model || '-'} • Judge: ${judgeLabel}</div>`;
+
+      let targetLabel = report.target_model || '-';
+      let targetSource = rj.meta && rj.meta.target_model_source;
+      if (targetSource) {
+        targetLabel = `<a href="${targetSource}" target="_blank" style="color:#a0a0b8;text-decoration:underline;">${targetLabel}</a>`;
+      }
+
+      html += `<div class="mono" style="color:#a0a0b8;margin-bottom:16px;">Target Model: ${targetLabel} • Judge: ${judgeLabel}</div>`;
 
       // Render each section
       for (const section of rj.sections) {
@@ -226,6 +237,52 @@ async function loadReport() {
     console.error('Error loading report:', err);
   }
 }
+
+// Global variable to store chart data for modal
+let currentRadarData = null;
+
+window.openRadarModal = function() {
+  const modal = document.getElementById('radarModal');
+  if (!modal || !currentRadarData) return;
+  
+  modal.style.display = 'flex';
+  
+  // Initialize modal chart if not already done
+  const canvas = document.getElementById('radarChartModal');
+  if (canvas) {
+    // Destroy existing modal chart if any
+    if (window._radarModalChart) {
+      window._radarModalChart.destroy();
+    }
+    
+    // Create new chart with same data but larger font
+    window._radarModalChart = new Chart(canvas, {
+      type: 'radar',
+      data: currentRadarData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          r: {
+            min: 0,
+            max: 7,
+            ticks: { stepSize: 1, color: '#666', backdropColor: 'transparent', font: { size: 16 } },
+            grid: { color: '#2e2e48' },
+            angleLines: { color: '#2e2e48' },
+            pointLabels: { color: '#a0a0b8', font: { size: 16, weight: 'bold' } }
+          }
+        },
+        plugins: {
+          legend: { labels: { color: '#a0a0b8', font: { size: 16 } } }
+        }
+      }
+    });
+  }
+};
+
+window.closeRadarModal = function() {
+  document.getElementById('radarModal').style.display = 'none';
+};
 
 // ─── Section Renderers ───
 
@@ -264,6 +321,18 @@ function renderReportSection(section) {
   return html;
 }
 
+function renderExplanation(text) {
+  if (!text) return '';
+  return `
+    <div style="margin-top:12px;padding:12px;background:rgba(129, 140, 248, 0.1);border-left:3px solid var(--primary);border-radius:4px;font-size:13px;line-height:1.5;color:var(--text);">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;color:var(--primary);font-weight:600;font-size:11px;text-transform:uppercase;">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+        AI Context
+      </div>
+      ${escapeHtml(text)}
+    </div>`;
+}
+
 function renderExecutiveSummary(section) {
   const statusColors = { pass: '#28a745', fail: '#dc3545', warning: '#ffc107' };
   const statusColor = statusColors[section.status] || '#6c757d';
@@ -280,44 +349,83 @@ function renderExecutiveSummary(section) {
 }
 
 function renderContextMethodology(section) {
-  const sp = section.system_prompt_card;
-  const jp = section.judge_profile;
-  const tp = section.test_parameters;
+  const sp = section.system_prompt_card || {};
+  const jp = section.judge_profile || {};
+  const tp = section.test_parameters || {};
 
+  // System Prompt card
   let spDisplay = '';
   if (sp.text) {
-    const preview = sp.text.length > 200 ? sp.text.slice(0, 200) + '...' : sp.text;
-    spDisplay = `<div style="font-family:monospace;white-space:pre-wrap;font-size:12px;color:var(--text);opacity:0.9;background:#0e0e14;padding:10px;border-radius:6px;border:1px solid var(--border);">${escapeHtml(preview)}</div>`;
+    let cleanText = sp.text;
+    // Fix: Unescape literal newlines if present
+    if (typeof cleanText === 'string' && cleanText.includes('\\n')) {
+      cleanText = cleanText.replace(/\\n/g, '\n');
+    }
+
+    const MAX_CHARS = 500;
+    const isLong = cleanText.length > MAX_CHARS;
+    const preview = isLong ? cleanText.slice(0, MAX_CHARS) + '...' : cleanText;
+
+    spDisplay = `
+      <div style="flex:1;display:flex;flex-direction:column;min-height:0;">
+        <div style="flex:1;font-family:monospace;white-space:pre-wrap;font-size:12px;color:var(--text);opacity:0.9;background:#0e0e14;padding:10px;border-radius:6px;border:1px solid var(--border);line-height:1.5;overflow-y:auto;">${escapeHtml(preview)}</div>
+        ${isLong ? `<button onclick="_showCtxSysPrompt(this.getAttribute('data-full'))" data-full="${escapeHtml(cleanText)}" style="margin-top:8px;padding:8px;font-size:11px;background:#1e1e30;border:1px solid var(--border);border-radius:4px;color:var(--primary);cursor:pointer;width:100%;font-weight:600;transition:background 0.2s;">View Full Prompt ↗</button>` : ''}
+      </div>`;
   } else {
-    spDisplay = `<div style="color:var(--muted);font-style:italic;">${escapeHtml(sp.note || 'None')}</div>`;
+    spDisplay = `<div style="flex:1;color:var(--muted);font-style:italic;font-size:13px;background:#0e0e14;padding:10px;border-radius:6px;border:1px solid var(--border);">${escapeHtml(sp.note || 'No system prompt used \u2014 base model behaviour.')}</div>`;
   }
 
-  let judgeDisplay = `<strong>${escapeHtml(jp.model)}</strong>`;
+  // Judge Profile
+  let judgeDisplay = '';
   if (jp.type === 'bench') {
-    judgeDisplay = `<strong>⚖ ${escapeHtml(jp.bench_name || '')}</strong> (${escapeHtml(jp.bench_mode || '')} mode)<br>`;
-    judgeDisplay += `<span style="color:var(--muted);font-size:12px;">Judges: ${(jp.models || []).map(m => escapeHtml(m)).join(', ')}</span>`;
+    judgeDisplay = `
+      <div style="font-weight:700;font-size:16px;margin-bottom:4px;">\u2696 ${escapeHtml(jp.bench_name || 'Judge Bench')}</div>
+      <div style="color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;">${escapeHtml(jp.bench_mode || '')} mode</div>
+      <div style="font-size:12px;color:#a0a0b8;">${(jp.models || []).map(m => `<span style="background:#1e1e30;padding:2px 6px;border-radius:4px;margin:2px;display:inline-block;">${escapeHtml(m)}</span>`).join('')}</div>`;
+  } else {
+    let jModel = escapeHtml(jp.model || '-');
+    if (jp.source_url) {
+      jModel = `<a href="${jp.source_url}" target="_blank" style="color:var(--primary);text-decoration:underline;">${jModel}</a>`;
+    }
+    judgeDisplay = `
+      <div style="font-weight:700;font-size:15px;margin-bottom:4px;font-family:monospace;color:var(--primary);">${jModel}</div>
+      <div style="color:var(--muted);font-size:12px;">Single judge model</div>`;
   }
+
+  // Test Parameters stat pills
+  const ps = 'display:inline-flex;flex-direction:column;align-items:center;background:#1e1e30;border:1px solid var(--border);border-radius:8px;padding:10px 16px;min-width:80px;';
+  const paramStats = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;">
+      <div style="${ps}"><span style="font-size:20px;font-weight:700;color:var(--primary);">${tp.sample_size || '-'}</span><span style="font-size:11px;color:var(--muted);margin-top:2px;">PROMPTS</span></div>
+      <div style="${ps}"><span style="font-size:20px;font-weight:700;color:var(--primary);">${tp.temperature !== undefined ? tp.temperature : '-'}</span><span style="font-size:11px;color:var(--muted);margin-top:2px;">TEMPERATURE</span></div>
+      <div style="${ps}"><span style="font-size:20px;font-weight:700;color:var(--primary);">${escapeHtml((tp.language || 'EN').toUpperCase())}</span><span style="font-size:11px;color:var(--muted);margin-top:2px;">LANGUAGE</span></div>
+    </div>`;
 
   return `
     <div style="margin-bottom:16px;padding:16px;background:#0f1018;border-radius:8px;border:1px solid var(--border);">
-      <h4 style="margin:0 0 12px;color:var(--muted);font-size:12px;text-transform:uppercase;">${escapeHtml(section.title)}</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-        <div>
-          <div style="font-weight:600;margin-bottom:6px;font-size:13px;">System Prompt</div>
+      <h4 style="margin:0 0 16px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:1px;">${escapeHtml(section.title)}</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <div style="display:flex;flex-direction:column;">
+          <div style="font-weight:600;margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);">System Prompt</div>
           ${spDisplay}
         </div>
         <div>
-          <div style="font-weight:600;margin-bottom:6px;font-size:13px;">Judge Profile</div>
-          <div>${judgeDisplay}</div>
-          <div style="margin-top:12px;font-weight:600;margin-bottom:6px;font-size:13px;">Test Parameters</div>
-          <div style="font-size:12px;color:var(--muted);">
-            Sample Size: ${tp.sample_size || '-'} • Temperature: ${tp.temperature || '-'} • Language: ${tp.language || '-'}
-          </div>
+          <div style="font-weight:600;margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);">Judge Profile</div>
+          <div style="background:#0e0e14;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:16px;">${judgeDisplay}</div>
+          <div style="font-weight:600;margin-bottom:8px;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);">Test Parameters</div>
+          ${paramStats}
         </div>
       </div>
+      ${renderExplanation(section.explanation)}
     </div>`;
 }
 
+window._showCtxSysPrompt = function(text) {
+  const el = document.getElementById('fullSystemPrompt');
+  if (el) el.textContent = text;
+  const modal = document.getElementById('systemPromptModal');
+  if (modal) modal.style.display = 'flex';
+};
 function renderDimensionAnalysis(section) {
   // Render dimension stats table + placeholder for radar chart
   let tableRows = '';
@@ -337,11 +445,14 @@ function renderDimensionAnalysis(section) {
   return `
     <div style="margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;">
-          <canvas id="radarChart" width="400" height="400"></canvas>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;">
+        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;flex:1;min-width:300px;display:flex;justify-content:center;align-items:center;">
+          <div style="width:100%;max-width:600px;position:relative;min-height:400px;">
+            <canvas id="radarChart"></canvas>
+            <button onclick="openRadarModal()" style="position:absolute;top:0;right:0;width:auto;padding:4px 8px;font-size:11px;background:rgba(30,30,40,0.8);border:1px solid var(--border);border-radius:4px;color:var(--text);cursor:pointer;">⤢</button>
+          </div>
         </div>
-        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;overflow-x:auto;">
+        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;flex:1;min-width:300px;overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead>
               <tr style="color:var(--muted);text-transform:uppercase;font-size:11px;">
@@ -357,15 +468,92 @@ function renderDimensionAnalysis(section) {
           </table>
         </div>
       </div>
+      ${renderExplanation(section.explanation)}
     </div>`;
 }
 
 function renderScoreDistribution(section) {
+  // Compute stats from histogram data
+  const data = (section.histogram && section.histogram.datasets && section.histogram.datasets[0] && section.histogram.datasets[0].data) || [];
+  
+  let total = 0;
+  let weightedSum = 0;
+  let lowRisk = 0; // Scores 6-7
+  let medRisk = 0; // Scores 4-5
+  let highRisk = 0; // Scores 1-3
+
+  data.forEach((count, i) => {
+    const score = i + 1;
+    total += count;
+    weightedSum += (score * count);
+    
+    if (score <= 3) highRisk += count;
+    else if (score <= 5) medRisk += count;
+    else lowRisk += count;
+  });
+
+  const mean = total > 0 ? (weightedSum / total).toFixed(2) : '0.00';
+  const highPct = total > 0 ? Math.round((highRisk / total) * 100) : 0;
+  const medPct = total > 0 ? Math.round((medRisk / total) * 100) : 0;
+  const lowPct = total > 0 ? Math.round((lowRisk / total) * 100) : 0;
+
+  // Breakdown Table Rows
+  let breakdownRows = '';
+  // Show scores 7 down to 1
+  for (let i = 6; i >= 0; i--) {
+    const score = i + 1;
+    const count = data[i] || 0;
+    const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+    let color = '#28a745';
+    if (score <= 3) color = '#dc3545';
+    else if (score <= 5) color = '#ffc107';
+
+    breakdownRows += `
+      <tr style="border-bottom:1px solid #1f2937;">
+        <td style="padding:6px;font-size:12px;">Score ${score}</td>
+        <td style="padding:6px;font-size:12px;text-align:right;">${count}</td>
+        <td style="padding:6px;font-size:12px;text-align:right;color:${color};font-weight:600;">${pct}%</td>
+      </tr>
+    `;
+  }
+
   return `
     <div style="margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
-      <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;max-width:600px;">
-        <canvas id="histogramChart" width="600" height="300"></canvas>
+      <div style="display:flex;flex-wrap:wrap;gap:16px;">
+        <!-- Chart Container -->
+        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;flex:2;min-width:400px;display:flex;align-items:center;">
+          <canvas id="histogramChart" style="width:100%;height:300px;"></canvas>
+        </div>
+        
+        <!-- Stats Container -->
+        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;flex:1;min-width:250px;display:flex;flex-direction:column;">
+          <h5 style="margin:0 0 12px;color:var(--muted);font-size:12px;text-transform:uppercase;">Distribution Summary</h5>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
+            <div style="background:#15151a;padding:10px;border-radius:6px;text-align:center;">
+              <div style="font-size:20px;font-weight:700;color:#fff;">${total}</div>
+              <div style="font-size:11px;color:var(--muted);">Total Responses</div>
+            </div>
+            <div style="background:#15151a;padding:10px;border-radius:6px;text-align:center;">
+              <div style="font-size:20px;font-weight:700;color:var(--primary);">${mean}</div>
+              <div style="font-size:11px;color:var(--muted);">Mean Score</div>
+            </div>
+          </div>
+
+          <h5 style="margin:0 0 8px;color:var(--muted);font-size:11px;text-transform:uppercase;">Score Breakdown</h5>
+          <div style="flex:1;overflow-y:auto;max-height:200px;border:1px solid var(--border);border-radius:6px;">
+            <table style="width:100%;border-collapse:collapse;">
+              <tbody>${breakdownRows}</tbody>
+            </table>
+          </div>
+          
+          <div style="margin-top:12px;display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">
+            <span><span style="color:#dc3545;">●</span> Fail: ${highPct}%</span>
+            <span><span style="color:#ffc107;">●</span> Warn: ${medPct}%</span>
+            <span><span style="color:#28a745;">●</span> Pass: ${lowPct}%</span>
+          </div>
+        </div>
       </div>
     </div>`;
 }
@@ -402,6 +590,7 @@ function renderBenchAgreement(section) {
           <tbody>${rows}</tbody>
         </table>
       </div>
+      ${renderExplanation(section.explanation)}
     </div>`;
 }
 
@@ -414,43 +603,76 @@ function renderFlaggedResponses(section) {
       <div style="margin-bottom:16px;">
         <h4 style="margin:0 0 12px;">${escapeHtml(section.title)} <span style="color:var(--muted);font-size:13px;">(${section.total_flagged || 0} flagged)</span></h4>
         <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;color:#28a745;">
-          ✓ No responses scored below threshold (< 4/7). All responses are within acceptable range.
+          ✓ No responses scored below threshold (&lt; 4/7). All responses are within acceptable range.
         </div>
       </div>`;
   }
 
+  const PROMPT_MAX = 300;
+  const RESPONSE_MAX = 400;
   let tableRows = '';
-  for (const row of rows.slice(0, 20)) {  // Limit display to 20
-    const promptPreview = (row.prompt || '').slice(0, 100) + ((row.prompt || '').length > 100 ? '...' : '');
-    const responsePreview = (row.response || '').slice(0, 150) + ((row.response || '').length > 150 ? '...' : '');
+
+  for (const row of rows.slice(0, 20)) {
+    const promptText = row.prompt || '';
+    const responseText = row.response || '';
+    const promptLong = promptText.length > PROMPT_MAX;
+    const responseLong = responseText.length > RESPONSE_MAX;
+    const promptDisplay = escapeHtml(promptLong ? promptText.slice(0, PROMPT_MAX) + '…' : promptText);
+    const responseDisplay = escapeHtml(responseLong ? responseText.slice(0, RESPONSE_MAX) + '…' : responseText);
+
+    const rowData = JSON.stringify({ dimension: row.dimension, score: row.score, prompt: promptText, response: responseText });
+    const viewBtn = (promptLong || responseLong)
+      ? `<br><button onclick='showFlaggedDetailModal(${rowData.replace(/'/g, "&#39;")})' style="margin-top:6px;padding:2px 8px;font-size:11px;width:auto;background:#252536;border:1px solid var(--border);cursor:pointer;color:var(--primary);border-radius:4px;">View Full ↗</button>`
+      : '';
+
     tableRows += `
       <tr>
-        <td style="padding:8px;border-bottom:1px solid var(--border);font-size:12px;">${escapeHtml(row.dimension)}</td>
-        <td style="padding:8px;border-bottom:1px solid var(--border);font-size:12px;">${escapeHtml(promptPreview)}</td>
-        <td style="padding:8px;border-bottom:1px solid var(--border);font-size:12px;">${escapeHtml(responsePreview)}</td>
-        <td style="padding:8px;border-bottom:1px solid var(--border);text-align:center;font-weight:600;color:#dc3545;">${row.score}/7</td>
+        <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:top;">${escapeHtml(row.dimension)}</td>
+        <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:top;">
+          <div style="white-space:pre-wrap;line-height:1.5;">${promptDisplay}</div>${promptLong ? viewBtn : ''}
+        </td>
+        <td style="padding:10px 8px;border-bottom:1px solid var(--border);font-size:12px;vertical-align:top;">
+          <div style="white-space:pre-wrap;line-height:1.5;">${responseDisplay}</div>${responseLong ? viewBtn : ''}
+        </td>
+        <td style="padding:10px 8px;border-bottom:1px solid var(--border);text-align:center;font-weight:700;color:#dc3545;vertical-align:top;font-size:14px;">${row.score}/7</td>
       </tr>`;
   }
 
   return `
     <div style="margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">${escapeHtml(section.title)} <span style="color:var(--muted);font-size:13px;">(${section.total_flagged} flagged)</span></h4>
-      <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;overflow-x:auto;">
+      <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <thead>
             <tr style="color:var(--muted);text-transform:uppercase;font-size:11px;">
-              <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Dimension</th>
-              <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Prompt</th>
-              <th style="padding:8px;text-align:left;border-bottom:2px solid var(--border);">Response</th>
-              <th style="padding:8px;text-align:center;border-bottom:2px solid var(--border);">Score</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:2px solid var(--border);width:120px;">Dimension</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:2px solid var(--border);">Prompt</th>
+              <th style="padding:10px 8px;text-align:left;border-bottom:2px solid var(--border);">Response</th>
+              <th style="padding:10px 8px;text-align:center;border-bottom:2px solid var(--border);width:60px;">Score</th>
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>
         </table>
-        ${rows.length > 20 ? `<div style="color:var(--muted);font-size:12px;margin-top:8px;">Showing 20 of ${rows.length} flagged responses</div>` : ''}
+        ${rows.length > 20 ? `<div style="color:var(--muted);font-size:12px;padding:10px 8px;">Showing 20 of ${rows.length} flagged responses</div>` : ''}
       </div>
     </div>`;
 }
+
+window.showFlaggedDetailModal = function (data) {
+  const modal = document.getElementById('flaggedDetailModal');
+  if (!modal) return;
+  document.getElementById('flaggedDetailDimension').textContent = data.dimension || '';
+  document.getElementById('flaggedDetailScore').textContent = data.score + '/7';
+  document.getElementById('flaggedDetailPrompt').textContent = data.prompt || '';
+  document.getElementById('flaggedDetailResponse').textContent = data.response || '';
+  modal.style.display = 'flex';
+};
+
+window.closeFlaggedDetailModal = function () {
+  const modal = document.getElementById('flaggedDetailModal');
+  if (modal) modal.style.display = 'none';
+};
+
 
 function renderAIFailureAnalysis(section) {
   return `
@@ -482,24 +704,32 @@ function initReportCharts(sections) {
   if (dimSection && dimSection.radar_chart) {
     const radarCanvas = document.getElementById('radarChart');
     if (radarCanvas) {
+      const chartData = {
+        labels: dimSection.radar_chart.labels,
+        datasets: dimSection.radar_chart.datasets.map(ds => ({
+          label: ds.label,
+          data: ds.data,
+          backgroundColor: 'rgba(99, 102, 241, 0.15)',
+          borderColor: 'rgba(99, 102, 241, 0.8)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgba(99, 102, 241, 1)',
+          pointBorderColor: '#fff',
+          pointHoverRadius: 6,
+        }))
+      };
+      
+      // Store data globally for modal
+      currentRadarData = JSON.parse(JSON.stringify(chartData)); // Deep copy
+
       const radarChart = new Chart(radarCanvas, {
         type: 'radar',
-        data: {
-          labels: dimSection.radar_chart.labels,
-          datasets: dimSection.radar_chart.datasets.map(ds => ({
-            label: ds.label,
-            data: ds.data,
-            backgroundColor: 'rgba(99, 102, 241, 0.15)',
-            borderColor: 'rgba(99, 102, 241, 0.8)',
-            borderWidth: 2,
-            pointBackgroundColor: 'rgba(99, 102, 241, 1)',
-            pointBorderColor: '#fff',
-            pointHoverRadius: 6,
-          }))
-        },
+        data: chartData,
         options: {
           responsive: true,
-          maintainAspectRatio: true,
+          maintainAspectRatio: false,
+          layout: {
+            padding: 20
+          },
           scales: {
             r: {
               min: 0,
@@ -507,11 +737,11 @@ function initReportCharts(sections) {
               ticks: { stepSize: 1, color: '#666', backdropColor: 'transparent' },
               grid: { color: '#2e2e48' },
               angleLines: { color: '#2e2e48' },
-              pointLabels: { color: '#a0a0b8', font: { size: 11 } }
+              pointLabels: { color: '#a0a0b8', font: { size: 12 } }
             }
           },
           plugins: {
-            legend: { labels: { color: '#a0a0b8' } }
+            legend: { labels: { color: '#a0a0b8', font: { size: 12 } } }
           }
         }
       });
@@ -570,7 +800,10 @@ async function loadPromptsAndResponses() {
   try {
     const jobRes = await fetch(`/api/audit/${currentJobId}`);
     const job = await jobRes.json();
-    const systemPrompt = job.system_prompt_snapshot || null;
+    let systemPrompt = job.system_prompt_snapshot || null;
+    if (systemPrompt && typeof systemPrompt === 'string' && systemPrompt.includes('\\n')) {
+        systemPrompt = systemPrompt.replace(/\\n/g, '\n');
+    }
 
     const pRes = await fetch(`/api/audit/${currentJobId}/prompts`);
     const prompts = await pRes.json();
@@ -669,53 +902,27 @@ function formatResponse(text) {
 
 function renderMarkdown(text) {
   let s = String(text || '');
-  s = s.replace(/\r\n/g, '\n');
-  s = escapeHtml(s);
+  
+  // Handle literal newlines that might have been escaped
+  if (s.includes('\\n')) {
+    s = s.replace(/\\n/g, '\n');
+  }
 
-  // Format headers (ensure they don't have too much spacing)
-  s = s.replace(/^######\s+(.*)$/gm, '<h6 style="margin:12px 0 8px;font-size:13px">$1</h6>');
-  s = s.replace(/^#####\s+(.*)$/gm, '<h5 style="margin:14px 0 8px;font-size:14px">$1</h5>');
-  s = s.replace(/^####\s+(.*)$/gm, '<h4 style="margin:16px 0 8px;font-size:15px">$1</h4>');
-  s = s.replace(/^###\s+(.*)$/gm, '<h3 style="margin:18px 0 10px;font-size:16px">$1</h3>');
-  s = s.replace(/^##\s+(.*)$/gm, '<h2 style="margin:20px 0 12px;font-size:18px">$1</h2>');
-  s = s.replace(/^#\s+(.*)$/gm, '<h1 style="margin:24px 0 16px;font-size:20px">$1</h1>');
+  // Use marked library if available
+  if (typeof marked !== 'undefined') {
+    try {
+      // Configure marked for GFM and breaks
+      // Note: marked 15.x might require using marked.parse(text, options)
+      const html = marked.parse(s, { breaks: true, gfm: true });
+      return `<div class="markdown-content">${html}</div>`;
+    } catch (e) {
+      console.error('Markdown parsing error:', e);
+    }
+  }
 
-  // Code blocks
-  s = s.replace(/```([\s\S]*?)```/g, function (_, code) {
-    return `<pre style="background:#1a1a20;padding:12px;border-radius:6px;overflow-x:auto"><code>${code}</code></pre>`;
-  });
-
-  // Inline code
-  s = s.replace(/`([^`]+)`/g, '<code style="background:#1a1a20;padding:2px 4px;border-radius:4px;font-family:monospace">$1</code>');
-
-  // Bold/Italic
-  s = s.replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fff">$1</strong>');
-  s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
-
-  // Links
-  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color:var(--primary)">$1<\/a>');
-
-  // Blockquotes
-  s = s.replace(/^>\s+(.*)$/gm, '<blockquote style="border-left:3px solid var(--border);margin:0;padding-left:12px;color:var(--muted)">$1</blockquote>');
-
-  // Lists (Improved regex to handle multiline lists better)
-  // We'll do a simple pass for lists to avoid complex nested logic for now
-  // Convert bullet points
-  s = s.replace(/^\s*-\s+(.*)$/gm, '<li>$1</li>');
-  // Wrap consecutive lis in ul (simple heuristic)
-  s = s.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-
-  // Convert numbered lists
-  s = s.replace(/^\s*\d+\.\s+(.*)$/gm, '<li value="1">$1</li>'); // Value 1 is dummy, browser handles order if ol
-  // Wrap consecutive numbered lis (that we just made) in ol
-  // Note: This regex might overlap with ul if not careful, but usually they are distinct blocks.
-  // Actually, let's keep the original approach but refined
-
-  // Clean up newlines: Double newlines -> paragraph breaks
-  s = s.replace(/\n\n/g, '<div style="height:12px"></div>');
-  s = s.replace(/\n/g, '<br>');
-
-  return `<div style="white-space:normal;line-height:1.6;font-size:14px;color:#d1d5db">${s}</div>`;
+  // Fallback to simple escaping if marked is missing or fails
+  s = escapeHtml(s).replace(/\n/g, '<br>');
+  return `<div class="markdown-content" style="white-space:pre-wrap">${s}</div>`;
 }
 
 window.toggleAcc = function (id) {
@@ -1007,7 +1214,7 @@ async function loadSystemPrompts() {
   }
 }
 
-// Model Studio Integration
+// Model Hub Integration
 async function loadModels() {
   try {
     const response = await fetch('/api/models');

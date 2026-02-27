@@ -443,6 +443,46 @@
     </div>
   </div>
 
+  <!-- Flagged Response Detail Modal -->
+  <div id="flaggedDetailModal"
+    style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);z-index:1001">
+    <div class="card" style="width:860px;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;gap:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <h3 style="margin:0" id="flaggedDetailDimension">Flagged Response</h3>
+          <div style="font-size:13px;color:#dc3545;margin-top:4px;">Score: <strong id="flaggedDetailScore"></strong></div>
+        </div>
+        <button onclick="closeFlaggedDetailModal()"
+          style="width:auto;padding:6px 10px;background:#1f2937;border-color:#1f2937">Close</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;overflow:hidden;flex:1">
+        <div style="display:flex;flex-direction:column;overflow:hidden">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px">Prompt</div>
+          <div id="flaggedDetailPrompt"
+            style="flex:1;overflow-y:auto;white-space:pre-wrap;font-size:13px;line-height:1.6;background:#0e0e14;padding:12px;border-radius:6px;border:1px solid var(--border);color:var(--text)"></div>
+        </div>
+        <div style="display:flex;flex-direction:column;overflow:hidden">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);margin-bottom:6px">Response</div>
+          <div id="flaggedDetailResponse"
+            style="flex:1;overflow-y:auto;white-space:pre-wrap;font-size:13px;line-height:1.6;background:#0e0e14;padding:12px;border-radius:6px;border:1px solid var(--border);color:var(--text)"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- Radar Chart Modal -->
+  <div id="radarModal" class="modal"
+    style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.8);z-index:1002">
+    <div class="card" style="width:70vw;height:70vh;max-width:95vw;max-height:95vh;display:flex;flex-direction:column;position:relative;">
+      <button onclick="closeRadarModal()"
+        style="position:absolute;top:16px;right:16px;width:auto;padding:6px 12px;background:#1f2937;border-color:#1f2937;z-index:10;">Close</button>
+      <div style="flex:1;display:flex;justify-content:center;align-items:center;padding:20px;overflow:hidden;">
+        <canvas id="radarChartModal" style="width:100%;height:100%;"></canvas>
+      </div>
+    </div>
+  </div>
+
   <!-- Terminal Panel -->
   <div id="terminal" class="terminal-panel collapsed">
     <div class="terminal-header" id="terminalHeader">
@@ -510,6 +550,7 @@
   <script src="/static/nav.js"></script>
   <script>renderNavbar('playground');</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/static/dashboard.js"></script>
 </body>
 

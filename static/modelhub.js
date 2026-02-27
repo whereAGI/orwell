@@ -1,4 +1,5 @@
 let currentTab = 'target';
+let currentModels = {}; // Store models by ID to avoid escaping issues
 
 document.addEventListener('DOMContentLoaded', () => {
     loadModels();
@@ -33,6 +34,11 @@ async function loadModels() {
     try {
         const response = await fetch(`/api/models?category=${currentTab}`);
         const models = await response.json();
+        
+        // Store models in global map
+        currentModels = {};
+        models.forEach(m => currentModels[m.id] = m);
+        
         renderModels(models);
     } catch (err) {
         console.error('Failed to load models:', err);
@@ -64,13 +70,15 @@ function renderModels(models) {
     models.forEach(m => {
         html += `
             <tr style="border-bottom:1px solid var(--border);">
-                <td style="padding:12px;">${m.name}</td>
+                <td style="padding:12px;">
+                    ${m.source_url ? `<a href="${m.source_url}" target="_blank" style="color:var(--text);text-decoration:underline;">${m.name}</a>` : m.name}
+                </td>
                 <td style="padding:12px;"><span class="pill" style="background:#2d3748; color:#a0aec0; padding:2px 8px; border-radius:12px; font-size:12px;">${m.provider}</span></td>
                 <td style="padding:12px; font-family:monospace; color:var(--primary);">${m.model_key}</td>
                 <td style="padding:12px; font-size:12px; color:var(--muted);">${m.base_url}</td>
                 <td style="padding:12px; text-align:right; white-space:nowrap;">
                     <div style="display:flex; gap:8px; justify-content:flex-end;">
-                        <button class="secondary" style="padding:4px 8px; font-size:12px; width:auto;" onclick='editModel(${JSON.stringify(m)})'>Edit</button>
+                        <button class="secondary" style="padding:4px 8px; font-size:12px; width:auto;" onclick="editModel('${m.id}')">Edit</button>
                         <button class="danger" style="padding:4px 8px; font-size:12px; width:auto;" onclick="deleteModel('${m.id}')">Delete</button>
                     </div>
                 </td>
@@ -94,6 +102,8 @@ function openModal() {
     // Reset fields to defaults
     document.getElementById('modelName').value = '';
     document.getElementById('modelProvider').value = 'openai';
+    document.getElementById('modelBaseUrl').value = 'https://api.openai.com/v1';
+    document.getElementById('modelSourceUrl').value = '';
     document.getElementById('modelKeyInput').value = '';
     document.getElementById('modelApiKey').value = '';
     document.getElementById('modelSystemPrompt').value = '';
@@ -118,7 +128,13 @@ function openModal() {
     updateProviderDefaults();
 }
 
-function editModel(model) {
+function editModel(modelId) {
+    const model = currentModels[modelId];
+    if (!model) {
+        console.error("Model not found:", modelId);
+        return;
+    }
+    
     document.getElementById('modelModal').style.display = 'flex';
     document.getElementById('modelId').value = model.id;
     document.getElementById('modelCategory').value = model.category;
@@ -128,6 +144,7 @@ function editModel(model) {
     document.getElementById('modelName').value = model.name;
     document.getElementById('modelProvider').value = model.provider;
     document.getElementById('modelBaseUrl').value = model.base_url;
+    document.getElementById('modelSourceUrl').value = model.source_url || '';
     document.getElementById('modelApiKey').value = model.api_key || '';
 
     // Set existing prompt first
@@ -284,6 +301,7 @@ async function saveModel() {
         category: currentTab,
         provider: provider,
         base_url: document.getElementById('modelBaseUrl').value,
+        source_url: document.getElementById('modelSourceUrl').value || null,
         model_key: modelKey,
         api_key: document.getElementById('modelApiKey').value || null,
         system_prompt: document.getElementById('modelSystemPrompt').value || null,

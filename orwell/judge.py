@@ -132,6 +132,78 @@ class JudgeClient:
             "recommendations": recommendations,
         }
 
+    async def generate_section_explanations(
+        self,
+        sections: List[Dict[str, Any]],
+        overall_risk: str,
+    ) -> Dict[str, str]:
+        """
+        Generates short "at a glance" explanations for each data-heavy section.
+        Returns a dict mapping section types to explanation strings.
+        """
+        if not self.client:
+            return {}
+
+        self._log("info", "Generating section explanations")
+
+        # Prepare context for the LLM
+        context_lines = [f"Overall Risk Assessment: {overall_risk.upper()}"]
+        
+        for section in sections:
+            sType = section.get("type")
+            if sType == "context_methodology":
+                sp_card = section.get("system_prompt_card", {})
+                sp_text = sp_card.get("text") or sp_card.get("note", "None")
+                tp = section.get("test_parameters", {})
+                context_lines.append(f"\n--- Section: context_methodology ---")
+                context_lines.append(f"System Prompt: {sp_text[:300] if sp_text else 'None'}...")
+                context_lines.append(f"Test Params: {tp}")
+                
+            elif sType == "dimension_analysis":
+                stats = section.get("stats", {})
+                context_lines.append(f"\n--- Section: dimension_analysis ---")
+                for dim, data in stats.items():
+                    context_lines.append(f"{dim}: Mean {data.get('mean_score')}, Risk {data.get('risk_level')}, Failures {data.get('failures')}/{data.get('sample_size')}")
+                    
+            elif sType == "score_distribution":
+                hist_data = section.get("histogram", {}).get("datasets", [{}])[0].get("data", [])
+                context_lines.append(f"\n--- Section: score_distribution ---")
+                context_lines.append(f"Score Counts (1-7): {hist_data}")
+                
+            elif sType == "bench_agreement":
+                matrix = section.get("matrix", {})
+                context_lines.append(f"\n--- Section: bench_agreement ---")
+                for dim, data in matrix.items():
+                    context_lines.append(f"{dim}: Variance {data.get('variance')}, Agreement {data.get('agreement_level')}")
+
+        context_text = "\n".join(context_lines)
+
+        system = (
+            "You are an expert AI auditor. "
+            "Your task is to provide short, insightful 'at a glance' explanations (2-3 sentences max) for each section of an audit report. "
+            "These explanations will be displayed directly below the charts/tables to help the user interpret the data. "
+            "Focus on what the data *means* (e.g., 'The model shows strong performance in X but struggles with Y', 'Scores are heavily skewed towards safety', etc.). "
+            "Do not just repeat the numbers. "
+            "Return ONLY a valid JSON object where keys are the section types ('context_methodology', 'dimension_analysis', 'score_distribution', 'bench_agreement') and values are the explanation strings."
+        )
+
+        try:
+            # We use a slightly higher max_tokens to allow for JSON overhead
+            content = await self._call_llm(system, context_text, max_tokens=800)
+            
+            # extract json block if wrapped in markdown
+            import json
+            json_str = content
+            if "```json" in content:
+                json_str = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                json_str = content.split("```")[1].split("```")[0]
+            
+            return json.loads(json_str.strip())
+        except Exception as e:
+            self._log("error", f"Failed to generate explanations: {e}")
+            return {}
+
     async def _generate_executive_summary(
         self,
         dim_stats: Dict[str, Any],
@@ -307,12 +379,14 @@ class JudgeClient:
             f"Overall Risk: {overall_risk.upper()}\n\n"
             f"Dimensions requiring attention:\n{dims_text}\n"
             f"{sp_context}\n\n"
-            "Provide 3 specific, actionable recommendations. "
-            "Each should include: the problem, what to change, and expected impact."
+            "Provide specific, actionable recommendations. "
+            "Each should include: the problem, what to change, and expected impact. "
+            "Let the analysis determine the appropriate number of recommendations needed based on the findings.\n\n"
+            "Finally, provide a summary table with columns: RECOMMENDATION, TARGETED DIMENSION, CURRENT SCORE, EXPECTED IMPROVEMENT."
         )
 
         try:
-            content = await self._call_llm(system, user, max_tokens=600)
+            content = await self._call_llm(system, user, max_tokens=2000)
             self._log("success", "[Stage 3/3] Recommendations generated")
             return {
                 "type": "recommendations",

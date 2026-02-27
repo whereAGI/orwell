@@ -129,9 +129,9 @@ async def studio():
 async def prompt_studio():
     return FileResponse("static/prompt_studio.html")
 
-@app.get("/model-studio")
-async def model_studio():
-    return FileResponse("static/model_studio.html")
+@app.get("/model-hub")
+async def model_hub():
+    return FileResponse("static/model_hub.html")
 
 @app.get("/login")
 async def login():

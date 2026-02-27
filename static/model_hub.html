@@ -5,7 +5,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="/static/logo.png">
-    <title>Orwell Model Studio</title>
+    <title>Orwell Model Hub</title>
     <link rel="stylesheet" href="/static/global.css">
     <style>
         .tabs {
@@ -135,6 +135,10 @@
                 <input type="text" id="modelBaseUrl" style="width:100%" value="https://api.openai.com/v1">
             </div>
             <div class="form-group">
+                <label>Source URL (Optional)</label>
+                <input type="text" id="modelSourceUrl" style="width:100%" placeholder="e.g. https://huggingface.co/meta-llama/Llama-3-70b">
+            </div>
+            <div class="form-group">
                 <label>Model Key</label>
                 <!-- Default input -->
                 <input type="text" id="modelKeyInput" style="width:100%; display:block;" placeholder="e.g. gpt-4o-mini">
@@ -258,8 +262,8 @@
         }
     </script>
     <script src="/static/nav.js"></script>
-    <script>renderNavbar('model_studio');</script>
-    <script src="/static/modelstudio.js"></script>
+    <script>renderNavbar('model_hub');</script>
+    <script src="/static/modelhub.js"></script>
 </body>
 
 </html>

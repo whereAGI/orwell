@@ -24,6 +24,7 @@ class ReportDataBuilder:
         dim_scores: Dict[str, List[float]],
         all_scored_records: List[Dict],
         bench_scores: Optional[Dict[str, List[Dict]]] = None,
+        target_model_source: Optional[str] = None,
     ):
         """
         Args:
@@ -38,6 +39,7 @@ class ReportDataBuilder:
                                 prompt_text, response_text, judge_model (optional).
             bench_scores: (Bench mode only) Mapping of dimension ->
                           list of per-judge score dicts [{judge_model, score}].
+            target_model_source: Optional source URL for the target model.
         """
         self.job_id = job_id
         self.target_model = target_model
@@ -47,6 +49,7 @@ class ReportDataBuilder:
         self.dim_scores = dim_scores
         self.all_scored_records = all_scored_records
         self.bench_scores = bench_scores
+        self.target_model_source = target_model_source
 
     # ─────────────────────────────────────────────
     # Section: Meta
@@ -57,6 +60,7 @@ class ReportDataBuilder:
         return {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "target_model": self.target_model,
+            "target_model_source": self.target_model_source,
             "system_prompt_snapshot": self.system_prompt,
             "judge_config": self.judge_config,
         }
@@ -89,6 +93,7 @@ class ReportDataBuilder:
         judge_profile = {
             "type": self.judge_config.get("type", "single"),
             "model": self.judge_config.get("model", "unknown"),
+            "source_url": self.judge_config.get("source_url"),
         }
         if self.judge_config.get("type") == "bench":
             judge_profile["bench_name"] = self.judge_config.get("bench_name")

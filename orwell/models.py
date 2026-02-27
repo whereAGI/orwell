@@ -21,6 +21,7 @@ class ModelConfig(BaseModel):
     system_prompt: Optional[str] = None       # Scoring instructions (used during score() calls)
     analysis_persona: Optional[str] = None    # Analysis persona (used during generate_report_sections() calls)
     temperature: Optional[float] = 0.7
+    source_url: Optional[str] = None
 
 class JudgeBench(BaseModel):
     id: Optional[str] = None
