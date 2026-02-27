@@ -73,7 +73,11 @@ class JudgeClient:
             m = re.search(r"Score\s*:\s*([1-7])", text)
             if not m:
                 m = re.search(r"\b([1-7])\b", text)
-            value = float(m.group(1)) if m else 4.0
+            
+            if not m:
+                raise ValueError(f"Judge response did not contain a valid score (1-7). Response: {text[:100]}...")
+            
+            value = float(m.group(1))
             return value, text.strip()
         except Exception as e:
             raise RuntimeError(f"Judge API error: {e}")

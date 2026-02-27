@@ -220,6 +220,9 @@ class AuditEngine:
                     log_callback=judge_log_callback
                 )
             
+            consecutive_failures = 0
+            MAX_RETRIES = 3
+
             for i, p in enumerate(prompts):
                 # Check for abort
                 current_job = pb.collection("audit_jobs").get_one(job_record.id)
@@ -227,9 +230,28 @@ class AuditEngine:
                     add_log(job_id, "warning", "Audit aborted by user")
                     return
 
-                # Call Target LLM
+                # --- 1. Call Target LLM with Retry ---
                 add_log(job_id, "info", f"Processing prompt {i+1}/{total}", {"dimension": p["dimension"]})
-                response_text = await self._call_target(request, p["text"], job_id)
+                
+                response_text = ""
+                target_error = None
+                
+                for attempt in range(MAX_RETRIES):
+                    response_text = await self._call_target(request, p["text"], job_id)
+                    if response_text.startswith("Error:"):
+                        target_error = response_text
+                        if attempt < MAX_RETRIES - 1:
+                            add_log(job_id, "warning", f"Target model failed (Attempt {attempt+1}/{MAX_RETRIES}). Retrying...", {"error": response_text})
+                            await asyncio.sleep(2) # Wait 2s before retry
+                    else:
+                        target_error = None
+                        break
+                
+                if target_error:
+                    add_log(job_id, "error", f"Target model failed after {MAX_RETRIES} attempts: {target_error}")
+                    consecutive_failures += 1
+                    # Store the failed response anyway so we can debug
+                    response_text = f"[FAILED] {target_error}"
                 
                 # Store Response
                 rid = str(uuid.uuid4())
@@ -243,35 +265,71 @@ class AuditEngine:
                     "raw_response": response_text
                 })
 
-                # Score — delegate to bench or single judge
-                if bench_executor:
-                    add_log(job_id, "info", f"Scoring with bench ({bench_record.mode} mode)")
-                    try:
-                        score_results = await bench_executor.score_response(p["text"], response_text, p["dimension"])
-                        # Compute mean score for the response record
-                        mean_score = BenchExecutor.compute_mean_score(score_results)
-                        # Combine all reasons for the response-level reason
-                        combined_reason = " | ".join(
-                            f"[{r['judge_model']}{'(rescore)' if r.get('is_rescore') else ''}] {r['score']}/7: {r['reason'][:100]}"
-                            for r in score_results
-                        )
-                        score_val = mean_score
-                        reason = combined_reason
-                        add_log(job_id, "success", f"Bench mean score: {mean_score:.1f}/7 ({len(score_results)} judge(s))")
-                    except Exception as be:
-                        add_log(job_id, "error", f"Bench scoring failed: {be}")
-                        score_val, reason = 0, f"Error: {be}"
-                        score_results = []
-                else:
-                    add_log(job_id, "info", "Scoring response with Judge", {"judge_model": judge_model_name})
-                    try:
-                        score_val, reason = await judge.score(p["text"], response_text, p["dimension"])
-                        add_log(job_id, "success", f"Scored: {score_val}/7", {"reason": reason})
-                    except Exception as je:
-                        add_log(job_id, "error", f"Judge scoring failed: {je}")
-                        score_val, reason = 0, f"Error: {je}"
-                    score_results = None  # Sentinel: single-judge mode
+                # --- 2. Score with Retry ---
+                score_val = 0
+                reason = "Not scored"
+                score_results = None
+                judge_error = None
                 
+                # Only score if target didn't fail
+                if not target_error:
+                    for attempt in range(MAX_RETRIES):
+                        try:
+                            if bench_executor:
+                                add_log(job_id, "info", f"Scoring with bench ({bench_record.mode} mode)")
+                                score_results = await bench_executor.score_response(p["text"], response_text, p["dimension"])
+                                mean_score = BenchExecutor.compute_mean_score(score_results)
+                                combined_reason = " | ".join(
+                                    f"[{r['judge_model']}{'(rescore)' if r.get('is_rescore') else ''}] {r['score']}/7: {r['reason'][:100]}"
+                                    for r in score_results
+                                )
+                                score_val = mean_score
+                                reason = combined_reason
+                                add_log(job_id, "success", f"Bench mean score: {mean_score:.1f}/7 ({len(score_results)} judge(s))")
+                                judge_error = None
+                                break # Success
+                            else:
+                                add_log(job_id, "info", "Scoring response with Judge", {"judge_model": judge_model_name})
+                                score_val, reason = await judge.score(p["text"], response_text, p["dimension"])
+                                add_log(job_id, "success", f"Scored: {score_val}/7", {"reason": reason})
+                                judge_error = None
+                                break # Success
+                        except Exception as je:
+                            judge_error = str(je)
+                            if attempt < MAX_RETRIES - 1:
+                                add_log(job_id, "warning", f"Judge failed (Attempt {attempt+1}/{MAX_RETRIES}). Retrying...", {"error": judge_error})
+                                await asyncio.sleep(2)
+                    
+                    if judge_error:
+                        add_log(job_id, "error", f"Judge scoring failed after {MAX_RETRIES} attempts: {judge_error}")
+                        score_val, reason = 0, f"Error: {judge_error}"
+                        consecutive_failures += 1
+                    else:
+                        # Success
+                        consecutive_failures = 0
+                else:
+                    score_val, reason = 0, f"Target Failed: {target_error}"
+                    # consecutive_failures already incremented
+
+                # Check for Halt Condition
+                if consecutive_failures >= 3:
+                    err_msg = "Audit halted: 3 consecutive failures (Target or Judge)"
+                    add_log(job_id, "error", err_msg)
+                    
+                    print("\n" + "="*50)
+                    print(f"!!! AUDIT HALTED: {err_msg} !!!")
+                    print(f"Last Prompt: {p['text'][:100]}...")
+                    print(f"Last Response: {response_text}")
+                    print(f"Last Error: {target_error or judge_error}")
+                    print("="*50 + "\n")
+                    
+                    pb.collection("audit_jobs").update(job_record.id, {
+                        "status": JobStatus.FAILED.value,
+                        "error_message": err_msg,
+                        "message": err_msg
+                    })
+                    return # Stop the audit
+
                 # Update Response with score/reason
                 pb.collection("responses").update(resp_record.id, {
                     "score": score_val,
@@ -291,8 +349,8 @@ class AuditEngine:
                             "value": sr["score"],
                             "judge_model": sr["judge_model"]
                         })
-                else:
-                    # Single judge mode: one score record
+                elif not target_error and not judge_error:
+                    # Single judge mode: one score record (only if successful)
                     sid = str(uuid.uuid4())
                     pb.collection("scores").create({
                         "score_id": sid,

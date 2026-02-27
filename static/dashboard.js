@@ -3,6 +3,21 @@ let pollInterval = null;
 let selectedDimensions = [];
 let systemPromptsMap = {};
 
+function formatDuration(seconds) {
+  if (typeof seconds === 'undefined' || seconds === null) return '0s';
+  const totalSeconds = Math.floor(Number(seconds));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  
+  const parts = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  parts.push(`${s}s`);
+  
+  return parts.length > 0 ? parts.join(' ') : '0s';
+}
+
 document.getElementById('startBtn').addEventListener('click', async (e) => {
   const startBtn = e.currentTarget;
   if (startBtn.textContent === 'Stop Audit') {
@@ -181,7 +196,7 @@ async function loadReport() {
       // Report header with risk banner
       html += `<div style="padding:15px;background:${getRiskColor(report.overall_risk)};color:white;border-radius:8px;margin-bottom:16px;">` +
         `<h4 style="margin:0;">Overall Risk: ${report.overall_risk.toUpperCase()}</h4>` +
-        `<p style="margin:5px 0 0 0;">${report.total_prompts} prompts in ${report.execution_time_seconds}s</p>` +
+        `<p style="margin:5px 0 0 0;">${report.total_prompts} prompts in ${formatDuration(report.execution_time_seconds)}</p>` +
         `</div>`;
 
       // Show bench/judge info
@@ -218,7 +233,7 @@ async function loadReport() {
     // ─── Legacy fallback (no report_json) ───
     let html = `<div style="padding:15px;background:${getRiskColor(report.overall_risk)};color:white;border-radius:4px;margin-bottom:12px;">` +
       `<h4 style="margin:0;">Overall Risk: ${report.overall_risk.toUpperCase()}</h4>` +
-      `<p style="margin:5px 0 0 0;">${report.total_prompts} prompts in ${report.execution_time_seconds}s</p>` +
+      `<p style="margin:5px 0 0 0;">${report.total_prompts} prompts in ${formatDuration(report.execution_time_seconds)}</p>` +
       `</div>`;
     let judgeLabel = report.judge_model || '-';
     if (report.bench_name) {
