@@ -175,6 +175,29 @@
             </div>
 
             <div class="form-group">
+                <label>Reasoning</label>
+                <select id="modelReasoning" style="width:100%">
+                    <option value="">Default (Provider Setting)</option>
+                    <option value="enabled">Enabled (think: true)</option>
+                    <option value="disabled">Disabled (think: false)</option>
+                    <option value="low">Low Effort (OpenRouter)</option>
+                    <option value="medium">Medium Effort (OpenRouter)</option>
+                    <option value="high">High Effort (OpenRouter)</option>
+                </select>
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+                    Controls reasoning tokens for models that support it (e.g., DeepSeek-R1, O1).
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Thinking Max Tokens (Optional)</label>
+                <input type="number" id="modelMaxReasoningTokens" style="width:100%" placeholder="e.g. 1000">
+                <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+                    Limits the number of tokens used for reasoning/thinking. Leave blank for default.
+                </div>
+            </div>
+
+            <div class="form-group">
                 <label>Temperature (0.0 - 2.0)</label>
                 <input type="number" id="modelTemperature" style="width:100%" step="0.1" min="0" max="2" value="0.7">
                 <div style="font-size:12px; color:var(--muted); margin-top:4px;">Controls randomness. Lower values are
@@ -182,8 +205,22 @@
             </div>
 
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
+                <button class="secondary" onclick="testConnection()" style="margin-right:auto;">Test Connection</button>
                 <button class="secondary" onclick="closeModal()">Cancel</button>
                 <button onclick="saveModel()">Save Model</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Test Result Modal -->
+    <div id="testResultModal" class="modal">
+        <div class="card" style="width: 600px; margin: 0; max-height: 80vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border);">
+            <h3 id="testResultTitle" style="margin-top:0; color: var(--text);">Test Result</h3>
+            <div id="testResultContent" style="overflow-y: auto; flex: 1; color: var(--text);">
+                <!-- Content injected here -->
+            </div>
+            <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+                <button onclick="closeTestResultModal()">Close</button>
             </div>
         </div>
     </div>
@@ -223,9 +260,24 @@
                         <input type="radio" name="benchMode" value="all">
                         All
                     </label>
+                    <label
+                        style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:14px; color:var(--text);">
+                        <input type="radio" name="benchMode" value="jury">
+                        Jury
+                    </label>
                 </div>
                 <div id="benchModeDesc" style="font-size:12px; color:var(--muted); margin-top:6px;">
                     Random: A random judge scores each response. Low scores (&lt;4) trigger a re-score by another judge.
+                </div>
+                
+                <div id="foremanSelectContainer" style="display:none; margin-top:12px; padding: 10px; background: #0e0e14; border: 1px solid var(--border); border-radius: 6px;">
+                    <label style="font-size:14px; font-weight:600;">Jury Foreman</label>
+                    <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">
+                        The Foreman synthesizes the final verdict based on the jury's arguments. It can be one of the jurors or an external model.
+                    </div>
+                    <select id="benchForeman" style="width:100%; padding:6px; background:#0e0e14; color:var(--text); border:1px solid var(--border); border-radius:4px;">
+                        <option value="">Select a foreman...</option>
+                    </select>
                 </div>
             </div>
             <div class="form-group">

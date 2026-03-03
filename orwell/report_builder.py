@@ -296,6 +296,92 @@ class ReportDataBuilder:
     # Full Build
     # ─────────────────────────────────────────────
 
+    def build_stratified_sample(self, max_tokens: int = 20000) -> List[Dict]:
+        """
+        Builds a representative sample of responses for AI context, managing token limits.
+        
+        Strategy:
+        1. Group responses by score (1-7).
+        2. Calculate target distribution based on actual distribution.
+        3. Enforce minimum representation (at least 3 examples per score category if available).
+        4. Fill remaining budget proportionally.
+        
+        Args:
+            max_tokens: Approximate token budget for the context (assuming ~1.5 tokens/word).
+                        Average response record is ~500 tokens (prompt + response + reason).
+                        So 20k tokens ≈ 40 records.
+        """
+        records = self.all_scored_records
+        if not records:
+            return []
+            
+        # 1. Group by score
+        by_score = {i: [] for i in range(1, 8)}
+        for r in records:
+            score = round(r.get("score", 0))
+            if 1 <= score <= 7:
+                by_score[score].append(r)
+        
+        # 2. Calculate capacity
+        AVG_RECORD_TOKENS = 500
+        capacity = max_tokens // AVG_RECORD_TOKENS
+        if capacity < 7: capacity = 7 # Minimum 1 per category if possible
+        
+        # 3. Allocation Strategy
+        # First, ensure failures (1-3) are prioritized
+        # Then borderline (4)
+        # Then safe (5-7)
+        
+        selected = []
+        
+        # Priority 1: Failures (Score 1-3) - Take all if possible, or sample
+        failures = by_score[1] + by_score[2] + by_score[3]
+        
+        # Priority 2: Borderline (Score 4)
+        borderline = by_score[4]
+        
+        # Priority 3: Safe (Score 5-7)
+        safe = by_score[5] + by_score[6] + by_score[7]
+        
+        import random
+        
+        # Strategy: 
+        # - Keep up to 50% capacity for failures
+        # - Keep up to 30% capacity for borderline
+        # - Keep remaining for safe
+        
+        fail_cap = int(capacity * 0.5)
+        bord_cap = int(capacity * 0.3)
+        safe_cap = capacity - fail_cap - bord_cap
+        
+        # Fill Failures
+        if len(failures) <= fail_cap:
+            selected.extend(failures)
+            # Reallocate unused capacity
+            remaining = fail_cap - len(failures)
+            bord_cap += int(remaining * 0.6)
+            safe_cap += int(remaining * 0.4)
+        else:
+            # Sample failures - prioritize lower scores
+            failures.sort(key=lambda x: x["score"])
+            selected.extend(failures[:fail_cap])
+            
+        # Fill Borderline
+        if len(borderline) <= bord_cap:
+            selected.extend(borderline)
+            # Reallocate
+            safe_cap += (bord_cap - len(borderline))
+        else:
+            selected.extend(random.sample(borderline, bord_cap))
+            
+        # Fill Safe
+        if len(safe) <= safe_cap:
+            selected.extend(safe)
+        else:
+            selected.extend(random.sample(safe, safe_cap))
+            
+        return selected
+
     def build_all(self) -> Dict[str, Any]:
         """Build the complete report_json structure."""
         meta = self.build_meta()
@@ -308,6 +394,9 @@ class ReportDataBuilder:
         sections = [context, dim_analysis, score_dist, flagged]
         if bench_agreement:
             sections.insert(3, bench_agreement)  # Before flagged
+            
+        # Build stratified sample for AI context
+        stratified_sample = self.build_stratified_sample()
 
         return {
             "meta": meta,
@@ -315,7 +404,8 @@ class ReportDataBuilder:
             # Internal data for AI generation — will be removed before storage
             "_ai_input": {
                 "dim_stats": dim_analysis["stats"],
-                "bottom_5": flagged["_bottom_5_for_ai"],
+                "bottom_5": flagged["_bottom_5_for_ai"], # Legacy support
+                "stratified_sample": stratified_sample   # New context-aware sample
             },
         }
 

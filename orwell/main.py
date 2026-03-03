@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Depends, Query, UploadFile, File, Response
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 import uuid
 import json
 import csv
@@ -15,7 +15,7 @@ from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
 from .judge import DEFAULT_JUDGE_SYSTEM_PROMPT
 from .pb_client import get_pb, PB_URL
-from .log_store import get_logs
+from .log_store import get_logs, subscribe_logs
 import httpx
 
 async def verify_model_connection(provider: str, base_url: str, model_key: str, api_key: Optional[str]):
@@ -90,6 +90,12 @@ class CreatePromptRequest(BaseModel):
     text: str
     language: str = "en"
 
+class TestConnectionRequest(BaseModel):
+    provider: str
+    base_url: str
+    model_key: str
+    api_key: Optional[str] = None
+
 class CreateSystemPromptRequest(BaseModel):
     name: str
     text: str
@@ -158,11 +164,97 @@ async def list_models(category: Optional[str] = None):
                 system_prompt=getattr(r, "system_prompt", None),
                 analysis_persona=getattr(r, "analysis_persona", None),
                 temperature=getattr(r, "temperature", 0.7),
+                source_url=getattr(r, "source_url", None),
+                reasoning_effort=getattr(r, "reasoning_effort", None),
+                max_reasoning_tokens=getattr(r, "max_reasoning_tokens", None),
             ) for r in records
         ]
     except Exception as e:
         print(f"Error fetching models: {e}")
         return []
+
+@app.post("/api/models/test")
+async def test_model_connection(req: TestConnectionRequest):
+    headers = {"Content-Type": "application/json"}
+    if req.api_key:
+        headers["Authorization"] = f"Bearer {req.api_key}"
+    
+    # Payload for a minimal check
+    payload = {
+        "model": req.model_key,
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 50
+    }
+    
+    target_url = req.base_url
+    if not target_url.endswith("/chat/completions"):
+        if target_url.endswith("/"):
+            target_url += "chat/completions"
+        else:
+            target_url += "/chat/completions"
+            
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(target_url, headers=headers, json=payload)
+            
+            try:
+                data = resp.json()
+            except:
+                data = None
+            
+            if resp.status_code != 200:
+                return {
+                    "success": False,
+                    "status_code": resp.status_code,
+                    "error": f"Status {resp.status_code}",
+                    "response": data,
+                    "raw_text": resp.text
+                }
+            
+            if data is None:
+                return {
+                    "success": False,
+                    "status_code": resp.status_code,
+                    "error": "Invalid JSON response",
+                    "raw_text": resp.text
+                }
+
+            if not isinstance(data, dict):
+                 return {
+                    "success": False,
+                    "status_code": resp.status_code,
+                    "error": "Unexpected response type (not a dictionary)",
+                    "response": data,
+                    "raw_text": resp.text
+                 }
+
+            if "choices" not in data:
+                 error_msg = "No 'choices' in response"
+                 if "error" in data:
+                     error_msg = f"API Error: {data['error']}"
+                 elif "message" in data:
+                     error_msg = f"API Message: {data['message']}"
+                 
+                 return {
+                    "success": False,
+                    "status_code": resp.status_code,
+                    "error": error_msg,
+                    "response": data,
+                    "raw_text": resp.text
+                 }
+
+            return {
+                "success": True,
+                "status_code": resp.status_code,
+                "response": data,
+                "raw_text": resp.text
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "raw_text": str(e)
+        }
 
 @app.post("/api/models", response_model=ModelConfig)
 async def create_model(config: ModelConfig):
@@ -181,6 +273,9 @@ async def create_model(config: ModelConfig):
             "system_prompt": config.system_prompt,
             "analysis_persona": config.analysis_persona,
             "temperature": config.temperature if config.temperature is not None else 0.7,
+            "source_url": config.source_url,
+            "reasoning_effort": config.reasoning_effort,
+            "max_reasoning_tokens": config.max_reasoning_tokens,
         })
         return ModelConfig(
             id=record.id,
@@ -193,6 +288,9 @@ async def create_model(config: ModelConfig):
             system_prompt=getattr(record, "system_prompt", None),
             analysis_persona=getattr(record, "analysis_persona", None),
             temperature=getattr(record, "temperature", 0.7),
+            source_url=getattr(record, "source_url", None),
+            reasoning_effort=getattr(record, "reasoning_effort", None),
+            max_reasoning_tokens=getattr(record, "max_reasoning_tokens", None),
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create model: {str(e)}")
@@ -214,6 +312,9 @@ async def update_model(model_id: str, config: ModelConfig):
             "api_key": config.api_key,
             "system_prompt": config.system_prompt,
             "analysis_persona": config.analysis_persona,
+            "source_url": config.source_url,
+            "reasoning_effort": config.reasoning_effort,
+            "max_reasoning_tokens": config.max_reasoning_tokens,
         }
         if config.temperature is not None:
             data["temperature"] = config.temperature
@@ -254,7 +355,8 @@ async def list_benches():
                 id=r.id,
                 name=r.name,
                 mode=r.mode,
-                judge_model_ids=json.loads(r.judge_model_ids) if isinstance(r.judge_model_ids, str) else r.judge_model_ids
+                judge_model_ids=json.loads(r.judge_model_ids) if isinstance(r.judge_model_ids, str) else r.judge_model_ids,
+                foreman_model_id=getattr(r, "foreman_model_id", None)
             ) for r in records
         ]
     except Exception as e:
@@ -270,9 +372,12 @@ async def create_bench(bench: JudgeBench):
         raise HTTPException(status_code=400, detail="A bench must have at least 1 judge model")
     if len(bench.judge_model_ids) > 5:
         raise HTTPException(status_code=400, detail="A bench can have at most 5 judge models")
-    if bench.mode not in ("random", "all"):
-        raise HTTPException(status_code=400, detail="Mode must be 'random' or 'all'")
-    
+    if bench.mode not in ("random", "all", "jury"):
+        raise HTTPException(status_code=400, detail="Mode must be 'random', 'all', or 'jury'")
+
+    if bench.mode == "jury" and not bench.foreman_model_id:
+        raise HTTPException(status_code=400, detail="Jury mode requires a foreman model")
+
     # Verify all judge model IDs exist and are judge category
     for jid in bench.judge_model_ids:
         try:
@@ -283,18 +388,34 @@ async def create_bench(bench: JudgeBench):
             raise
         except Exception:
             raise HTTPException(status_code=400, detail=f"Judge model with ID {jid} not found")
+
+    # Verify foreman model if present
+    if bench.foreman_model_id:
+        try:
+            m = pb.collection("models").get_one(bench.foreman_model_id)
+            if m.category != "judge":
+                raise HTTPException(status_code=400, detail=f"Foreman model {m.name} is not a judge model")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Foreman model with ID {bench.foreman_model_id} not found")
     
     try:
-        record = pb.collection("judge_benches").create({
+        data = {
             "name": bench.name,
             "mode": bench.mode,
             "judge_model_ids": json.dumps(bench.judge_model_ids)
-        })
+        }
+        if bench.foreman_model_id:
+            data["foreman_model_id"] = bench.foreman_model_id
+
+        record = pb.collection("judge_benches").create(data)
         return JudgeBench(
             id=record.id,
             name=record.name,
             mode=record.mode,
-            judge_model_ids=json.loads(record.judge_model_ids) if isinstance(record.judge_model_ids, str) else record.judge_model_ids
+            judge_model_ids=json.loads(record.judge_model_ids) if isinstance(record.judge_model_ids, str) else record.judge_model_ids,
+            foreman_model_id=getattr(record, "foreman_model_id", None)
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create bench: {str(e)}")
@@ -308,8 +429,11 @@ async def update_bench(bench_id: str, bench: JudgeBench):
         raise HTTPException(status_code=400, detail="A bench must have at least 1 judge model")
     if len(bench.judge_model_ids) > 5:
         raise HTTPException(status_code=400, detail="A bench can have at most 5 judge models")
-    if bench.mode not in ("random", "all"):
-        raise HTTPException(status_code=400, detail="Mode must be 'random' or 'all'")
+    if bench.mode not in ("random", "all", "jury"):
+        raise HTTPException(status_code=400, detail="Mode must be 'random', 'all', or 'jury'")
+
+    if bench.mode == "jury" and not bench.foreman_model_id:
+        raise HTTPException(status_code=400, detail="Jury mode requires a foreman model")
     
     # Verify all judge model IDs exist and are judge category
     for jid in bench.judge_model_ids:
@@ -321,18 +445,37 @@ async def update_bench(bench_id: str, bench: JudgeBench):
             raise
         except Exception:
             raise HTTPException(status_code=400, detail=f"Judge model with ID {jid} not found")
+
+    # Verify foreman model if present
+    if bench.foreman_model_id:
+        try:
+            m = pb.collection("models").get_one(bench.foreman_model_id)
+            if m.category != "judge":
+                raise HTTPException(status_code=400, detail=f"Foreman model {m.name} is not a judge model")
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"Foreman model with ID {bench.foreman_model_id} not found")
     
     try:
-        pb.collection("judge_benches").update(bench_id, {
+        data = {
             "name": bench.name,
             "mode": bench.mode,
             "judge_model_ids": json.dumps(bench.judge_model_ids)
-        })
+        }
+        if bench.foreman_model_id:
+            data["foreman_model_id"] = bench.foreman_model_id
+        else:
+            # Explicitly clear it if switching away from jury mode
+            data["foreman_model_id"] = ""
+
+        pb.collection("judge_benches").update(bench_id, data)
         return JudgeBench(
             id=bench_id,
             name=bench.name,
             mode=bench.mode,
-            judge_model_ids=bench.judge_model_ids
+            judge_model_ids=bench.judge_model_ids,
+            foreman_model_id=bench.foreman_model_id
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update bench: {str(e)}")
@@ -359,6 +502,10 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
                 request.model_name = tm.model_key
                 if tm.api_key:
                     request.api_key = tm.api_key
+                if hasattr(tm, "reasoning_effort"):
+                    request.reasoning_effort = tm.reasoning_effort
+                if hasattr(tm, "max_reasoning_tokens"):
+                    request.max_reasoning_tokens = tm.max_reasoning_tokens
             except Exception as e:
                 print(f"Error resolving target model {request.target_model_id}: {e}")
         
@@ -499,6 +646,17 @@ async def get_audit_status(job_id: str):
 @app.get("/api/audit/{job_id}/logs")
 async def get_audit_logs(job_id: str):
     return get_logs(job_id)
+
+@app.get("/api/audit/{job_id}/stream")
+async def stream_audit_logs(job_id: str):
+    async def event_generator():
+        try:
+            async for log in subscribe_logs(job_id):
+                yield f"data: {json.dumps(log)}\n\n"
+        except Exception as e:
+            print(f"Stream error for job {job_id}: {e}")
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/audit/{job_id}/report", response_model=AuditReport)
 async def get_audit_report(job_id: str):

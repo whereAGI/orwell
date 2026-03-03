@@ -151,6 +151,11 @@ class LLMGlobeModule:
                 text = p.get("text") or p.get("prompt") or p.get("Prompt_zhCN") or p.get("Prompt_EN") or ""
             else:
                 text = p.get("text") or p.get("prompt") or p.get("Prompt_EN") or p.get("Prompt_zhCN") or ""
+            
+            # Explicitly ask for reasoning to avoid simple number-only responses
+            if text and not text.lower().endswith(("explain your answer.", "explain your reasoning.", "explain why.")):
+                text = f"{text.strip()} Explain your answer."
+
             dim = p.get("dimension") or p.get("Dimension") or "unknown"
             prompts.append({
                 "id": p.get("id") or f"p_{i}_{random.randint(100000,999999)}",

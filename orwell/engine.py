@@ -106,6 +106,30 @@ class AuditEngine:
                         bench_judge_ids = json.loads(bench_judge_ids)
                     
                     add_log(job_id, "info", f"Using Judge Bench: {bench_record.name} ({bench_record.mode} mode, {len(bench_judge_ids)} judges)")
+
+                    # Resolve Foreman if mode is Jury
+                    foreman_client = None
+                    if bench_record.mode == "jury":
+                        foreman_id = getattr(bench_record, "foreman_model_id", None)
+                        if not foreman_id:
+                            raise RuntimeError("Jury bench missing foreman model ID")
+                        
+                        try:
+                            fm = pb.collection("models").get_one(foreman_id)
+                            foreman_client = JudgeClient(
+                                model=fm.model_key,
+                                api_key=fm.api_key or request.api_key,
+                                base_url=fm.base_url if hasattr(fm, 'base_url') else None,
+                                system_prompt=getattr(fm, 'system_prompt', None),
+                                analysis_persona=getattr(fm, 'analysis_persona', None),
+                                temperature=0.0, # Foreman should be deterministic
+                                log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
+                                max_reasoning_tokens=getattr(fm, "max_reasoning_tokens", None)
+                            )
+                            add_log(job_id, "info", f"  Bench foreman resolved: {fm.name} ({fm.model_key})")
+                        except Exception as e:
+                            add_log(job_id, "error", f"  Failed to resolve foreman {foreman_id}: {e}")
+                            raise RuntimeError(f"Failed to resolve foreman: {e}")
                     
                     # Resolve each judge model into a JudgeClient
                     judge_clients = []
@@ -119,7 +143,8 @@ class AuditEngine:
                                 system_prompt=getattr(jm, 'system_prompt', None),
                                 analysis_persona=getattr(jm, 'analysis_persona', None),
                                 temperature=getattr(jm, 'temperature', 0.0),
-                                log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data)
+                                log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
+                                max_reasoning_tokens=getattr(jm, "max_reasoning_tokens", None)
                             )
                             judge_clients.append(jc)
                             add_log(job_id, "info", f"  Bench judge resolved: {jm.name} ({jm.model_key})")
@@ -132,7 +157,8 @@ class AuditEngine:
                     bench_executor = BenchExecutor(
                         judges=judge_clients,
                         mode=bench_record.mode,
-                        log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data)
+                        log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
+                        foreman_client=foreman_client
                     )
                     
                     # Use first judge's model name for config compatibility
@@ -177,6 +203,7 @@ class AuditEngine:
                         if hasattr(jm, "temperature"):
                             judge_temperature = jm.temperature
                         judge_analysis_persona = getattr(jm, "analysis_persona", None)
+                        judge_max_reasoning_tokens = getattr(jm, "max_reasoning_tokens", None)
                         add_log(job_id, "info", f"Resolved Judge Model: {jm.name}", {"provider": jm.provider, "model": judge_model_name})
                     except Exception as e:
                         err_msg = f"Error resolving judge model {request.judge_model_id}: {e}"
@@ -217,7 +244,8 @@ class AuditEngine:
                     system_prompt=judge_system_prompt,
                     analysis_persona=locals().get("judge_analysis_persona", None),
                     temperature=judge_temperature,
-                    log_callback=judge_log_callback
+                    log_callback=judge_log_callback,
+                    max_reasoning_tokens=locals().get("judge_max_reasoning_tokens", None)
                 )
             
             consecutive_failures = 0
@@ -279,8 +307,14 @@ class AuditEngine:
                                 add_log(job_id, "info", f"Scoring with bench ({bench_record.mode} mode)")
                                 score_results = await bench_executor.score_response(p["text"], response_text, p["dimension"])
                                 mean_score = BenchExecutor.compute_mean_score(score_results)
-                                combined_reason = " | ".join(
-                                    f"[{r['judge_model']}{'(rescore)' if r.get('is_rescore') else ''}] {r['score']}/7: {r['reason'][:100]}"
+                                
+                                # Use clearer separator for readability and increase truncation limit
+                                # Using HTML <hr> and <br> tags for better rendering in web UI
+                                combined_reason = "<br><br><hr><br><br>".join(
+                                    f"<strong>JUDGE:</strong> {r['judge_model']}{' (rescore)' if r.get('is_rescore') else ''}<br>"
+                                    f"<strong>ROLE:</strong> {'Foreman' if r.get('is_foreman') else 'Juror'}<br>"
+                                    f"<strong>SCORE:</strong> {r['score']}/7<br>"
+                                    f"<strong>REASON:</strong><br>{r['reason']}"
                                     for r in score_results
                                 )
                                 score_val = mean_score
@@ -340,15 +374,16 @@ class AuditEngine:
                 if score_results is not None:
                     # Bench mode: store each judge's score separately
                     for sr in score_results:
-                        sid = str(uuid.uuid4())
-                        pb.collection("scores").create({
-                            "score_id": sid,
-                            "job_id": job_record.id,
-                            "response_id": resp_record.id,
-                            "dimension": p["dimension"],
-                            "value": sr["score"],
-                            "judge_model": sr["judge_model"]
-                        })
+                        if sr["score"] > 0: # Only store valid scores to prevent 400 errors
+                            sid = str(uuid.uuid4())
+                            pb.collection("scores").create({
+                                "score_id": sid,
+                                "job_id": job_record.id,
+                                "response_id": resp_record.id,
+                                "dimension": p["dimension"],
+                                "value": sr["score"],
+                                "judge_model": sr["judge_model"]
+                            })
                 elif not target_error and not judge_error:
                     # Single judge mode: one score record (only if successful)
                     sid = str(uuid.uuid4())
@@ -681,9 +716,50 @@ class AuditEngine:
         payload = {
             "model": request.model_name,
             "messages": messages,
-            "temperature": 0.7
+            "temperature": 0.7,
+            "max_tokens": 300
         }
         
+        # Inject Reasoning Parameters
+        # reasoning_effort: "enabled", "disabled", "high", "medium", "low", or None
+        effort = request.reasoning_effort
+        max_reasoning = request.max_reasoning_tokens
+        
+        # Initialize reasoning config if needed
+        reasoning_config = {}
+        
+        if max_reasoning:
+            reasoning_config["max_tokens"] = int(max_reasoning)
+            payload["include_reasoning"] = True
+            # If max_reasoning is set, it usually overrides effort in OpenRouter, 
+            # but we can set think=True for Ollama
+            payload["think"] = True
+
+        elif effort:
+            if effort == "disabled":
+                # For Ollama
+                payload["think"] = False
+                # For OpenRouter (some models)
+                payload["include_reasoning"] = False
+            
+            elif effort == "enabled":
+                # For Ollama
+                payload["think"] = True
+                # For OpenRouter
+                payload["include_reasoning"] = True
+            
+            elif effort in ("high", "medium", "low"):
+                # OpenRouter O1-style
+                reasoning_config["effort"] = effort
+                # Also set include_reasoning just in case
+                payload["include_reasoning"] = True
+                # Ollama doesn't support effort levels yet for generic models (except GPT-OSS maybe), 
+                # but "think": True is safe fallback if they ignore extra params
+                payload["think"] = True
+        
+        if reasoning_config:
+            payload["reasoning"] = reasoning_config
+
         if is_check:
             payload["max_tokens"] = 5 # Keep it very short for connectivity check
 
@@ -711,26 +787,61 @@ class AuditEngine:
                         "payload": payload
                     })
 
-                resp = await client.post(url, json=payload, headers=headers)
+                # Enable streaming in payload
+                payload["stream"] = True
                 
-                if job_id:
-                    try:
-                        resp_json = resp.json()
-                    except:
-                        resp_json = {"raw": resp.text[:200]}
-                        
-                    log_type = "debug" if is_check else "response"
-                    add_log(job_id, log_type, f"Target LLM Response ({resp.status_code})", {
-                        "status": resp.status_code,
-                        "body": resp_json
-                    })
+                full_content = ""
+                thinking_buffer = ""
+                is_thinking = False
+                
+                # Stream the response
+                async with client.stream("POST", url, json=payload, headers=headers) as response:
+                    if response.status_code != 200:
+                        # If error, try to read the body
+                        err_body = await response.aread()
+                        raise Exception(f"HTTP {response.status_code}: {err_body.decode('utf-8', errors='ignore')}")
+                    
+                    if job_id:
+                        add_log(job_id, "info", "Target LLM connection established (Streaming)...")
 
-                resp.raise_for_status()
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
+                    async for line in response.aiter_lines():
+                        if not line: continue
+                        if line.strip() == "data: [DONE]": break
+                        if not line.startswith("data: "): continue
+                        
+                        try:
+                            chunk_str = line[6:] # Remove "data: " prefix
+                            chunk_data = json.loads(chunk_str)
+                            
+                            if not chunk_data.get("choices"):
+                                continue
+
+                            delta = chunk_data["choices"][0].get("delta", {})
+                            
+                            # Handle content
+                            token = delta.get("content", "")
+                            if token:
+                                full_content += token
+                                if job_id:
+                                    add_log(job_id, "target_stream", token)
+                            
+                            # Handle thinking (DeepSeek R1 style often uses a separate field or interleaves)
+                            # Standard Ollama/DeepSeek thinking usually comes in 'reasoning_content' or similar if not in content
+                            # But if it's <think> tags in content, we handle it post-process.
+                            # However, some providers might send "reasoning_content" or "thinking" fields.
+                            
+                            # Check for reasoning_content (common in some reasoning models)
+                            r_token = delta.get("reasoning_content", "") or delta.get("reasoning", "")
+                            if r_token:
+                                thinking_buffer += r_token
+                                
+                        except Exception:
+                            continue # Skip malformed chunks
                 
-                # Handle <think> tokens
-                # Regex to find content between <think> and </think> (multiline)
+                # After stream ends
+                content = full_content
+                
+                # Handle <think> tokens (DeepSeek R1 style in content)
                 think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
                 think_match = think_pattern.search(content)
                 
@@ -741,11 +852,22 @@ class AuditEngine:
                     
                     # Remove the thinking block from the content
                     content = think_pattern.sub('', content).strip()
-                    
                     if job_id:
                         add_log(job_id, "info", "Removed <think> block from response for judging")
+                
+                # If we collected reasoning from delta fields (outside content)
+                if thinking_buffer:
+                    if job_id:
+                        add_log(job_id, "thought", f"Thinking Process (Streamed):\n{thinking_buffer}")
+                    # No need to remove from content as it was separate
+
+                if job_id:
+                    add_log(job_id, "response", f"Target LLM Response Complete ({len(content)} chars)", {
+                        "body": {"content": content[:200] + "..."}
+                    })
 
                 return content
+
             except httpx.ReadTimeout:
                 err_msg = "Target LLM timed out (read timeout). The model might be loading or too slow."
                 print(err_msg)

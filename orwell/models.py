@@ -22,12 +22,15 @@ class ModelConfig(BaseModel):
     analysis_persona: Optional[str] = None    # Analysis persona (used during generate_report_sections() calls)
     temperature: Optional[float] = 0.7
     source_url: Optional[str] = None
+    reasoning_effort: Optional[str] = None # "enabled", "disabled", "high", "medium", "low"
+    max_reasoning_tokens: Optional[int] = None # Max tokens for reasoning/thinking process
 
 class JudgeBench(BaseModel):
     id: Optional[str] = None
     name: str
-    mode: str  # "random" or "all"
+    mode: str  # "random", "all", or "jury"
     judge_model_ids: List[str]  # max 5 judge model record IDs
+    foreman_model_id: Optional[str] = None  # Required if mode="jury"
 
 class AuditRequest(BaseModel):
     # Support selecting stored models
@@ -45,6 +48,8 @@ class AuditRequest(BaseModel):
     dimensions: Optional[List[str]] = None
     system_prompt: Optional[str] = None
     judge_model: Optional[str] = None
+    reasoning_effort: Optional[str] = None
+    max_reasoning_tokens: Optional[int] = None
 
 class JobResponse(BaseModel):
     job_id: str

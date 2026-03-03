@@ -103,6 +103,11 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     document.getElementById('status').style.display = 'block';
     document.getElementById('report').style.display = 'none';
     document.getElementById('qaAccordion').innerHTML = '';
+    
+    // Reset terminal for new job
+    if (terminalContent) terminalContent.innerHTML = '';
+    lastLogTimestamp = null;
+    
     pollStatus();
     pollInterval = setInterval(pollStatus, 2000);
   } catch (err) {
@@ -156,7 +161,11 @@ async function pollStatus() {
         startBtn.style.background = 'var(--primary)';
         startBtn.style.borderColor = 'var(--primary)';
       }
-      alert('Audit failed: ' + status.message);
+      document.getElementById('statusText').textContent = 'failed';
+      document.getElementById('statusText').style.color = 'var(--danger)';
+      document.getElementById('statusMessage').textContent = status.message || 'Audit failed';
+      document.getElementById('statusMessage').style.color = 'var(--danger)';
+      // alert('Audit failed: ' + status.message);
     } else if (status.status === 'aborted') {
       clearInterval(pollInterval);
       const startBtn = document.getElementById('startBtn');
@@ -301,6 +310,42 @@ window.closeRadarModal = function() {
 
 // ─── Section Renderers ───
 
+function extractThinkingProcess(text) {
+  if (!text) return { thinking: null, content: '' };
+  
+  // 1. Try new robust format with explicit delimiter
+  const robustMatch = text.match(/^Thinking Process:\n([\s\S]*?)\n===END_THINKING===\n\n/);
+  if (robustMatch) {
+    return {
+      thinking: robustMatch[1],
+      content: text.replace(robustMatch[0], '')
+    };
+  }
+
+  // 2. Fallback: Pattern: Thinking Process:\n...content...\n\nActual Content
+  // Note: This is imperfect for multi-paragraph thinking, but kept for backward compatibility
+  const match = text.match(/^Thinking Process:\n([\s\S]*?)\n\n/);
+  if (match) {
+    return {
+      thinking: match[1],
+      content: text.replace(match[0], '')
+    };
+  }
+  return { thinking: null, content: text };
+}
+
+function renderCollapsibleThinking(thinking) {
+  if (!thinking) return '';
+  return `
+    <details style="margin-bottom:12px;background:rgba(30, 30, 40, 0.5);border:1px solid var(--border);border-radius:6px;overflow:hidden;">
+      <summary style="padding:8px 12px;cursor:pointer;font-size:11px;font-weight:600;color:var(--muted);user-select:none;outline:none;background:rgba(0,0,0,0.2);">
+        SHOW THINKING PROCESS
+      </summary>
+      <div style="padding:12px;border-top:1px solid var(--border);font-family:monospace;font-size:12px;color:#a0a0b8;white-space:pre-wrap;line-height:1.5;max-height:400px;overflow-y:auto;">${escapeHtml(thinking)}</div>
+    </details>
+  `;
+}
+
 function renderReportSection(section) {
   const type = section.type;
   let html = '';
@@ -353,13 +398,16 @@ function renderExecutiveSummary(section) {
   const statusColor = statusColors[section.status] || '#6c757d';
   const statusLabel = (section.status || 'info').toUpperCase();
 
+  const { thinking, content } = extractThinkingProcess(section.content);
+
   return `
     <div style="border-left:4px solid ${statusColor};padding:16px;background:#0f1018;border-radius:0 8px 8px 0;margin-bottom:16px;">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
         <span style="background:${statusColor};color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">${statusLabel}</span>
         <h4 style="margin:0;">${escapeHtml(section.title)}</h4>
       </div>
-      <div class="reason">${renderMarkdown(section.content)}</div>
+      ${renderCollapsibleThinking(thinking)}
+      <div class="reason">${renderMarkdown(content)}</div>
     </div>`;
 }
 
@@ -690,18 +738,22 @@ window.closeFlaggedDetailModal = function () {
 
 
 function renderAIFailureAnalysis(section) {
+  const { thinking, content } = extractThinkingProcess(section.content);
   return `
     <div style="margin-bottom:16px;">
       <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
-      <div class="reason">${renderMarkdown(section.content)}</div>
+      ${renderCollapsibleThinking(thinking)}
+      <div class="reason">${renderMarkdown(content)}</div>
     </div>`;
 }
 
 function renderRecommendations(section) {
+  const { thinking, content } = extractThinkingProcess(section.content);
   return `
     <div style="margin-bottom:16px;border-left:4px solid var(--primary);padding:16px;background:#0f1018;border-radius:0 8px 8px 0;">
       <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
-      <div class="reason">${renderMarkdown(section.content)}</div>
+      ${renderCollapsibleThinking(thinking)}
+      <div class="reason">${renderMarkdown(content)}</div>
     </div>`;
 }
 
@@ -872,7 +924,7 @@ async function loadPromptsAndResponses() {
           <div id="acc-${pid}" style="display:none;margin-top:10px;">
             <div><span class="label">Prompt</span><div style="margin-top:6px">${escapeHtml(p.text)}</div></div>
             <div style="margin-top:10px"><span class="label">Response</span><div style="margin-top:6px">${r ? formatResponse(r.raw_response) : '<em>No response</em>'}</div></div>
-            ${r && r.reason ? `<div style="margin-top:10px"><span class="label">Judge Reason</span><div class="reason" style="margin-top:6px">${escapeHtml(r.reason)}</div></div>` : ''}
+            ${r && r.reason ? `<div style="margin-top:10px"><span class="label">Judge Reason</span><div class="reason" style="margin-top:6px; white-space:pre-wrap;">${r.reason}</div></div>` : ''}
           </div>
         </div>`;
     }
@@ -1391,59 +1443,205 @@ if (clearBtn) {
   });
 }
 
-async function pollLogs() {
+let logEventSource = null;
+
+// Inject styles for cursor
+const style = document.createElement('style');
+style.textContent = `
+  @keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  .cursor {
+    display: inline-block;
+    width: 8px;
+    height: 15px;
+    background-color: var(--primary, #6366f1);
+    animation: blink 1s step-end infinite;
+    vertical-align: middle;
+    margin-left: 2px;
+  }
+`;
+document.head.appendChild(style);
+
+function startLogStream(jobId) {
+    if (logEventSource) {
+        logEventSource.close();
+        logEventSource = null;
+    }
+    
+    // Connect to SSE
+    logEventSource = new EventSource(`/api/audit/${jobId}/stream`);
+    
+    logEventSource.onmessage = (event) => {
+        try {
+            const log = JSON.parse(event.data);
+            renderLogs([log]);
+            if (logStatus) logStatus.textContent = `Live: ${new Date().toLocaleTimeString()}`;
+        } catch (e) {
+            console.error("Failed to parse SSE log:", e);
+        }
+    };
+    
+    logEventSource.onerror = (err) => {
+        console.warn("SSE Error (stream might have ended or failed):", err);
+        // If connection fails, we might close it or let it retry.
+        // For completed jobs, the server closes the stream, which might trigger error in some browsers.
+        // We rely on polling status to close it cleanly.
+    };
+}
+
+function stopLogStream() {
+    if (logEventSource) {
+        logEventSource.close();
+        logEventSource = null;
+    }
+}
+
+async function pollStatus() {
   if (!currentJobId) return;
 
+  // Start log stream if not active
+  if (!logEventSource && currentJobId) {
+      startLogStream(currentJobId);
+  }
+
   try {
-    const res = await fetch(`/api/audit/${currentJobId}/logs`);
-    if (!res.ok) return;
-
-    const logs = await res.json();
-    if (logs.length === 0) return;
-
-    // Filter new logs
-    const newLogs = lastLogTimestamp
-      ? logs.filter(l => l.timestamp > lastLogTimestamp)
-      : logs;
-
-    if (newLogs.length > 0) {
-      lastLogTimestamp = newLogs[newLogs.length - 1].timestamp;
-      renderLogs(newLogs);
-      if (logStatus) logStatus.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+    await loadAuditList();
+    const response = await fetch(`/api/audit/${currentJobId}`);
+    const status = await response.json();
+    const detailsRes = await fetch(`/api/audit/${currentJobId}/details`);
+    const details = detailsRes.ok ? await detailsRes.json() : null;
+    document.getElementById('statusText').textContent = status.status;
+    const progress = Math.round((status.progress || 0) * 100);
+    const fill = document.getElementById('progressFill');
+    fill.style.width = progress + '%';
+    fill.textContent = progress + '%';
+    document.getElementById('statusMessage').textContent = status.message || '';
+    if (status.status === 'completed') {
+      clearInterval(pollInterval);
+      stopLogStream(); // Stop streaming logs
+      
+      const startBtn = document.getElementById('startBtn');
+      if (startBtn) {
+        startBtn.textContent = 'Start Audit';
+        startBtn.style.background = 'var(--primary)';
+        startBtn.style.borderColor = 'var(--primary)';
+      }
+      await loadPromptsAndResponses();
+      await loadCriteria();
+      await loadReport();
+      if (details && details.error_message) {
+        document.getElementById('statusMessage').textContent = details.error_message;
+      }
+    } else if (status.status === 'failed') {
+      clearInterval(pollInterval);
+      stopLogStream(); // Stop streaming logs
+      
+      const startBtn = document.getElementById('startBtn');
+      if (startBtn) {
+        startBtn.textContent = 'Start Audit';
+        startBtn.style.background = 'var(--primary)';
+        startBtn.style.borderColor = 'var(--primary)';
+      }
+      document.getElementById('statusText').textContent = 'failed';
+      document.getElementById('statusText').style.color = 'var(--danger)';
+      document.getElementById('statusMessage').textContent = status.message || 'Audit failed';
+      document.getElementById('statusMessage').style.color = 'var(--danger)';
+    } else if (status.status === 'aborted') {
+      clearInterval(pollInterval);
+      stopLogStream(); // Stop streaming logs
+      
+      const startBtn = document.getElementById('startBtn');
+      if (startBtn) {
+        startBtn.textContent = 'Start Audit';
+        startBtn.style.background = 'var(--primary)';
+        startBtn.style.borderColor = 'var(--primary)';
+      }
+      document.getElementById('statusText').textContent = 'aborted';
+      document.getElementById('statusMessage').textContent = status.message || 'Aborted by user';
     }
-  } catch (e) {
-    console.error("Log poll failed", e);
+  } catch (err) {
+    console.error('Error polling status:', err);
   }
 }
 
 function renderLogs(logs) {
   if (!terminalContent) return;
 
-  // Check if we should scroll (if near bottom)
   const wasAtBottom = terminalContent.scrollTop + terminalContent.clientHeight >= terminalContent.scrollHeight - 50;
 
   logs.forEach(log => {
-    const div = document.createElement('div');
-    div.className = 'log-entry';
+    // Check if log already exists by ID
+    let div = document.querySelector(`.log-entry[data-log-id="${log.id}"]`);
+    
+    // Display names mapping
+    let displayType = log.type;
+    if (log.type === 'target_stream') displayType = 'Target Response';
+    if (log.type === 'judge_stream') displayType = 'Judge Analysis';
+    
+    // Determine if this type should have a cursor
+    const isStreamType = (log.type === 'target_stream' || log.type === 'judge_stream');
+    
+    if (div) {
+        // Update existing log
+        const contentEl = div.querySelector('.log-content');
+        // Check for cursor
+        const cursorHtml = isStreamType ? '<span class="cursor"></span>' : '';
+        if (contentEl) contentEl.innerHTML = escapeHtml(log.content) + cursorHtml;
+        
+        // Update timestamp
+        const timeEl = div.querySelector('.log-time');
+        if (timeEl) timeEl.textContent = `[${new Date(log.timestamp).toLocaleTimeString()}]`;
+        
+    } else {
+        // Create new log entry
+        div = document.createElement('div');
+        div.className = 'log-entry';
+        div.setAttribute('data-log-id', log.id);
 
-    const time = new Date(log.timestamp).toLocaleTimeString();
-    const typeClass = `type-${log.type}`;
+        const time = new Date(log.timestamp).toLocaleTimeString();
+        const typeClass = `type-${log.type}`;
 
-    let detailsHtml = '';
-    if (log.details && Object.keys(log.details).length > 0) {
-      detailsHtml = `<div class="json-block">${escapeHtml(JSON.stringify(log.details, null, 2))}</div>`;
-    }
+        let detailsHtml = '';
+        if (log.details && Object.keys(log.details).length > 0) {
+          detailsHtml = `<div class="json-block">${escapeHtml(JSON.stringify(log.details, null, 2))}</div>`;
+        }
 
-    div.innerHTML = `
+        const cursorHtml = isStreamType ? '<span class="cursor"></span>' : '';
+
+        div.innerHTML = `
             <div class="log-meta">
                 <span class="log-time">[${time}]</span>
-                <span class="log-type ${typeClass}">${log.type}</span>
+                <span class="log-type ${typeClass}">${escapeHtml(displayType)}</span>
             </div>
-            <div class="log-content">${escapeHtml(log.content)}</div>
+            <div class="log-content">${escapeHtml(log.content)}${cursorHtml}</div>
             ${detailsHtml}
         `;
 
-    terminalContent.appendChild(div);
+        terminalContent.appendChild(div);
+    }
+  });
+  
+  // Cleanup cursors
+  const entries = terminalContent.querySelectorAll('.log-entry');
+  entries.forEach((entry, index) => {
+      // Remove cursor from all entries except possibly the last one
+      if (index < entries.length - 1) {
+          const cursor = entry.querySelector('.cursor');
+          if (cursor) cursor.remove();
+      }
+      // If the last entry is NOT a stream type, remove cursor too
+      if (index === entries.length - 1) {
+           const typeLabel = entry.querySelector('.log-type').textContent;
+           // We check the display name
+           const isStream = (typeLabel === 'Target Response' || typeLabel === 'Judge Analysis');
+           if (!isStream) {
+               const cursor = entry.querySelector('.cursor');
+               if (cursor) cursor.remove();
+           }
+      }
   });
 
   if (wasAtBottom) {
