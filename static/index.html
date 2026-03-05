@@ -485,12 +485,14 @@
 
   <!-- Terminal Panel -->
   <div id="terminal" class="terminal-panel collapsed">
-    <div class="terminal-header" id="terminalHeader">
-      <div style="display:flex;align-items:center;gap:12px">
+    <div class="terminal-header" id="terminalHeader" style="position:relative;overflow:hidden;">
+      <div id="terminalProgressBar" style="position:absolute;top:0;left:0;bottom:0;width:0%;background:linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);opacity:0.3;transition:width 0.3s ease;z-index:0;"></div>
+      <div style="display:flex;align-items:center;gap:12px;z-index:1;position:relative;">
         <span style="font-weight:bold;color:#fff">TERMINAL</span>
-        <span id="logStatus" style="font-size:11px;opacity:0.6">Ready</span>
+        <span id="logStatus" style="font-size:11px;opacity:0.8;font-weight:500;">Ready</span>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;z-index:1;position:relative;">
+        <span id="terminalPercentage" style="font-size:11px;font-weight:bold;color:#fff;margin-right:8px;display:none;">0%</span>
         <button id="clearLogsBtn"
           style="width:auto;padding:2px 8px;font-size:10px;background:#333;border:none;">CLEAR</button>
         <button id="toggleTerminalBtn"

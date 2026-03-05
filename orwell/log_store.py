@@ -20,12 +20,17 @@ def add_log(job_id: str, log_type: str, content: str, details: dict = None):
     
     if log_type in stream_types and job_logs[job_id]:
         last_entry = job_logs[job_id][-1]
-        if last_entry["type"] == log_type:
+        # Check if the last entry is of the same type AND has the same prompt_id (if applicable)
+        last_pid = last_entry["details"].get("prompt_id") if last_entry.get("details") else None
+        curr_pid = details.get("prompt_id") if details else None
+        
+        if last_entry["type"] == log_type and last_pid == curr_pid:
             # Append to existing token log to reduce noise
             last_entry["content"] += content
             last_entry["timestamp"] = datetime.now().isoformat() # Update timestamp
             
-            # Notify subscribers about the update
+            # Notify subscribers about the UPDATE (not a new entry)
+            # We need to signal that this is an update to an existing log ID
             _notify_subscribers(job_id, last_entry)
             return
 

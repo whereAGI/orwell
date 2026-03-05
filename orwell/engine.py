@@ -39,7 +39,7 @@ class AuditEngine:
             try:
                 # Send a very short prompt to check if the model is responsive
                 # Use a simple prompt that doesn't require complex reasoning
-                check_resp = await self._call_target(request, "Hi", job_id, is_check=True)
+                check_resp = await self._call_target(request, "Hi", is_check=True)
                 if check_resp.startswith("Error:"):
                     raise Exception(check_resp)
                 add_log(job_id, "success", "Target model connected successfully")
@@ -259,13 +259,24 @@ class AuditEngine:
                     return
 
                 # --- 1. Call Target LLM with Retry ---
-                add_log(job_id, "info", f"Processing prompt {i+1}/{total}", {"dimension": p["dimension"]})
+                add_log(job_id, "prompt_start", f"Processing prompt {i+1}/{total}", {
+                    "prompt_id": p["id"],
+                    "text": p["text"], 
+                    "dimension": p["dimension"],
+                    "index": i,
+                    "total": total
+                })
+                add_log(job_id, "info", f"Processing prompt {i+1}/{total}", {
+                    "dimension": p["dimension"],
+                    "prompt_id": p["id"],
+                    "prompt_text": p["text"]
+                })
                 
                 response_text = ""
                 target_error = None
                 
                 for attempt in range(MAX_RETRIES):
-                    response_text = await self._call_target(request, p["text"], job_id)
+                    response_text = await self._call_target(request, p["text"], job_id, prompt_id=p["id"])
                     if response_text.startswith("Error:"):
                         target_error = response_text
                         if attempt < MAX_RETRIES - 1:
@@ -319,13 +330,33 @@ class AuditEngine:
                                 )
                                 score_val = mean_score
                                 reason = combined_reason
-                                add_log(job_id, "success", f"Bench mean score: {mean_score:.1f}/7 ({len(score_results)} judge(s))")
+                                add_log(job_id, "score_result", f"Bench mean score: {mean_score:.1f}/7", {
+                                    "prompt_id": p["id"],
+                                    "score": mean_score,
+                                    "reason": combined_reason,
+                                    "judge_count": len(score_results)
+                                })
+                                add_log(job_id, "success", f"Bench mean score: {mean_score:.1f}/7 ({len(score_results)} judge(s))", {
+                                    "score": mean_score,
+                                    "reason": combined_reason,
+                                    "prompt_id": p["id"]
+                                })
                                 judge_error = None
                                 break # Success
                             else:
                                 add_log(job_id, "info", "Scoring response with Judge", {"judge_model": judge_model_name})
                                 score_val, reason = await judge.score(p["text"], response_text, p["dimension"])
-                                add_log(job_id, "success", f"Scored: {score_val}/7", {"reason": reason})
+                                add_log(job_id, "score_result", f"Scored: {score_val}/7", {
+                                    "prompt_id": p["id"],
+                                    "score": score_val,
+                                    "reason": reason,
+                                    "judge_model": judge_model_name
+                                })
+                                add_log(job_id, "success", f"Scored: {score_val}/7", {
+                                    "reason": reason,
+                                    "score": score_val,
+                                    "prompt_id": p["id"]
+                                })
                                 judge_error = None
                                 break # Success
                         except Exception as je:
@@ -688,7 +719,7 @@ class AuditEngine:
             except:
                 pass
 
-    async def _call_target(self, request: AuditRequest, prompt_text: str, job_id: str = None, is_check: bool = False) -> str:
+    async def _call_target(self, request: AuditRequest, prompt_text: str, job_id: str = None, is_check: bool = False, prompt_id: str = None) -> str:
         """
         Calls the target LLM endpoint.
         """
@@ -823,7 +854,8 @@ class AuditEngine:
                             if token:
                                 full_content += token
                                 if job_id:
-                                    add_log(job_id, "target_stream", token)
+                                    # Send only the new token, not the full accumulated content
+                                    add_log(job_id, "target_stream", token, {"prompt_id": prompt_id} if prompt_id else None)
                             
                             # Handle thinking (DeepSeek R1 style often uses a separate field or interleaves)
                             # Standard Ollama/DeepSeek thinking usually comes in 'reasoning_content' or similar if not in content

@@ -23,6 +23,10 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
   if (startBtn.textContent === 'Stop Audit') {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = null;
+    if (currentEventSource) {
+        currentEventSource.close();
+        currentEventSource = null;
+    }
     if (currentJobId) {
       try {
         const res = await fetch(`/api/audit/${currentJobId}/abort`, { method: 'POST' });
@@ -33,6 +37,7 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     }
     document.getElementById('status').style.display = 'block';
     document.getElementById('report').style.display = 'none';
+    document.getElementById('live-feed').style.display = 'none';
     document.getElementById('qaAccordion').innerHTML = '';
     startBtn.textContent = 'Start Audit';
     startBtn.style.background = 'var(--primary)';
@@ -105,11 +110,14 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     document.getElementById('qaAccordion').innerHTML = '';
     
     // Reset terminal for new job
-    if (terminalContent) terminalContent.innerHTML = '';
-    lastLogTimestamp = null;
+    const termContent = document.getElementById('terminalContent');
+    if (termContent) termContent.innerHTML = '';
+    
+    // Connect Live Stream
+    connectStream(currentJobId);
     
     pollStatus();
-    pollInterval = setInterval(pollStatus, 2000);
+    pollInterval = setInterval(pollStatus, 5000);
   } catch (err) {
     alert('Error creating audit: ' + err);
     if (startBtn) {
@@ -121,11 +129,206 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
   }
 });
 
+let currentEventSource = null;
+
+function connectStream(jobId) {
+  if (currentEventSource) {
+    currentEventSource.close();
+    currentEventSource = null;
+  }
+
+  const liveFeedContainer = document.getElementById('live-feed');
+  const liveFeedContent = document.getElementById('live-feed-content');
+  const reportContainer = document.getElementById('report');
+  const statusContainer = document.getElementById('status');
+  // const badge = document.getElementById('live-status-badge'); // Removed
+  const termBar = document.getElementById('terminalProgressBar');
+  const termPct = document.getElementById('terminalPercentage');
+  const termStatus = document.getElementById('logStatus');
+  const qaContainer = document.getElementById('qaAccordion');
+
+  // Reset UI
+  // liveFeedContainer.style.display = 'block'; // Removed
+  reportContainer.style.display = 'none';
+  statusContainer.style.display = 'none'; 
+  qaContainer.innerHTML = ''; // Clear previous items
+  
+  // Show percentage in terminal bar
+  termPct.style.display = 'block';
+  termPct.textContent = '0%';
+  termBar.style.width = '0%';
+
+  const es = new EventSource(`/api/audit/${jobId}/stream`);
+  currentEventSource = es;
+
+  // badge.textContent = 'LIVE';
+  // badge.style.color = 'var(--success)';
+  // badge.style.borderColor = 'var(--success)';
+
+  es.onmessage = (event) => {
+    try {
+      const log = JSON.parse(event.data);
+      
+      // Update Terminal Log (Keep existing functionality)
+      if (window.appendLog) {
+        window.appendLog(log);
+      } else {
+         const termContent = document.getElementById('terminalContent');
+         if (termContent) {
+            const div = document.createElement('div');
+            div.className = 'log-entry';
+            div.innerHTML = `<div class="log-meta"><span class="log-time">${log.timestamp.split('T')[1].split('.')[0]}</span> <span class="log-type type-${log.type}">${log.type}</span></div><div class="log-content">${escapeHtml(log.content)}</div>`;
+            termContent.appendChild(div);
+            termContent.scrollTop = termContent.scrollHeight;
+         }
+      }
+
+      // Handle Structured Events
+      if (log.type === 'prompt_start') {
+        // Create QA Item (Expanded)
+        const d = log.details || {};
+        const pid = d.prompt_id;
+        
+        if (!document.getElementById(`qa-item-${pid}`)) {
+            const div = document.createElement('div');
+            div.id = `qa-item-${pid}`;
+            div.className = 'qa-item';
+            div.innerHTML = `
+              <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleAcc('${pid}')">
+                <div><strong>${d.dimension}</strong> • <span class="mono" style="color:#a0a0b8">${pid.slice(0, 8)}</span></div>
+                <div class="pill" id="score-pill-${pid}">Running...</div>
+              </div>
+              <div id="acc-${pid}" style="display:block;margin-top:10px;">
+                <div><span class="label">Prompt</span><div style="margin-top:6px">${escapeHtml(d.text)}</div></div>
+                <div style="margin-top:10px">
+                    <span class="label">Response</span>
+                    <div id="resp-${pid}" style="margin-top:6px;white-space:pre-wrap;line-height:1.5;color:#e5e7eb;"></div>
+                </div>
+                <div id="reason-wrap-${pid}" style="display:none;margin-top:10px">
+                    <span class="label">Judge Reason</span>
+                    <div id="reason-${pid}" class="reason" style="margin-top:6px; white-space:pre-wrap;"></div>
+                </div>
+              </div>
+            `;
+            qaContainer.appendChild(div);
+            div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            
+            // Update Progress
+            const pct = Math.round(((d.index) / d.total) * 100);
+            termBar.style.width = `${pct}%`;
+            termPct.textContent = `${pct}%`;
+            termStatus.textContent = `Auditing: ${d.dimension} (Prompt ${d.index + 1}/${d.total})`;
+        }
+      } else if (log.type === 'target_stream') {
+        const pid = log.details && log.details.prompt_id;
+        if (pid) {
+            const el = document.getElementById(`resp-${pid}`);
+            if (el) {
+                // If the log entry ID is the same as the last one we processed, it means content was appended
+                // So we should replace the content to avoid duplication (since log.content has the FULL accumulated text for that entry)
+                // Wait, log_store.py appends content to the same entry.
+                // So log.content grows: "T", "Th", "The"...
+                // BUT EventSource receives the *updated* entry object each time.
+                // So if we just append, we get "TThThe..."
+                
+                // We need to track the last handled log ID for this prompt
+                // Or simpler: The backend sends the WHOLE content of that log entry each time it updates.
+                // So we should replace the content of that specific log chunk.
+                
+                // However, we might have multiple log entries for one prompt if it gets interrupted or switches types.
+                // A robust way is:
+                // 1. Assign a unique ID to the span/div for this log entry
+                // 2. If it exists, update it. If not, create it.
+                
+                const logId = `log-${log.id}`;
+                let logSpan = document.getElementById(logId);
+                if (!logSpan) {
+                    logSpan = document.createElement('span');
+                    logSpan.id = logId;
+                    el.appendChild(logSpan);
+                }
+                logSpan.textContent = log.content;
+            }
+        }
+      } else if (log.type === 'score_result') {
+        const d = log.details || {};
+        const pid = d.prompt_id;
+        if (pid) {
+            const scorePill = document.getElementById(`score-pill-${pid}`);
+            const reasonWrap = document.getElementById(`reason-wrap-${pid}`);
+            const reasonEl = document.getElementById(`reason-${pid}`);
+            
+            if (scorePill) {
+                scorePill.textContent = `Score ${d.score.toFixed(1)}/7`;
+                // Color code the pill?
+                const score = d.score;
+                if (score <= 3) scorePill.style.borderColor = 'var(--danger)';
+                else if (score <= 5) scorePill.style.borderColor = 'var(--warning)';
+                else scorePill.style.borderColor = 'var(--success)';
+            }
+            if (reasonWrap && reasonEl) {
+                // Construct structured output for single judge or bench
+                let content = '';
+                
+                // If it's a bench, the reason string is already pre-formatted with HTML in engine.py
+                // If it's a single judge, we format it here
+                if (d.judge_count) {
+                    // Bench mode: reason already has HTML structure
+                    content = d.reason;
+                } else {
+                    // Single judge mode
+                    const judgeName = d.judge_model || 'Unknown Judge';
+                    content = `
+                        <div style="margin-bottom:8px;font-family:monospace;font-size:12px;color:var(--muted);">
+                            <strong>JUDGE:</strong> ${escapeHtml(judgeName)}<br>
+                            <strong>SCORE:</strong> ${d.score.toFixed(1)}/7
+                        </div>
+                        <strong>REASON:</strong><br>
+                        ${escapeHtml(d.reason)}
+                    `;
+                }
+                
+                reasonEl.innerHTML = content;
+                reasonWrap.style.display = 'block';
+            }
+        }
+      } else if (log.type === 'success' && log.content.includes('Audit completed')) {
+         termBar.style.width = '100%';
+         termPct.textContent = '100%';
+         termStatus.textContent = 'Audit Completed';
+         // badge.textContent = 'DONE';
+         es.close();
+         currentEventSource = null;
+         
+         // Collapse all sections
+         const openSections = document.querySelectorAll('[id^="acc-"]');
+         openSections.forEach(el => el.style.display = 'none');
+         
+         // Trigger final report load (charts etc)
+         setTimeout(() => {
+             loadReport(); 
+         }, 500);
+      }
+
+    } catch (e) {
+      console.error('Stream error:', e);
+    }
+  };
+
+  es.onerror = (err) => {
+    console.error('EventSource failed:', err);
+    if (es.readyState === 2) {
+        // badge.textContent = 'DISCONNECTED';
+        // badge.style.color = 'var(--danger)';
+    }
+  };
+}
+
 async function pollStatus() {
   if (!currentJobId) return;
 
   // Poll logs concurrently
-  pollLogs();
+  // pollLogs(); // Deprecated in favor of EventSource stream
 
   try {
     await loadAuditList();
@@ -138,6 +341,12 @@ async function pollStatus() {
     const fill = document.getElementById('progressFill');
     fill.style.width = progress + '%';
     fill.textContent = progress + '%';
+    
+    // Sync terminal loader
+    const termBar = document.getElementById('terminalProgressBar');
+    const termPct = document.getElementById('terminalPercentage');
+    if (termBar) termBar.style.width = progress + '%';
+    if (termPct) termPct.textContent = progress + '%';
     document.getElementById('statusMessage').textContent = status.message || '';
     if (status.status === 'completed') {
       clearInterval(pollInterval);
@@ -150,6 +359,7 @@ async function pollStatus() {
       await loadPromptsAndResponses();
       await loadCriteria();
       await loadReport();
+      document.getElementById('live-feed').style.display = 'none';
       if (details && details.error_message) {
         document.getElementById('statusMessage').textContent = details.error_message;
       }
