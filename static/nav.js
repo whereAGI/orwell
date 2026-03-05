@@ -16,7 +16,8 @@ function renderNavbar(activePage) {
         'data_studio': 'data studio',
         'prompt_studio': 'prompt studio',
         'model_hub': 'model hub',
-        'config': 'config'
+        'config': 'config',
+        'docs': 'docs'
     };
     
     const pageTitle = titleMap[activePage] || 'studio';
@@ -27,7 +28,8 @@ function renderNavbar(activePage) {
         { id: 'data_studio', href: '/studio', text: 'Data Studio' },
         { id: 'prompt_studio', href: '/prompt-studio', text: 'Prompt Studio' },
         { id: 'model_hub', href: '/model-hub', text: 'Model Hub' },
-        { id: 'config', href: '/config', text: 'Config' }
+        { id: 'config', href: '/config', text: 'Config' },
+        { id: 'docs', href: '/docs', text: 'Docs' }
     ];
 
     // Filter out current page to match the pattern "links to other places"
@@ -44,7 +46,6 @@ function renderNavbar(activePage) {
         </a>
         <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
             ${navLinksHtml}
-            <a href="/" id="criteriaLink" style="color:#9ec1ff;text-decoration:none">Evaluation Criteria</a>
             <!-- Local mode: Removed User Email and Logout Button -->
         </div>
     `;

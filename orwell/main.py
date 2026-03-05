@@ -9,6 +9,7 @@ import io
 from datetime import datetime, timezone
 from typing import List, Optional
 import os
+import re
 
 from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig, JudgeBench
 from .engine import AuditEngine
@@ -102,7 +103,7 @@ class CreateSystemPromptRequest(BaseModel):
     name: str
     text: str
 
-app = FastAPI(title="Orwell POC", version="0.1.0")
+app = FastAPI(title="Orwell POC", version="0.1.0", docs_url="/api-docs", redoc_url=None)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/config.js")
@@ -148,6 +149,81 @@ async def login():
 @app.get("/config")
 async def config_page():
     return FileResponse("static/config.html")
+
+@app.get("/docs")
+async def docs_page():
+    return FileResponse("static/docs.html")
+
+@app.get("/api/docs/list")
+async def list_docs():
+    docs_dir = "docs"
+    sections_map = {}
+    
+    if os.path.exists(docs_dir):
+        files = [f for f in os.listdir(docs_dir) if f.endswith(".md")]
+        
+        # Pattern: TITLE(HEADER)_ORDER.md
+        # e.g. Introduction(Getting Started)_1.md
+        pattern = re.compile(r"^(.*?)\((.*?)\)_(\d+)\.md$")
+        
+        for filename in files:
+            match = pattern.match(filename)
+            if match:
+                title = match.group(1)
+                header = match.group(2)
+                try:
+                    order = int(match.group(3))
+                except ValueError:
+                    order = 999
+                
+                if header not in sections_map:
+                    sections_map[header] = []
+                
+                sections_map[header].append({
+                    "title": title,
+                    "filename": filename,
+                    "order": order
+                })
+    
+    # Sort headers alphabetically
+    sorted_headers = sorted(sections_map.keys())
+    
+    result = []
+    for header in sorted_headers:
+        # Sort pages by order
+        pages = sorted(sections_map[header], key=lambda x: x["order"])
+        result.append({
+            "header": header,
+            "pages": pages
+        })
+        
+    return {"sections": result}
+
+@app.get("/api/docs/content/{filename}")
+async def get_doc_content(filename: str):
+    # Basic directory traversal prevention
+    if ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+        
+    file_path = os.path.join("docs", filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+        
+    try:
+        # Get file metadata
+        stats = os.stat(file_path)
+        last_modified = datetime.fromtimestamp(stats.st_mtime, tz=timezone.utc).isoformat()
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        return {
+            "content": content,
+            "last_modified": last_modified
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/models", response_model=List[ModelConfig])
 async def list_models(category: Optional[str] = None):

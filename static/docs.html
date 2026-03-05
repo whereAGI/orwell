@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orwell - Documentation</title>
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <link rel="stylesheet" href="/static/global.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .app-layout {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            height: calc(100vh - 53px); /* Subtract header height approx */
+            overflow: hidden;
+        }
+
+        .docs-sidebar {
+            background: #0d0d13;
+            border-right: 1px solid var(--border);
+            padding: 24px 16px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .docs-main {
+            padding: 32px 48px;
+            overflow-y: auto;
+            background: var(--bg);
+            scroll-behavior: smooth;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 12px;
+            color: var(--muted);
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover {
+            background: var(--card);
+            color: var(--text);
+        }
+
+        .nav-item.active {
+            background: rgba(31, 111, 235, 0.1);
+            color: var(--primary);
+        }
+
+        .nav-sub-container {
+            margin-left: 12px;
+            border-left: 1px solid var(--border);
+            margin-bottom: 8px;
+            display: none;
+        }
+
+        .nav-item.active + .nav-sub-container {
+            display: block;
+        }
+
+        .nav-sub-item {
+            display: block;
+            padding: 6px 12px;
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 2px solid transparent;
+            margin-left: -1px;
+        }
+
+        .nav-sub-item:hover {
+            color: var(--text);
+        }
+
+        .nav-sub-item.active {
+            color: var(--primary);
+            border-left-color: var(--primary);
+            background: rgba(31, 111, 235, 0.05);
+        }
+
+        .sidebar-header {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--muted);
+            font-weight: 700;
+            margin: 24px 0 8px 12px;
+            letter-spacing: 0.05em;
+        }
+        .sidebar-header:first-child {
+            margin-top: 0;
+        }
+
+        /* Markdown Styles */
+        .markdown-body {
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .markdown-body h1 { font-size: 2.25rem; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+        .markdown-body h2 { font-size: 1.75rem; margin-top: 2rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+        .markdown-body h3 { font-size: 1.5rem; margin-top: 1.5rem; margin-bottom: 0.75rem; }
+        .markdown-body p { margin-bottom: 1rem; }
+        .markdown-body ul, .markdown-body ol { margin-bottom: 1rem; padding-left: 2rem; }
+        .markdown-body li { margin-bottom: 0.5rem; }
+        .markdown-body pre { background: #1a1a20; padding: 1rem; border-radius: 6px; overflow-x: auto; margin-bottom: 1rem; }
+        .markdown-body code { font-family: 'JetBrains Mono', monospace; background: rgba(255,255,255,0.1); padding: 0.2em 0.4em; border-radius: 3px; font-size: 0.9em; }
+        .markdown-body pre code { background: transparent; padding: 0; }
+        .markdown-body blockquote { border-left: 4px solid var(--primary); padding-left: 1rem; color: var(--muted); margin-bottom: 1rem; }
+        .markdown-body a { color: var(--primary); text-decoration: none; }
+        .markdown-body a:hover { text-decoration: underline; }
+        .markdown-body table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+        .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 0.5rem; text-align: left; }
+        .markdown-body th { background: var(--card); }
+    </style>
+</head>
+<body>
+    <header></header>
+    
+    <div class="app-layout">
+        <aside class="docs-sidebar" id="sidebar-nav">
+            <!-- Sidebar items injected by JS -->
+            <div style="padding: 12px; color: var(--muted);">Loading...</div>
+        </aside>
+
+        <main class="docs-main" id="docs-container">
+            <div class="markdown-body" id="markdown-content">
+                <!-- Content injected by JS -->
+            </div>
+        </main>
+    </div>
+
+    <script src="/static/nav.js"></script>
+    <script src="/static/docs.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            renderNavbar('docs');
+        });
+    </script>
+</body>
+</html>
