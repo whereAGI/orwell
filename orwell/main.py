@@ -20,6 +20,8 @@ from .log_store import get_logs, subscribe_logs
 import httpx
 
 from .app_config import get_all_configs_grouped, update_config
+from .config import get_db_path
+import sqlite3
 
 async def verify_model_connection(provider: str, base_url: str, model_key: str, api_key: Optional[str]):
     """
@@ -642,16 +644,17 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
         raise HTTPException(status_code=500, detail=f"Failed to create audit: {str(e)}")
 
 @app.get("/api/audits", response_model=List[JobResponse])
-async def list_audits():
+def list_audits():
     pb = get_pb()
     try:
         # Sort by created desc
         records = pb.collection("audit_jobs").get_full_list(query_params={"sort": "-created"})
         
         # Fetch reports to map risk levels efficiently
+        # Optimize: Fetch only necessary fields (job_id and overall_risk) to reduce payload size
         reports = []
         try:
-            reports = pb.collection("reports").get_full_list()
+            reports = pb.collection("reports").get_full_list(query_params={"fields": "job_id,overall_risk"})
         except Exception:
             pass
             
@@ -775,7 +778,7 @@ async def stream_audit_logs(job_id: str):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.get("/api/audit/{job_id}/report", response_model=AuditReport)
-async def get_audit_report(job_id: str):
+def get_audit_report(job_id: str):
     pb = get_pb()
     try:
         # Check if job exists
@@ -979,47 +982,34 @@ def get_optional_current_user(credentials: Optional[HTTPAuthorizationCredentials
         return None
 
 @app.get("/api/dimensions")
-async def get_dimensions(user=Depends(get_optional_current_user)):
-    pb = get_pb()
-    dims = set()
-    
-    # Fetch all system dimensions from PocketBase
+def get_dimensions(user=Depends(get_optional_current_user)):
     try:
-        # Get system prompts - we'll paginate to get all
-        page = 1
-        per_page = 500
-        while True:
-            result = pb.collection("custom_prompts").get_list(page, per_page, {
-                "filter": 'type="system"'
-            })
-            for r in result.items:
-                if r.dimension:
-                    dims.add(r.dimension)
-            if page >= result.total_pages:
-                break
-            page += 1
-    except Exception as e:
-        print(f"Error fetching system dimensions: {e}")
-    
-    # If user is logged in, also fetch their custom dimensions
-    if user:
-        try:
-            page = 1
-            per_page = 500
-            while True:
-                result = pb.collection("custom_prompts").get_list(page, per_page, {
-                    "filter": f'type="custom" && user="{user.id}"'
-                })
-                for r in result.items:
-                    if r.dimension:
-                        dims.add(r.dimension)
-                if page >= result.total_pages:
-                    break
-                page += 1
-        except Exception as e:
-            print(f"Error fetching custom dimensions: {e}")
+        db_path = get_db_path()
+        if not os.path.exists(db_path):
+             return {"dimensions": []}
+             
+        query = "SELECT DISTINCT dimension FROM custom_prompts WHERE dimension IS NOT NULL AND dimension != ''"
+        params = []
+        
+        if user:
+            # type='system' OR (type='custom' AND user=?)
+            query += " AND (type = 'system' OR (type = 'custom' AND user = ?))"
+            params.append(user.id)
+        else:
+            # only system prompts
+            query += " AND type = 'system'"
             
-    return {"dimensions": sorted(list(dims))}
+        query += " ORDER BY dimension"
+        
+        with sqlite3.connect(db_path) as db:
+            cursor = db.cursor()
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            return {"dimensions": [row[0] for row in rows]}
+                
+    except Exception as e:
+        print(f"Error fetching dimensions: {e}")
+        return {"dimensions": []}
 
 @app.get("/api/data/dimensions")
 async def list_dimensions():
