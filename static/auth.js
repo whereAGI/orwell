@@ -1,9 +1,28 @@
 const pb = new PocketBase(window.ORWELL_CONFIG?.pocketbase_url || 'http://127.0.0.1:8090');
 
-// Check if already logged in
-if (pb.authStore.isValid && window.location.pathname === '/login') {
-    window.location.href = '/';
-}
+// Local-only mode: Auto-login as admin on startup
+// This bypasses the need for user interaction, making it feel like a local desktop app.
+(async function() {
+    if (!pb.authStore.isValid) {
+        try {
+            // Use default admin credentials (matching backend defaults)
+            await pb.admins.authWithPassword('admin@orwell.com', '1234567890');
+            console.log("Auto-authenticated as admin (Local Mode)");
+            
+            // Redirect to home if on login page
+            if (window.location.pathname === '/login') {
+                window.location.href = '/';
+            }
+        } catch (err) {
+            console.error("Auto-login failed:", err);
+        }
+    } else {
+        // Already valid, redirect if on login page
+        if (window.location.pathname === '/login') {
+            window.location.href = '/';
+        }
+    }
+})();
 
 const loginForm = document.getElementById('loginForm');
 const errorMsg = document.getElementById('errorMsg');
@@ -11,6 +30,7 @@ const toggleSignup = document.getElementById('toggleSignup');
 let isSignup = false;
 
 if (loginForm) {
+    // ... existing login form logic (kept for fallback/cloud mode if enabled later) ...
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const email = document.getElementById('email').value;
@@ -61,10 +81,10 @@ if (loginForm) {
     });
 }
 
-// Logout helper
+// Logout helper (Disabled in local mode UI, but kept in code)
 function logout() {
     pb.authStore.clear();
-    window.location.href = '/login.html';
+    window.location.href = '/login'; // Changed from login.html to /login
 }
 
 // Export for other modules if needed, or just global

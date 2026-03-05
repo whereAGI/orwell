@@ -98,6 +98,10 @@ button:hover {
   opacity: 0.9;
 }
 
+.dropdown-item:hover {
+  background: var(--border);
+}
+
 button.secondary {
   background: #1f2937;
   border-color: #1f2937;
@@ -353,4 +357,316 @@ th {
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Print Styles */
+@media print {
+  @page {
+    size: A4;
+    margin: 20mm;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  body > *:not(#reportPreviewModal) {
+    display: none !important;
+  }
+  
+  #reportPreviewModal {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    background: white !important;
+    z-index: 10000 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  #reportPreviewModal .card {
+    box-shadow: none !important;
+    border: none !important;
+    width: 100% !important;
+    height: auto !important;
+    max-width: none !important;
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Hide modal header/buttons */
+  #reportPreviewModal > div > div:first-child {
+    display: none !important;
+  }
+
+  #reportPreviewContent {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Ensure page breaks work */
+  .pdf-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-bottom: 30px;
+  }
+  
+  .pdf-chart-container {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Ensure text is black */
+  p, h1, h2, h3, h4, h5, h6, div, span, td, th, li {
+    color: #000 !important;
+  }
+  
+  /* Force table text color specifically */
+  .pdf-table td, .pdf-table th {
+    color: #000 !important;
+  }
+  
+  /* Fix white text on white background in recommendations */
+  .pdf-content-text table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    font-size: 12px;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  }
+  
+  .pdf-content-text th {
+    background: #f0f0f0 !important;
+    color: #000 !important;
+    font-weight: bold;
+    text-align: left;
+    padding: 8px;
+    border: 1px solid #ddd;
+  }
+  
+  .pdf-content-text td {
+    color: #000 !important;
+    padding: 8px;
+    border: 1px solid #ddd;
+    background: #fff !important;
+  }
+}
+
+/* Report Preview Styling (Visible on screen too) */
+#reportPreviewContent {
+  background: white !important;
+  color: black !important;
+  font-family: "Times New Roman", Times, serif;
+}
+
+/* Force styles for preview mode as well */
+#reportPreviewContent table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  font-size: 12px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+#reportPreviewContent th {
+  background: #f0f0f0 !important;
+  color: #000 !important;
+  font-weight: bold;
+  text-align: left;
+  padding: 8px;
+  border: 1px solid #ddd;
+}
+
+#reportPreviewContent td {
+  color: #000 !important;
+  padding: 8px;
+  border: 1px solid #ddd;
+  background: #fff !important;
+}
+
+.pdf-header {
+  border-bottom: 2px solid #000;
+  margin-bottom: 30px;
+  padding-bottom: 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.pdf-logo {
+  font-size: 28px;
+  font-weight: 700;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #000;
+  letter-spacing: -0.5px;
+}
+
+.pdf-meta {
+  font-size: 11px;
+  color: #444;
+  text-align: right;
+  line-height: 1.4;
+}
+
+.pdf-footer {
+  border-top: 1px solid #ccc;
+  margin-top: 40px;
+  padding-top: 15px;
+  font-size: 10px;
+  color: #666;
+  text-align: center;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.pdf-section {
+  margin-bottom: 30px;
+  page-break-inside: avoid;
+}
+
+.pdf-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #000;
+}
+
+.pdf-subtitle {
+  font-size: 14px;
+  color: #333;
+  margin-bottom: 25px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 15px;
+}
+
+.pdf-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+  font-size: 12px;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+.pdf-table th {
+  border-bottom: 2px solid #000;
+  text-align: left;
+  padding: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: #000;
+}
+
+.pdf-table td {
+  border-bottom: 1px solid #ddd;
+  padding: 8px;
+  color: #333;
+}
+
+.pdf-chart-container {
+  width: 100%;
+  height: 350px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 20px 0;
+  page-break-inside: avoid;
+  border: 1px solid #f0f0f0;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.pdf-chart-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.pdf-content-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #111;
+  margin-bottom: 16px;
+}
+
+.pdf-content-text p {
+  margin-bottom: 12px;
+}
+
+.pdf-content-text strong {
+  font-weight: 700;
+  color: #000;
+}
+
+/* Markdown Preview Specific */
+.markdown-preview-container {
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+  white-space: pre-wrap;
+  background: #f8f9fa;
+  padding: 20px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
+  font-size: 13px;
+  color: #333;
+  line-height: 1.5;
+}
+
+/* Ensure images in preview fit */
+#reportPreviewContent img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Override dark mode text colors if they leak */
+#reportPreviewContent h1, 
+#reportPreviewContent h2, 
+#reportPreviewContent h3, 
+#reportPreviewContent strong, 
+#reportPreviewContent b {
+  color: #000 !important;
+}
+
+#reportPreviewContent .markdown-content code {
+  background: #f1f3f5 !important;
+  color: #111 !important;
+}
+
+#reportPreviewContent .markdown-content pre {
+  background: #f8f9fa !important;
+  color: #111 !important;
+  border: 1px solid #ddd;
+}
+
+#reportPreviewContent .markdown-content pre code {
+  background: transparent !important;
+  color: #111 !important;
+}
+
+.pdf-content-text code {
+  background: #f1f3f5 !important;
+  color: #111 !important;
+  border: 1px solid #ddd;
+}
+
+.pdf-content-text pre {
+  background: #f8f9fa !important;
+  color: #111 !important;
+  border: 1px solid #ddd;
+  padding: 12px;
+}
+
+.pdf-content-text pre code {
+  background: transparent !important;
+  color: #111 !important;
 }

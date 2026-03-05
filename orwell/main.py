@@ -565,8 +565,37 @@ async def list_audits():
     try:
         # Sort by created desc
         records = pb.collection("audit_jobs").get_full_list(query_params={"sort": "-created"})
+        
+        # Fetch reports to map risk levels efficiently
+        reports = []
+        try:
+            reports = pb.collection("reports").get_full_list()
+        except Exception:
+            pass
+            
+        # Map job_record_id -> overall_risk
+        risk_map = {r.job_id: r.overall_risk for r in reports}
+        
         jobs = []
         for r in records:
+            # Parse config for extra details
+            config = {}
+            if hasattr(r, 'config_json') and r.config_json:
+                try:
+                    config = json.loads(r.config_json) if isinstance(r.config_json, str) else r.config_json
+                except:
+                    pass
+            
+            # Determine judge name
+            judge_name = config.get("judge_model")
+            if not judge_name:
+                if config.get("bench_id"):
+                    judge_name = "Bench"
+                elif config.get("judge_model_id"):
+                     # We could try to resolve name, but avoiding N+1. 
+                     # Ideally config should store the name too.
+                     judge_name = "Single Judge" 
+            
             jobs.append(JobResponse(
                 job_id=r.job_id,
                 status=JobStatus(r.status),
@@ -576,12 +605,17 @@ async def list_audits():
                 message=getattr(r, 'message', ''),
                 error_message=getattr(r, 'error_message', None),
                 name=getattr(r, 'name', None),
-                notes=getattr(r, 'notes', None)
+                notes=getattr(r, 'notes', None),
+                # Enhanced fields
+                judge_name=judge_name,
+                dimensions=config.get("dimensions"),
+                overall_risk=risk_map.get(r.id)
             ))
         return jobs
     except Exception as e:
         print(f"Error listing audits: {e}")
-        return []
+        # Expose the error to help debug
+        raise HTTPException(status_code=500, detail=f"Failed to list audits: {str(e)}")
 
 class UpdateAuditRequest(BaseModel):
     name: Optional[str] = None

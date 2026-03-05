@@ -9,6 +9,7 @@ set -e
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
+WARNING='\033[0;33m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
@@ -62,6 +63,39 @@ print(f'PB_BIND={pb_bind}')
 print(f'PB_URL={pb_url}')
 ")
 fi
+
+# Check and kill existing processes on port 8000 (FastAPI) and 8090 (PocketBase)
+echo -e "${GREEN}Checking for existing instances...${NC}"
+
+check_and_manage_port() {
+    local port=$1
+    local expected_sig=$2
+    local service_name=$3
+    
+    # Get PID listening on port
+    local pid=$(lsof -t -i:$port -sTCP:LISTEN 2>/dev/null)
+    
+    if [ ! -z "$pid" ]; then
+        # Get command line of the process
+        local cmd=$(ps -p $pid -o args= 2>/dev/null)
+        
+        # Check if command matches our expected signature
+        if [[ "$cmd" == *"$expected_sig"* ]]; then
+            echo -e "${WARNING}Found existing Orwell instance ($service_name) on port $port (PID: $pid). Restarting...${NC}"
+            kill -9 $pid 2>/dev/null || true
+            sleep 1
+        else
+            echo -e "${RED}Error: Port $port is in use by another application!${NC}"
+            echo -e "  PID: $pid"
+            echo -e "  Command: $cmd"
+            echo -e "${RED}Please stop this application to run Orwell, or configure a different port in .env${NC}"
+            exit 1
+        fi
+    fi
+}
+
+check_and_manage_port ${APP_PORT} "uvicorn" "FastAPI"
+check_and_manage_port 8090 "pocketbase" "PocketBase"
 
 # Start PocketBase
 echo -e "${GREEN}▶ Starting PocketBase...${NC}"

@@ -43,9 +43,7 @@ function renderNavbar(activePage) {
         <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
             ${navLinksHtml}
             <a href="/" id="criteriaLink" style="color:#9ec1ff;text-decoration:none">Evaluation Criteria</a>
-            <span id="userEmail" style="color:var(--muted);"></span>
-            <button id="logoutBtn"
-                style="width:auto;padding:4px 8px;background:#ef4444;border-color:#ef4444;font-size:12px;">Logout</button>
+            <!-- Local mode: Removed User Email and Logout Button -->
         </div>
     `;
 
@@ -54,13 +52,16 @@ function renderNavbar(activePage) {
 }
 
 function attachNavListeners() {
-    // 1. Populate User Email
+    // 1. Populate User Email (Removed for local mode)
+    /*
     const userEmailSpan = document.getElementById('userEmail');
     if (userEmailSpan && window.pb && window.pb.authStore.model) {
         userEmailSpan.textContent = window.pb.authStore.model.email;
     }
+    */
 
-    // 2. Handle Logout
+    // 2. Handle Logout (Removed for local mode)
+    /*
     const logoutBtn = document.getElementById('logoutBtn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', () => {
@@ -72,6 +73,7 @@ function attachNavListeners() {
             }
         });
     }
+    */
     
     // 3. Handle Criteria Link
     const criteriaLink = document.getElementById('criteriaLink');

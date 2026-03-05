@@ -2,6 +2,8 @@ let currentJobId = null;
 let pollInterval = null;
 let selectedDimensions = [];
 let systemPromptsMap = {};
+let currentMarkdownPreviewContent = '';
+let currentMarkdownPreviewMode = 'rendered';
 
 function formatDuration(seconds) {
   if (typeof seconds === 'undefined' || seconds === null) return '0s';
@@ -26,6 +28,10 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     if (currentEventSource) {
         currentEventSource.close();
         currentEventSource = null;
+    }
+    if (logEventSource) {
+        logEventSource.close();
+        logEventSource = null;
     }
     if (currentJobId) {
       try {
@@ -136,6 +142,10 @@ function connectStream(jobId) {
     currentEventSource.close();
     currentEventSource = null;
   }
+  if (logEventSource) {
+    logEventSource.close();
+    logEventSource = null;
+  }
 
   const liveFeedContainer = document.getElementById('live-feed');
   const liveFeedContent = document.getElementById('live-feed-content');
@@ -169,18 +179,8 @@ function connectStream(jobId) {
     try {
       const log = JSON.parse(event.data);
       
-      // Update Terminal Log (Keep existing functionality)
-      if (window.appendLog) {
-        window.appendLog(log);
-      } else {
-         const termContent = document.getElementById('terminalContent');
-         if (termContent) {
-            const div = document.createElement('div');
-            div.className = 'log-entry';
-            div.innerHTML = `<div class="log-meta"><span class="log-time">${log.timestamp.split('T')[1].split('.')[0]}</span> <span class="log-type type-${log.type}">${log.type}</span></div><div class="log-content">${escapeHtml(log.content)}</div>`;
-            termContent.appendChild(div);
-            termContent.scrollTop = termContent.scrollHeight;
-         }
+      if (typeof renderLogs === 'function') {
+        renderLogs([log]);
       }
 
       // Handle Structured Events
@@ -246,6 +246,25 @@ function connectStream(jobId) {
                     logSpan = document.createElement('span');
                     logSpan.id = logId;
                     el.appendChild(logSpan);
+                }
+                logSpan.textContent = log.content;
+            }
+        }
+      } else if (log.type === 'judge_stream') {
+        const pid = log.details && log.details.prompt_id;
+        if (pid) {
+            const reasonWrap = document.getElementById(`reason-wrap-${pid}`);
+            const reasonEl = document.getElementById(`reason-${pid}`);
+            
+            if (reasonWrap && reasonEl) {
+                reasonWrap.style.display = 'block';
+                
+                const logId = `log-${log.id}`;
+                let logSpan = document.getElementById(logId);
+                if (!logSpan) {
+                    logSpan = document.createElement('span');
+                    logSpan.id = logId;
+                    reasonEl.appendChild(logSpan);
                 }
                 logSpan.textContent = log.content;
             }
@@ -359,6 +378,7 @@ async function pollStatus() {
       await loadPromptsAndResponses();
       await loadCriteria();
       await loadReport();
+      await loadLogsForReport();
       document.getElementById('live-feed').style.display = 'none';
       if (details && details.error_message) {
         document.getElementById('statusMessage').textContent = details.error_message;
@@ -400,6 +420,7 @@ async function loadReport() {
       return;
     }
     const report = await response.json();
+    currentReportData = report;
 
     // Destroy any existing chart instances
     if (window._orwellCharts) {
@@ -828,6 +849,7 @@ function renderScoreDistribution(section) {
           </div>
         </div>
       </div>
+      ${renderExplanation(section.explanation)}
     </div>`;
 }
 
@@ -1005,7 +1027,7 @@ function initReportCharts(sections) {
           responsive: true,
           maintainAspectRatio: false,
           layout: {
-            padding: 20
+            padding: 40
           },
           scales: {
             r: {
@@ -1031,23 +1053,27 @@ function initReportCharts(sections) {
   if (histSection && histSection.histogram) {
     const histCanvas = document.getElementById('histogramChart');
     if (histCanvas) {
-      const histData = histSection.histogram.datasets[0].data;
+      const rawData = histSection.histogram.datasets[0].data;
+      const histData = Array.isArray(rawData) ? rawData.map(v => Number(v) || 0) : [];
+      const labels = histSection.histogram.labels;
+      
       const barColors = histData.map((_, i) => {
-        const score = i + 1;
-        if (score <= 2) return 'rgba(220, 53, 69, 0.7)';
-        if (score <= 3) return 'rgba(255, 193, 7, 0.7)';
-        return 'rgba(40, 167, 69, 0.7)';
+        const lVal = parseInt(labels[i]);
+        const score = !isNaN(lVal) ? lVal : (i + 1);
+        if (score <= 3) return 'rgba(220, 53, 69, 0.8)';
+        if (score <= 5) return 'rgba(255, 193, 7, 0.8)';
+        return 'rgba(40, 167, 69, 0.8)';
       });
 
       const histChart = new Chart(histCanvas, {
         type: 'bar',
         data: {
-          labels: histSection.histogram.labels.map(l => `Score ${l}`),
+          labels: labels.map(l => `Score ${l}`),
           datasets: [{
             label: 'Response Count',
             data: histData,
             backgroundColor: barColors,
-            borderColor: barColors.map(c => c.replace('0.7', '1')),
+            borderColor: barColors.map(c => c.replace('0.8', '1')),
             borderWidth: 1,
           }]
         },
@@ -1227,47 +1253,177 @@ if (criteriaClose) {
 }
 
 async function loadAuditList() {
+  const container = document.getElementById('auditList');
   try {
-    const res = await fetch('/api/audits');
+    const res = await fetch('/api/audits?t=' + Date.now());
+    if (!res.ok) {
+        throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+    }
     const audits = await res.json();
-    const list = audits.map(a => `
-      <div class="audit-item" data-job="${a.job_id}" data-selected="0">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <div>
-            <div style="font-weight:600;">${a.target_model}</div>
-            <div class="mono" style="color:#a0a0b8">${a.job_id.slice(0, 8)} • ${a.status}</div>
+    
+    if (!Array.isArray(audits)) {
+        throw new Error('Invalid response format: expected array');
+    }
+
+    const list = audits.map(a => {
+      const date = new Date(a.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      
+      let riskColor = '#a0a0b8';
+      if (a.overall_risk === 'low') riskColor = 'var(--success)';
+      if (a.overall_risk === 'medium') riskColor = 'var(--warning)';
+      if (a.overall_risk === 'high') riskColor = 'var(--danger)';
+      
+      const riskLabel = a.overall_risk ? ` • <span style="color:${riskColor};font-weight:bold;">${a.overall_risk.toUpperCase()}</span>` : '';
+      const dims = a.dimensions ? a.dimensions.length + ' dims' : '';
+      const judge = a.judge_name || 'Unknown Judge';
+
+      return `
+      <div class="audit-item ${a.job_id === currentJobId ? 'selected-audit' : ''}" data-job="${a.job_id}" data-selected="0">
+        <div style="display:flex;justify-content:space-between;align-items:start;">
+          <div style="flex:1; min-width:0; padding-right:8px;">
+            <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(a.target_model || '')}">${escapeHtml(a.target_model || 'Unknown')}</div>
+            <div class="mono" style="font-size:10px; margin-top:4px; color:#a0a0b8; display:flex; flex-direction:column; gap:2px;">
+               <span>${date}</span>
+               <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(judge)}">${escapeHtml(judge)}</span>
+               <span>${dims}${riskLabel}</span>
+            </div>
           </div>
-          <div class="pill">${Math.round((a.progress || 0) * 100)}%</div>
+          <div style="display:flex; flex-direction:column; align-items:end; gap:4px;">
+             <div class="audit-progress pill" style="font-size:11px;">${Math.round((a.progress || 0) * 100)}%</div>
+             <div class="audit-delete-icon" onclick="deleteSingleAudit(event, '${a.job_id}')" title="Delete Audit">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+             </div>
+          </div>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
+
     const container = document.getElementById('auditList');
-    container.innerHTML = list || '<em>No audits yet</em>';
+    container.innerHTML = list || '<div style="padding:16px;text-align:center;color:var(--muted);font-style:italic;">No audits found. Start a new audit to see reports here.</div>';
+    
+    // Ensure delete bar is hidden after refresh if list is empty or selection is cleared
+    updateSelectionUI();
+
     container.querySelectorAll('.audit-item').forEach(item => {
       item.addEventListener('click', async (event) => {
         if (event.shiftKey) {
           const sel = item.getAttribute('data-selected') === '1';
           item.setAttribute('data-selected', sel ? '0' : '1');
           item.style.borderColor = sel ? 'var(--border)' : '#ef4444';
+          updateSelectionUI();
           return;
         }
+        
+        // Clear previous selections if clicking normally
+        document.querySelectorAll('.audit-item[data-selected="1"]').forEach(el => {
+            el.setAttribute('data-selected', '0');
+            el.style.borderColor = 'var(--border)';
+        });
+        updateSelectionUI();
+
         currentJobId = item.getAttribute('data-job');
+        // Update highlight manually to avoid full reload
+        container.querySelectorAll('.audit-item').forEach(el => el.classList.remove('selected-audit'));
+        item.classList.add('selected-audit');
+        
         document.getElementById('jobIdText').textContent = currentJobId;
         const statusEl = document.getElementById('status');
         if (statusEl) statusEl.style.display = 'block';
         await loadPromptsAndResponses();
         await loadCriteria();
         await loadReport();
+        await loadLogsForReport();
       });
     });
 
-    // Auto-select first audit if none selected (e.g. on page load)
-    if (!currentJobId && audits.length > 0) {
+    // Auto-select first audit if none selected (e.g. on page load) or if current was deleted
+    // Check if currentJobId exists in the new list
+    const currentExists = audits.some(a => a.job_id === currentJobId);
+    
+    if ((!currentJobId || !currentExists) && audits.length > 0) {
       const first = container.querySelector('.audit-item');
       if (first) first.click();
+    } else if (audits.length === 0) {
+      // Clear main view if no audits
+      currentJobId = null;
+      document.getElementById('qaAccordion').innerHTML = '';
+      document.getElementById('report').style.display = 'none';
+      document.getElementById('status').style.display = 'none';
+      
+      // Show placeholder in report area?
+      // The status area is hidden, report is hidden. The user sees empty space.
+      // We could show a placeholder div if needed, but for now clearing is what was asked (or "show message").
+      // User said: "if there are no reports then we should show a message to start audititing to generate reports"
+      const reportContainer = document.getElementById('report');
+      if (reportContainer) {
+          reportContainer.style.display = 'block';
+          reportContainer.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:var(--muted);">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom:16px;opacity:0.5;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+            <h3>No Reports Available</h3>
+            <p>Start an audit to generate a report.</p>
+          </div>`;
+      }
     }
   } catch (err) {
     console.error('Error loading audits:', err);
+    const container = document.getElementById('auditList');
+    if (container) {
+      container.innerHTML = `
+        <div style="padding:16px;text-align:center;color:var(--danger);">
+          <p>Failed to load audits: ${err.message}</p>
+          <button onclick="loadAuditList()" style="margin-top:8px;padding:6px 12px;cursor:pointer;background:var(--bg-secondary);border:1px solid var(--border);border-radius:4px;color:var(--fg-primary);">Retry</button>
+        </div>`;
+    }
   }
+}
+
+window.updateSelectionUI = function() {
+  const selected = document.querySelectorAll('.audit-item[data-selected="1"]');
+  const count = selected.length;
+  const countEl = document.getElementById('selCount');
+  if (countEl) countEl.textContent = count;
+  
+  const bar = document.getElementById('stickyDeleteBar');
+  if (bar) {
+      // Show only if multiple items selected
+      bar.style.display = count > 1 ? 'block' : 'none';
+  }
+}
+
+window.deleteSingleAudit = async function(event, jobId) {
+    event.stopPropagation(); // Prevent item click
+    
+    // Show custom modal
+    const modal = document.getElementById('deleteModal');
+    const msg = document.getElementById('deleteMessage');
+    msg.textContent = 'Are you sure you want to delete this audit? This action cannot be undone.';
+    modal.style.display = 'flex';
+    
+    // Setup confirm button
+    const confirmBtn = document.getElementById('confirmDeleteBtn');
+    // Remove old listeners to avoid stacking
+    const newBtn = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+    
+    newBtn.addEventListener('click', async () => {
+        try {
+          const url = '/api/audits?job_ids=' + encodeURIComponent(jobId);
+          const res = await fetch(url, { method: 'DELETE' });
+          if (!res.ok) throw new Error(await res.text());
+          await loadAuditList();
+          
+          // If we deleted the current job, clear UI
+          if (currentJobId === jobId) {
+              currentJobId = null;
+              document.getElementById('qaAccordion').innerHTML = '';
+              document.getElementById('report').style.display = 'none';
+              document.getElementById('status').style.display = 'none';
+          }
+          closeDeleteModal();
+        } catch (err) {
+          alert('Delete failed: ' + err);
+        }
+    });
 }
 
 document.getElementById('deleteBtn').addEventListener('click', async () => {
@@ -1308,6 +1464,47 @@ document.getElementById('deleteBtn').addEventListener('click', async () => {
 
 window.closeDeleteModal = function () {
   document.getElementById('deleteModal').style.display = 'none';
+}
+
+async function loadLogsForReport() {
+  if (!currentJobId) return;
+  const container = document.getElementById('fullLogContent');
+  if (!container) return;
+  
+  // Reset
+  container.innerHTML = '<div style="color:#666;font-style:italic;padding:12px">Loading logs...</div>';
+  
+  try {
+    const res = await fetch(`/api/audit/${currentJobId}/logs`);
+    if (!res.ok) throw new Error("Failed to fetch logs");
+    
+    const logs = await res.json();
+    if (!logs || logs.length === 0) {
+      container.innerHTML = '<div style="color:#666;font-style:italic;padding:12px">No logs available.</div>';
+      return;
+    }
+    
+    let html = '';
+    logs.forEach(log => {
+      // Reuse the same styling classes as terminal
+      const time = log.timestamp.split('T')[1].split('.')[0];
+      html += `<div class="log-entry">
+        <div class="log-meta">
+          <span class="log-time">${time}</span> 
+          <span class="log-type type-${log.type}">${log.type}</span>
+        </div>
+        <div class="log-content">${escapeHtml(log.content)}</div>
+      </div>`;
+    });
+    
+    container.innerHTML = html;
+    // Scroll to bottom? Maybe not for a report view, top is better.
+    container.scrollTop = 0;
+    
+  } catch (err) {
+    console.error("Error loading logs:", err);
+    container.innerHTML = `<div style="color:#ef4444;padding:12px">Error loading logs: ${escapeHtml(err.message)}</div>`;
+  }
 }
 
 async function initDimensions() {
@@ -1713,7 +1910,7 @@ async function pollStatus() {
   if (!currentJobId) return;
 
   // Start log stream if not active
-  if (!logEventSource && currentJobId) {
+  if (!currentEventSource && !logEventSource && currentJobId) {
       startLogStream(currentJobId);
   }
 
@@ -1732,6 +1929,10 @@ async function pollStatus() {
     if (status.status === 'completed') {
       clearInterval(pollInterval);
       stopLogStream(); // Stop streaming logs
+      if (currentEventSource) {
+        currentEventSource.close();
+        currentEventSource = null;
+      }
       
       const startBtn = document.getElementById('startBtn');
       if (startBtn) {
@@ -1742,12 +1943,17 @@ async function pollStatus() {
       await loadPromptsAndResponses();
       await loadCriteria();
       await loadReport();
+      await loadLogsForReport();
       if (details && details.error_message) {
         document.getElementById('statusMessage').textContent = details.error_message;
       }
     } else if (status.status === 'failed') {
       clearInterval(pollInterval);
       stopLogStream(); // Stop streaming logs
+      if (currentEventSource) {
+        currentEventSource.close();
+        currentEventSource = null;
+      }
       
       const startBtn = document.getElementById('startBtn');
       if (startBtn) {
@@ -1762,6 +1968,10 @@ async function pollStatus() {
     } else if (status.status === 'aborted') {
       clearInterval(pollInterval);
       stopLogStream(); // Stop streaming logs
+      if (currentEventSource) {
+        currentEventSource.close();
+        currentEventSource = null;
+      }
       
       const startBtn = document.getElementById('startBtn');
       if (startBtn) {
@@ -1857,4 +2067,632 @@ function renderLogs(logs) {
   if (wasAtBottom) {
     terminalContent.scrollTop = terminalContent.scrollHeight;
   }
+}
+
+// --- Report Download Logic ---
+
+function toggleDownloadDropdown() {
+  const d = document.getElementById('downloadDropdown');
+  if (d) {
+    d.style.display = (d.style.display === 'none' || d.style.display === '') ? 'block' : 'none';
+  }
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', (e) => {
+  const d = document.getElementById('downloadDropdown');
+  const btn = document.querySelector('button[onclick="toggleDownloadDropdown()"]');
+  // Check if click is outside dropdown and button
+  if (d && d.style.display === 'block') {
+    if (btn && btn.contains(e.target)) return; // Let the button handler work
+    if (!d.contains(e.target)) {
+      d.style.display = 'none';
+    }
+  }
+});
+
+window.downloadReport = function(format) {
+  if (!currentReportData) {
+    alert('Report data not loaded yet.');
+    return;
+  }
+  
+  const report = currentReportData;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `audit_report_${report.job_id || 'unknown'}_${timestamp}`;
+  
+  if (format === 'md') {
+    const md = generateMarkdown(report);
+    showReportPreview('Markdown Report', md, 'md');
+  } else if (format === 'pdf') {
+    generatePDFReport(report);
+  }
+};
+
+function downloadMarkdownFile() {
+  const content = currentMarkdownPreviewContent || document.getElementById('reportPreviewContent').textContent;
+  const report = currentReportData;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `audit_report_${report.job_id || 'unknown'}_${timestamp}.md`;
+  
+  downloadFile(filename, content, 'text/markdown');
+}
+
+window.setMarkdownPreviewMode = function(mode) {
+  const renderedView = document.getElementById('markdownRenderedView');
+  const rawView = document.getElementById('markdownRawView');
+  const renderedTab = document.getElementById('mdRenderedTab');
+  const rawTab = document.getElementById('mdRawTab');
+
+  if (!renderedView || !rawView || !renderedTab || !rawTab) return;
+
+  currentMarkdownPreviewMode = mode === 'raw' ? 'raw' : 'rendered';
+  const renderedActive = currentMarkdownPreviewMode === 'rendered';
+
+  renderedView.style.display = renderedActive ? 'block' : 'none';
+  rawView.style.display = renderedActive ? 'none' : 'block';
+
+  renderedTab.style.background = renderedActive ? '#1f6feb' : '#e9ecef';
+  renderedTab.style.color = renderedActive ? '#fff' : '#333';
+  renderedTab.style.border = renderedActive ? 'none' : '1px solid #ced4da';
+
+  rawTab.style.background = renderedActive ? '#e9ecef' : '#1f6feb';
+  rawTab.style.color = renderedActive ? '#333' : '#fff';
+  rawTab.style.border = renderedActive ? '1px solid #ced4da' : 'none';
+};
+
+function showReportPreview(title, content, type) {
+  const modal = document.getElementById('reportPreviewModal');
+  const titleEl = document.getElementById('previewTitle');
+  const contentEl = document.getElementById('reportPreviewContent');
+  const printBtn = document.getElementById('manualPrintBtn');
+  const mdBtn = document.getElementById('downloadMDBtn');
+  const tabsEl = document.getElementById('markdownPreviewTabs');
+
+  if (!modal || !contentEl) return;
+
+  titleEl.textContent = title;
+  contentEl.style.whiteSpace = 'normal';
+  contentEl.style.fontFamily = '"Times New Roman", serif';
+  
+  if (type === 'html') {
+    currentMarkdownPreviewContent = '';
+    contentEl.innerHTML = content;
+    printBtn.style.display = 'inline-block';
+    mdBtn.style.display = 'none';
+    if (tabsEl) tabsEl.style.display = 'none';
+  } else {
+    currentMarkdownPreviewContent = content;
+    contentEl.innerHTML = `
+      <div id="markdownRenderedView">${renderMarkdown(content)}</div>
+      <pre id="markdownRawView" class="markdown-preview-container" style="display:none;">${escapeHtml(content)}</pre>
+    `;
+    printBtn.style.display = 'none';
+    mdBtn.style.display = 'inline-block';
+    if (tabsEl) tabsEl.style.display = 'flex';
+    window.setMarkdownPreviewMode('rendered');
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeReportPreview() {
+  currentMarkdownPreviewContent = '';
+  currentMarkdownPreviewMode = 'rendered';
+  document.getElementById('reportPreviewModal').style.display = 'none';
+}
+
+function printPreview() {
+  window.print();
+}
+
+function downloadFile(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function htmlToPlainText(html) {
+  const text = String(html || '');
+  let parsed = text;
+  parsed = parsed.replace(/<br\s*\/?>/gi, '\n');
+  parsed = parsed.replace(/<p>/gi, '\n\n');
+  parsed = parsed.replace(/<\/p>/gi, '');
+  parsed = parsed.replace(/<[^>]+>/g, '');
+  const txt = document.createElement('textarea');
+  txt.innerHTML = parsed;
+  return txt.value.trim();
+}
+
+// Generates a dedicated HTML structure for the PDF report
+function generatePDFReport(report) {
+  // Close dropdown if open
+  const d = document.getElementById('downloadDropdown');
+  if (d) d.style.display = 'none';
+
+  // Show processing state
+  document.body.style.cursor = 'wait';
+  const btn = document.querySelector('button[onclick="toggleDownloadDropdown()"]');
+  const originalText = btn ? btn.innerHTML : 'Download';
+  if (btn) btn.textContent = 'Generating...';
+
+  // 1. Capture Charts as Images
+  // We use the LIVE charts from the dashboard to ensure they are fully rendered.
+  // We temporarily switch them to "Light Mode" styles, capture, and then revert.
+  const chartImages = {};
+  const chartPromises = [];
+
+  if (window._orwellCharts && window._orwellCharts.length > 0) {
+      window._orwellCharts.forEach((chart, index) => {
+          const p = new Promise((resolve) => {
+              // 1. Save original state
+              const originalAnimation = chart.options.animation;
+              const originalColors = {};
+              
+              // Helper to save/restore colors
+              if (chart.config.type === 'radar') {
+                  if (chart.options.scales.r) {
+                      originalColors.grid = chart.options.scales.r.grid.color;
+                      originalColors.angle = chart.options.scales.r.angleLines.color;
+                      originalColors.point = chart.options.scales.r.pointLabels.color;
+                      originalColors.backdrop = chart.options.scales.r.ticks.backdropColor;
+                      originalColors.font = JSON.parse(JSON.stringify(chart.options.scales.r.pointLabels.font || {}));
+                  }
+              } else if (chart.config.type === 'bar') {
+                  originalColors.xTicks = chart.options.scales.x?.ticks?.color;
+                  originalColors.yTicks = chart.options.scales.y?.ticks?.color;
+                  originalColors.yGrid = chart.options.scales.y?.grid?.color;
+              }
+              if (chart.options.plugins?.legend) {
+                  originalColors.legend = chart.options.plugins.legend.labels.color;
+              }
+
+              // 2. Apply Light Mode Styles
+              const textColor = '#000000';
+              const gridColor = '#666666';
+              
+              chart.options.animation = false; // Disable animation for instant repaint
+
+              if (chart.config.type === 'radar') {
+                  if (chart.options.scales.r) {
+                      chart.options.scales.r.grid.color = gridColor;
+                      chart.options.scales.r.angleLines.color = gridColor;
+                      chart.options.scales.r.pointLabels.color = textColor;
+                      chart.options.scales.r.pointLabels.font = { size: 14, weight: 'bold' };
+                      chart.options.scales.r.ticks.backdropColor = 'rgba(255,255,255,0.5)';
+                  }
+              } else if (chart.config.type === 'bar') {
+                  if (chart.options.scales.x) {
+                      if (!chart.options.scales.x.ticks) chart.options.scales.x.ticks = {};
+                      chart.options.scales.x.ticks.color = textColor;
+                  }
+                  if (chart.options.scales.y) {
+                      if (!chart.options.scales.y.ticks) chart.options.scales.y.ticks = {};
+                      if (!chart.options.scales.y.grid) chart.options.scales.y.grid = {};
+                      chart.options.scales.y.ticks.color = textColor;
+                      chart.options.scales.y.grid.color = gridColor;
+                  }
+              }
+              if (chart.options.plugins?.legend) {
+                  chart.options.plugins.legend.labels.color = textColor;
+              }
+
+              // 3. Update and Capture
+              chart.update();
+
+              // Give it a tick to paint
+              setTimeout(() => {
+                  try {
+                      // Composite onto white background
+                      const composite = document.createElement('canvas');
+                      composite.width = chart.width;
+                      composite.height = chart.height;
+                      const ctx = composite.getContext('2d');
+                      
+                      // Fill white
+                      ctx.fillStyle = '#FFFFFF';
+                      ctx.fillRect(0, 0, composite.width, composite.height);
+                      
+                      // Draw chart
+                      ctx.drawImage(chart.canvas, 0, 0);
+                      
+                      chartImages[index] = composite.toDataURL('image/png');
+                  } catch (err) {
+                      console.error('Chart capture failed:', err);
+                  }
+
+                  // 4. Revert Styles
+                  chart.options.animation = originalAnimation;
+                  
+                  if (chart.config.type === 'radar') {
+                      if (chart.options.scales.r) {
+                          chart.options.scales.r.grid.color = originalColors.grid;
+                          chart.options.scales.r.angleLines.color = originalColors.angle;
+                          chart.options.scales.r.pointLabels.color = originalColors.point;
+                          chart.options.scales.r.ticks.backdropColor = originalColors.backdrop;
+                          chart.options.scales.r.pointLabels.font = originalColors.font;
+                      }
+                  } else if (chart.config.type === 'bar') {
+                      if (chart.options.scales.x) chart.options.scales.x.ticks.color = originalColors.xTicks;
+                      if (chart.options.scales.y) {
+                          chart.options.scales.y.ticks.color = originalColors.yTicks;
+                          chart.options.scales.y.grid.color = originalColors.yGrid;
+                      }
+                  }
+                  if (chart.options.plugins?.legend) {
+                      chart.options.plugins.legend.labels.color = originalColors.legend;
+                  }
+                  
+                  chart.update(); // Restore dark mode
+                  resolve();
+              }, 300);
+          });
+          chartPromises.push(p);
+      });
+  }
+
+  Promise.all(chartPromises).then(() => {
+      // 2. Build HTML Structure
+      const dateStr = new Date().toLocaleString();
+      
+      let html = `
+        <div class="pdf-header">
+            <div class="pdf-logo">ORWELL<span style="font-weight:300;font-size:0.8em;margin-left:8px;color:#666">AUDIT</span></div>
+            <div class="pdf-meta">
+                <strong>Report ID:</strong> ${escapeHtml(report.job_id)}<br>
+                <strong>Date:</strong> ${dateStr}
+            </div>
+        </div>
+
+        <div class="pdf-section">
+            <div class="pdf-title">Audit Report</div>
+            <div class="pdf-subtitle">
+                Target: <strong>${escapeHtml(report.target_model || 'N/A')}</strong> | 
+                Judge: <strong>${escapeHtml(report.judge_model || report.bench_name || 'N/A')}</strong>
+            </div>
+            
+            <table class="pdf-table">
+                <tr>
+                    <th style="width:200px">Metric</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td>Overall Risk</td>
+                    <td><strong style="color:${getRiskColor(report.overall_risk ? report.overall_risk.toLowerCase() : 'low')}">${escapeHtml(report.overall_risk ? report.overall_risk.toUpperCase() : 'N/A')}</strong></td>
+                </tr>
+                <tr>
+                    <td>Mean Score</td>
+                    <td>${report.mean_score || 'N/A'}</td>
+                </tr>
+                <tr>
+                    <td>Total Prompts</td>
+                    <td>${report.total_prompts}</td>
+                </tr>
+                <tr>
+                    <td>Execution Time</td>
+                    <td>${formatDuration(report.execution_time_seconds)}</td>
+                </tr>
+            </table>
+        </div>
+      `;
+
+      const sections = (report.report_json && report.report_json.sections) ? report.report_json.sections : [];
+      const contextSection = sections.find((s) => s.type === 'context_methodology');
+      const dimensionSection = sections.find((s) => s.type === 'dimension_analysis');
+      const scoreSection = sections.find((s) => s.type === 'score_distribution');
+      const contextPrompt = contextSection?.system_prompt_card?.text || contextSection?.system_prompt_card?.note || window.currentSystemPrompt || report.system_prompt_snapshot || 'None (Base Model Behavior)';
+
+      if (contextSection) {
+        const jp = contextSection.judge_profile || {};
+        const tp = contextSection.test_parameters || {};
+        const judgeType = jp.type === 'bench' ? 'Bench' : 'Single Judge';
+        const judgeMode = jp.type === 'bench' ? (jp.bench_mode || report.bench_mode || 'N/A') : 'single';
+        const judgeModel = jp.type === 'bench'
+          ? ((jp.models && jp.models.length > 0) ? jp.models.join(', ') : (jp.model || report.judge_model || 'N/A'))
+          : (jp.model || report.judge_model || 'N/A');
+        const judgeName = jp.type === 'bench' ? (jp.bench_name || report.bench_name || 'N/A') : (jp.model || report.judge_model || 'N/A');
+
+        html += `
+        <div class="pdf-section" style="page-break-inside:avoid">
+            <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(contextSection.title || 'Context & Methodology')}</h3>
+            <table class="pdf-table">
+                <tr><th style="width:220px">Field</th><th>Value</th></tr>
+                <tr><td>Judge Type</td><td>${escapeHtml(judgeType)}</td></tr>
+                <tr><td>Judge Name</td><td>${escapeHtml(judgeName)}</td></tr>
+                <tr><td>Judge Mode</td><td>${escapeHtml(String(judgeMode).toUpperCase())}</td></tr>
+                <tr><td>Judge Model(s)</td><td>${escapeHtml(judgeModel)}</td></tr>
+                <tr><td>Sample Size</td><td>${tp.sample_size || report.total_prompts || 0}</td></tr>
+                <tr><td>Temperature</td><td>${tp.temperature !== undefined ? tp.temperature : 'N/A'}</td></tr>
+                <tr><td>Language</td><td>${escapeHtml(String(tp.language || report.language || 'EN').toUpperCase())}</td></tr>
+            </table>
+            <div style="margin-top:12px;">
+                <div style="font-size:12px;text-transform:uppercase;color:#666;margin-bottom:8px;font-weight:700">System Prompt</div>
+                <div style="font-family:monospace;font-size:11px;background:#f9f9f9;padding:10px;border:1px solid #eee;white-space:pre-wrap;color:#111;line-height:1.5;max-height:260px;overflow:auto;">
+                    ${escapeHtml(contextPrompt)}
+                </div>
+            </div>
+            ${contextSection.explanation ? `<div style="margin-top:12px;font-size:12px;color:#333;line-height:1.6;background:#f0f7ff;padding:12px;border-left:3px solid #0066cc"><strong>AI Context:</strong> ${escapeHtml(contextSection.explanation)}</div>` : ''}
+        </div>
+        `;
+      }
+
+      if (dimensionSection || chartImages[0]) {
+          let dimensionRows = '';
+          if (dimensionSection && dimensionSection.stats) {
+              Object.entries(dimensionSection.stats).forEach(([dim, data]) => {
+                  const risk = String(data.risk_level || '').toLowerCase();
+                  const riskColor = getRiskColor(risk);
+                  dimensionRows += `<tr>
+                      <td>${escapeHtml(dim)}</td>
+                      <td>${data.mean_score ?? 'N/A'}</td>
+                      <td>${data.median_score ?? 'N/A'}</td>
+                      <td>${data.std_dev ?? 'N/A'}</td>
+                      <td>${data.failures ?? 0}/${data.sample_size ?? 0}</td>
+                      <td><strong style="color:${riskColor}">${escapeHtml(String(data.risk_level || 'N/A').toUpperCase())}</strong></td>
+                  </tr>`;
+              });
+          }
+
+          html += `
+            <div class="pdf-section" style="page-break-inside:avoid">
+                <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(dimensionSection?.title || 'Dimension Analysis')}</h3>
+                ${chartImages[0] ? `<div class="pdf-chart-container"><img src="${chartImages[0]}" class="pdf-chart-img" style="max-height:350px"></div>` : ''}
+                ${dimensionRows ? `<table class="pdf-table"><tr><th>Dimension</th><th>Mean</th><th>Median</th><th>Std Dev</th><th>Failures</th><th>Risk</th></tr>${dimensionRows}</table>` : ''}
+                ${dimensionSection?.explanation ? `<div style="margin-top:12px;font-size:12px;color:#333;line-height:1.6;background:#f0f7ff;padding:12px;border-left:3px solid #0066cc"><strong>AI Context:</strong> ${escapeHtml(dimensionSection.explanation)}</div>` : ''}
+            </div>
+          `;
+      }
+
+      if (scoreSection || chartImages[1]) {
+          const histLabels = scoreSection?.histogram?.labels || ['1', '2', '3', '4', '5', '6', '7'];
+          const histData = scoreSection?.histogram?.datasets?.[0]?.data || [];
+          let totalResponses = 0;
+          let weightedSum = 0;
+          const scoreRows = [];
+          for (let i = histLabels.length - 1; i >= 0; i--) {
+              const label = String(histLabels[i] || i + 1);
+              const score = Number(label.replace(/[^\d.-]/g, '')) || (i + 1);
+              const count = Number(histData[i] || 0);
+              totalResponses += count;
+              weightedSum += score * count;
+              scoreRows.push({ score: label, count });
+          }
+          const meanScore = totalResponses > 0 ? (weightedSum / totalResponses).toFixed(2) : '0.00';
+          const rowsHtml = scoreRows.map((r) => {
+              const pct = totalResponses > 0 ? ((r.count / totalResponses) * 100).toFixed(1) : '0.0';
+              return `<tr><td>Score ${escapeHtml(r.score)}</td><td>${r.count}</td><td>${pct}%</td></tr>`;
+          }).join('');
+
+          html += `
+            <div class="pdf-section" style="page-break-inside:avoid">
+                <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(scoreSection?.title || 'Score Distribution')}</h3>
+                ${chartImages[1] ? `<div class="pdf-chart-container"><img src="${chartImages[1]}" class="pdf-chart-img" style="max-height:350px"></div>` : ''}
+                <table class="pdf-table">
+                    <tr><th style="width:220px">Summary Metric</th><th>Value</th></tr>
+                    <tr><td>Total Responses</td><td>${totalResponses}</td></tr>
+                    <tr><td>Mean Score</td><td>${meanScore}</td></tr>
+                </table>
+                ${rowsHtml ? `<table class="pdf-table"><tr><th>Score</th><th>Count</th><th>Percentage</th></tr>${rowsHtml}</table>` : ''}
+                ${scoreSection?.explanation ? `<div style="margin-top:12px;font-size:12px;color:#333;line-height:1.6;background:#f0f7ff;padding:12px;border-left:3px solid #0066cc"><strong>AI Context:</strong> ${escapeHtml(scoreSection.explanation)}</div>` : ''}
+            </div>
+          `;
+      }
+
+      if (sections.length > 0) {
+          sections.forEach((section) => {
+             if (section.type === 'context_methodology' || section.type === 'dimension_analysis' || section.type === 'score_distribution') return;
+
+             if (section.type === 'bench_agreement') {
+                const matrix = section.matrix || {};
+                const rows = Object.entries(matrix).map(([dim, data]) => {
+                    const means = Object.entries(data.judge_means || {}).map(([j, s]) => `${j}: ${s}`).join(' | ');
+                    const level = String(data.agreement_level || '').toLowerCase();
+                    return `<tr>
+                        <td>${escapeHtml(dim)}</td>
+                        <td>${escapeHtml(means)}</td>
+                        <td>${data.variance ?? 'N/A'}</td>
+                        <td><strong style="color:${getRiskColor(level)}">${escapeHtml(String(data.agreement_level || 'N/A').toUpperCase())}</strong></td>
+                    </tr>`;
+                }).join('');
+                if (rows) {
+                    html += `<div class="pdf-section">
+                        <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(section.title || 'Judge Agreement Matrix')}</h3>
+                        <table class="pdf-table"><tr><th>Dimension</th><th>Judge Means</th><th>Variance</th><th>Agreement</th></tr>${rows}</table>
+                        ${section.explanation ? `<div style="margin-top:12px;font-size:12px;color:#333;line-height:1.6;background:#f0f7ff;padding:12px;border-left:3px solid #0066cc"><strong>AI Context:</strong> ${escapeHtml(section.explanation)}</div>` : ''}
+                    </div>`;
+                }
+                return;
+             }
+
+             if (section.type === 'failure_analysis') {
+                const tableRows = section.table?.rows || [];
+                const rows = tableRows.map((row) => `<tr>
+                    <td>${escapeHtml(row.dimension || '')}</td>
+                    <td>${escapeHtml(row.prompt || '')}</td>
+                    <td>${escapeHtml(row.response || '')}</td>
+                    <td>${row.score ?? ''}</td>
+                </tr>`).join('');
+                html += `<div class="pdf-section">
+                    <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(section.title || 'Flagged Responses')}</h3>
+                    ${rows ? `<table class="pdf-table"><tr><th>Dimension</th><th>Prompt</th><th>Response</th><th>Score</th></tr>${rows}</table>` : `<div class="pdf-content-text">No flagged responses were detected.</div>`}
+                </div>`;
+                return;
+             }
+
+             if (!section.content || section.content.trim() === '') return;
+
+             html += `<div class="pdf-section">
+                <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(section.title)}</h3>
+                <div class="pdf-content-text">${renderMarkdown(section.content || '')}</div>
+             </div>`;
+          });
+      }
+
+      html += `
+        <div class="pdf-section">
+            <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">System Prompt Snapshot</h3>
+            <div style="font-family:monospace;font-size:11px;background:#f9f9f9;padding:10px;border:1px solid #eee;white-space:pre-wrap;color:#111;line-height:1.5;">${escapeHtml(contextPrompt)}</div>
+        </div>
+      `;
+
+      // Add Footer
+      html += `
+        <div class="pdf-footer">
+            CONFIDENTIAL - ASM Labs
+        </div>
+      `;
+
+      // Show Preview Modal
+      showReportPreview('PDF Report Preview', html, 'html');
+      
+      document.body.style.cursor = 'default';
+      if (btn) btn.innerHTML = originalText;
+  });
+}
+
+function generateMarkdown(report) {
+  let md = `# ASM Labs Audit Report\n\n`;
+  md += `**Date:** ${new Date().toLocaleString()}\n`;
+  md += `**Report ID:** ${report.job_id}\n`;
+  md += `**Target Model:** ${report.target_model || 'N/A'}\n`;
+  md += `**Judge:** ${report.judge_model || report.bench_name || 'N/A'}\n`;
+  md += `**Overall Risk:** ${report.overall_risk ? report.overall_risk.toUpperCase() : 'N/A'}\n`;
+  md += `**Total Prompts:** ${report.total_prompts}\n`;
+  md += `**Execution Time:** ${formatDuration(report.execution_time_seconds)}\n`;
+  md += `\n---\n\n`;
+
+  const sections = (report.report_json && report.report_json.sections) ? report.report_json.sections : [];
+  let systemPromptSnapshot = window.currentSystemPrompt || report.system_prompt_snapshot || 'None (Base Model Behavior)';
+
+  for (const section of sections) {
+    md += `## ${section.title}\n\n`;
+
+    if (section.status) {
+      md += `**Status:** ${section.status.toUpperCase()}\n\n`;
+    }
+
+    if (section.type === 'context_methodology') {
+      const sp = section.system_prompt_card || {};
+      const jp = section.judge_profile || {};
+      const tp = section.test_parameters || {};
+      const judgeType = jp.type === 'bench' ? 'Bench' : 'Single Judge';
+      const judgeName = jp.type === 'bench' ? (jp.bench_name || report.bench_name || 'N/A') : (jp.model || report.judge_model || 'N/A');
+      const judgeMode = jp.type === 'bench' ? (jp.bench_mode || report.bench_mode || 'N/A') : 'single';
+      const judgeModels = jp.type === 'bench'
+        ? ((jp.models && jp.models.length > 0) ? jp.models.join(', ') : (jp.model || report.judge_model || 'N/A'))
+        : (jp.model || report.judge_model || 'N/A');
+      const promptText = sp.text || sp.note || systemPromptSnapshot;
+      systemPromptSnapshot = promptText;
+
+      md += `| Field | Value |\n|---|---|\n`;
+      md += `| Judge Type | ${judgeType} |\n`;
+      md += `| Judge Name | ${judgeName} |\n`;
+      md += `| Judge Mode | ${String(judgeMode).toUpperCase()} |\n`;
+      md += `| Judge Model(s) | ${judgeModels} |\n`;
+      md += `| Sample Size | ${tp.sample_size ?? report.total_prompts ?? 'N/A'} |\n`;
+      md += `| Temperature | ${tp.temperature ?? 'N/A'} |\n`;
+      md += `| Language | ${String(tp.language || report.language || 'EN').toUpperCase()} |\n\n`;
+      md += `### System Prompt\n\n`;
+      md += '```\n';
+      md += `${promptText}\n`;
+      md += '```\n\n';
+      if (section.explanation) {
+        md += `### AI Context\n\n${section.explanation}\n\n`;
+      }
+      continue;
+    }
+
+    if (section.content) {
+      const text = htmlToPlainText(section.content);
+      if (text) md += `${text}\n\n`;
+    }
+
+    if (section.type === 'dimension_analysis') {
+      const stats = section.stats || {};
+      md += `### Dimension Statistics\n\n`;
+      md += `| Dimension | Mean | Median | Std Dev | Failures | Risk |\n|---|---:|---:|---:|---:|---|\n`;
+      Object.entries(stats).forEach(([dim, data]) => {
+        md += `| ${dim} | ${data.mean_score ?? 'N/A'} | ${data.median_score ?? 'N/A'} | ${data.std_dev ?? 'N/A'} | ${data.failures ?? 0}/${data.sample_size ?? 0} | ${(data.risk_level || 'N/A').toUpperCase()} |\n`;
+      });
+      md += `\n`;
+      if (section.explanation) {
+        md += `### AI Context\n\n${section.explanation}\n\n`;
+      }
+      continue;
+    }
+
+    if (section.type === 'score_distribution' && section.histogram) {
+      const labels = section.histogram.labels || ['1', '2', '3', '4', '5', '6', '7'];
+      const data = section.histogram.datasets?.[0]?.data || [];
+      let total = 0;
+      let weighted = 0;
+      labels.forEach((label, i) => {
+        const score = Number(String(label).replace(/[^\d.-]/g, '')) || (i + 1);
+        const count = Number(data[i] || 0);
+        total += count;
+        weighted += score * count;
+      });
+      const mean = total > 0 ? (weighted / total).toFixed(2) : '0.00';
+      md += `### Distribution Summary\n\n`;
+      md += `| Metric | Value |\n|---|---:|\n`;
+      md += `| Total Responses | ${total} |\n`;
+      md += `| Mean Score | ${mean} |\n\n`;
+      md += `### Score Breakdown\n\n`;
+      md += `| Score | Count | Percentage |\n|---|---:|---:|\n`;
+      for (let i = labels.length - 1; i >= 0; i--) {
+        const label = labels[i];
+        const count = Number(data[i] || 0);
+        const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0.0';
+        md += `| Score ${label} | ${count} | ${pct}% |\n`;
+      }
+      md += `\n`;
+      if (section.explanation) {
+        md += `### AI Context\n\n${section.explanation}\n\n`;
+      }
+      continue;
+    }
+
+    if (section.type === 'bench_agreement') {
+      const matrix = section.matrix || {};
+      md += `| Dimension | Judge Means | Variance | Agreement |\n|---|---|---:|---|\n`;
+      Object.entries(matrix).forEach(([dim, data]) => {
+        const means = Object.entries(data.judge_means || {}).map(([j, s]) => `${j}: ${s}`).join(' | ');
+        md += `| ${dim} | ${means} | ${data.variance ?? 'N/A'} | ${(data.agreement_level || 'N/A').toUpperCase()} |\n`;
+      });
+      md += `\n`;
+      if (section.explanation) {
+        md += `### AI Context\n\n${section.explanation}\n\n`;
+      }
+      continue;
+    }
+
+    if (section.type === 'failure_analysis') {
+      const rows = section.table?.rows || [];
+      if (rows.length > 0) {
+        md += `| Dimension | Prompt | Response | Score |\n|---|---|---|---:|\n`;
+        rows.forEach((row) => {
+          const prompt = String(row.prompt || '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+          const response = String(row.response || '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+          md += `| ${row.dimension || ''} | ${prompt} | ${response} | ${row.score ?? ''} |\n`;
+        });
+        md += `\n`;
+      } else {
+        md += `No flagged responses were detected.\n\n`;
+      }
+      continue;
+    }
+  }
+
+  md += `## System Prompt Snapshot\n\n`;
+  md += '```\n';
+  md += `${systemPromptSnapshot}\n`;
+  md += '```\n\n';
+  md += `\n---\n*Generated by Orwell - ASM Labs*`;
+  return md;
 }

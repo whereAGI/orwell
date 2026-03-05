@@ -23,12 +23,113 @@
     .sidebar {
       border-right: 1px solid var(--border);
       background: #0d0d13;
-      padding: 16px;
-      overflow-y: auto;
       display: flex;
       flex-direction: column;
-      padding-bottom: 320px;
-      /* Space for terminal (expanded) */
+      height: 100%;
+      overflow: hidden; /* Prevent sidebar itself from scrolling */
+      position: relative;
+    }
+
+    .sidebar-content {
+      padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+      padding-bottom: 320px; /* Space for terminal */
+    }
+
+    .sidebar-delete-bar {
+      padding: 12px;
+      background: #1a1a23;
+      border-top: 1px solid var(--border);
+      display: none;
+      z-index: 2001; /* Ensure it's above the terminal (2000) */
+      position: absolute;
+      bottom: 40px; /* Sit above the collapsed terminal header */
+      left: 0;
+      right: 0;
+    }
+
+    .audit-delete-icon {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      color: var(--danger);
+      background: rgba(220, 53, 69, 0.1);
+      transition: all 0.2s;
+    }
+    
+    .audit-delete-icon:hover {
+      background: var(--danger);
+      color: white;
+    }
+
+    .audit-item:hover .audit-progress {
+      display: none;
+    }
+    
+    .audit-item:hover .audit-delete-icon {
+      display: flex;
+    }
+    
+    .audit-item.selected-audit {
+      border-color: var(--primary);
+      background: rgba(129, 140, 248, 0.05);
+    }
+
+    /* Tooltip */
+    .tooltip {
+      position: relative;
+      display: inline-block;
+      cursor: help;
+      margin-left: 6px;
+      opacity: 0.7;
+    }
+
+    .tooltip:hover {
+      opacity: 1;
+    }
+
+    .tooltip .tooltiptext {
+      visibility: hidden;
+      width: 160px;
+      background-color: #333;
+      color: #fff;
+      text-align: center;
+      border-radius: 6px;
+      padding: 8px;
+      position: absolute;
+      z-index: 100;
+      top: 100%;
+      left: 50%;
+      margin-left: -80px;
+      margin-top: 8px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      font-size: 11px;
+      font-weight: normal;
+      text-transform: none;
+      pointer-events: none;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    
+    .tooltip .tooltiptext::after {
+      content: "";
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      margin-left: -5px;
+      border-width: 5px;
+      border-style: solid;
+      border-color: transparent transparent #333 transparent;
+    }
+
+    .tooltip:hover .tooltiptext {
+      visibility: visible;
+      opacity: 1;
     }
 
     .rightbar {
@@ -288,10 +389,30 @@
   <header></header>
   <div class="app">
     <aside class="sidebar">
-      <h2>Previous Audits</h2>
-      <div id="auditList" class="audit-list"></div>
-      <button id="deleteBtn" style="margin-top:12px;background:var(--danger);border-color:var(--danger)">Delete
-        Selected</button>
+      <div class="sidebar-content">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <h2 style="margin:0;font-size:13px;text-transform:uppercase;letter-spacing:0.05em;color:#a0a0b8;display:flex;align-items:center;">
+            Previous Audits
+            <span class="tooltip" style="margin-left:6px;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+              <span class="tooltiptext">Hold <b>Shift + Click</b> to select multiple audits for bulk deletion</span>
+            </span>
+          </h2>
+          <button onclick="loadAuditList()" style="width:auto;background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;display:flex;" title="Refresh List" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6"></path>
+              <path d="M1 20v-6h6"></path>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+          </button>
+        </div>
+        <div id="auditList" class="audit-list"></div>
+      </div>
+      
+      <!-- Sticky Delete Bar (Initially Hidden) -->
+      <div id="stickyDeleteBar" class="sidebar-delete-bar">
+        <button id="deleteBtn" class="danger" style="width:100%; margin-top:0;">Delete Selected (<span id="selCount">0</span>)</button>
+      </div>
     </aside>
     <main class="content">
       <div class="card" id="auditDetailsCard" style="display:none;">
@@ -313,7 +434,19 @@
 
       <div class="grid">
         <div class="card" id="report" style="display:none;">
-          <h3 style="margin:0 0 8px">Audit Report</h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0">Audit Report</h3>
+            <div style="position:relative; display:inline-block;">
+              <button onclick="toggleDownloadDropdown()" style="width:auto;padding:6px 12px;font-size:12px;background:var(--card);border-color:var(--border);display:flex;align-items:center;gap:6px;" title="Download Report">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Download
+              </button>
+              <div id="downloadDropdown" style="display:none; position:absolute; right:0; top:100%; margin-top:4px; background:var(--card); border:1px solid var(--border); border-radius:6px; min-width:120px; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+                <div onclick="downloadReport('md')" class="dropdown-item" style="padding:8px 12px; cursor:pointer; font-size:13px; color:var(--text);">Markdown</div>
+                <div onclick="downloadReport('pdf')" class="dropdown-item" style="padding:8px 12px; cursor:pointer; font-size:13px; color:var(--text); border-top:1px solid var(--border);">PDF</div>
+              </div>
+            </div>
+          </div>
           <div id="reportContent"></div>
         </div>
       </div>
@@ -321,6 +454,16 @@
       <div class="card">
         <h3 style="margin:0 0 8px">Prompts & Responses</h3>
         <div id="qaAccordion"></div>
+      </div>
+
+      <div class="card">
+        <details id="fullLogDetails">
+          <summary style="cursor:pointer;font-weight:600;font-size:16px;outline:none;user-select:none;">Full Audit Logs</summary>
+          <div id="fullLogContent" class="terminal-content"
+            style="max-height: 500px; overflow-y: auto; margin-top: 16px; background: #0d0d10; border: 1px solid #333; border-radius: 6px;">
+            <div style="color:#666;font-style:italic;padding:12px">Loading logs...</div>
+          </div>
+        </details>
       </div>
     </main>
     <aside class="rightbar">
@@ -540,20 +683,52 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
+  <script src="https://unpkg.com/pocketbase@0.21.5/dist/pocketbase.umd.js"></script>
   <script src="/config.js"></script>
   <script src="/static/auth.js"></script>
   <script>
-    // Protect route
+    // Protect route - Disabled for local mode
+    /*
     if (!pb.authStore.isValid) {
       window.location.href = '/login';
     }
+    */
   </script>
   <script src="/static/nav.js"></script>
   <script>renderNavbar('playground');</script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="/static/dashboard.js"></script>
+  
+  <!-- Hidden container for PDF generation -->
+  <!-- <div id="pdf-hidden-container"></div> -->
+
+  <!-- Report Preview Modal -->
+  <div id="reportPreviewModal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.8);z-index:10000">
+    <div class="card" style="width:800px;max-width:95vw;height:90vh;display:flex;flex-direction:column;background:#fff;color:#000;border:none;padding:0;">
+      <!-- Modal Header -->
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid #ddd;background:#f8f9fa;">
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <h3 style="margin:0;color:#333;font-family:sans-serif;" id="previewTitle">Report Preview</h3>
+          <div id="markdownPreviewTabs" style="display:none;align-items:center;gap:8px;">
+            <button id="mdRenderedTab" onclick="setMarkdownPreviewMode('rendered')" style="width:auto;padding:6px 12px;background:#1f6feb;color:#fff;border:none;">Rendered</button>
+            <button id="mdRawTab" onclick="setMarkdownPreviewMode('raw')" style="width:auto;padding:6px 12px;background:#e9ecef;color:#333;border:1px solid #ced4da;">Raw Markdown</button>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button id="manualPrintBtn" onclick="printPreview()" style="width:auto;padding:6px 12px;background:#1f6feb;color:#fff;border:none;">Print / Save PDF</button>
+          <button id="downloadMDBtn" onclick="downloadMarkdownFile()" style="width:auto;padding:6px 12px;background:#1f6feb;color:#fff;border:none;display:none;">Download .md</button>
+          <button onclick="closeReportPreview()" style="width:auto;padding:6px 12px;background:#6c757d;color:#fff;border:none;">Close</button>
+        </div>
+      </div>
+      
+      <!-- Preview Content -->
+      <div id="reportPreviewContent" style="flex:1;overflow-y:auto;padding:40px;font-family:'Times New Roman', serif;background:#fff;">
+        <!-- Content injected here -->
+      </div>
+    </div>
+  </div>
 </body>
 
 </html>

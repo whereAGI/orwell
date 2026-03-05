@@ -62,6 +62,10 @@ class JobResponse(BaseModel):
     message: str
     target_model: Optional[str] = None
     error_message: Optional[str] = None
+    # Enhanced list view fields
+    judge_name: Optional[str] = None
+    dimensions: Optional[List[str]] = None
+    overall_risk: Optional[str] = None
 
 class DimensionScore(BaseModel):
     dimension: str

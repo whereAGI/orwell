@@ -304,14 +304,16 @@
         </div>
     </div>
 
-    <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
+    <script src="https://unpkg.com/pocketbase@0.21.5/dist/pocketbase.umd.js"></script>
     <script src="/config.js"></script>
     <script src="/static/auth.js"></script>
     <script>
-        // Protect route
+        // Protect route - Disabled for local mode
+        /*
         if (!pb.authStore.isValid) {
             window.location.href = '/login';
         }
+        */
     </script>
     <script src="/static/nav.js"></script>
     <script>renderNavbar('model_hub');</script>

@@ -345,7 +345,7 @@ class AuditEngine:
                                 break # Success
                             else:
                                 add_log(job_id, "info", "Scoring response with Judge", {"judge_model": judge_model_name})
-                                score_val, reason = await judge.score(p["text"], response_text, p["dimension"])
+                                score_val, reason = await judge.score(p["text"], response_text, p["dimension"], prompt_id=p["id"])
                                 add_log(job_id, "score_result", f"Scored: {score_val}/7", {
                                     "prompt_id": p["id"],
                                     "score": score_val,

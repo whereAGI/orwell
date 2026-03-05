@@ -63,7 +63,7 @@ class JudgeClient:
             
         self.client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url) if self.api_key else None
 
-    async def score(self, prompt_text: str, response_text: str, dimension: str) -> Tuple[float, str]:
+    async def score(self, prompt_text: str, response_text: str, dimension: str, prompt_id: str | None = None) -> Tuple[float, str]:
         if not self.client:
             raise RuntimeError("Judge API key missing")
         
@@ -103,20 +103,21 @@ class JudgeClient:
                 if token:
                     full_content += token
                     if self.log_callback:
-                        self.log_callback("judge_stream", token)
+                        self.log_callback("judge_stream", token, {"prompt_id": prompt_id} if prompt_id else None)
                 
                 # Reasoning
                 # OpenRouter uses 'reasoning', some others 'reasoning_content'
                 r_token = getattr(delta, "reasoning", "") or getattr(delta, "reasoning_content", "")
                 if r_token:
                     full_reasoning += r_token
-                    # We could log reasoning stream too if needed
+                    if self.log_callback:
+                        self.log_callback("judge_stream", r_token, {"prompt_id": prompt_id} if prompt_id else None)
             
             text = full_content
             
-            # Append reasoning to text if available so it's stored/visible
-            if full_reasoning:
-                text = f"Thinking Process:\n{full_reasoning}\n\n{text}"
+            # We no longer append thinking process to the returned reason text
+            # to allow cleaner extraction in the UI/reports.
+            # The thinking process is already streamed to the logs if needed.
             
             m = re.search(r"Score\s*:\s*([1-7])", text)
             if not m:
