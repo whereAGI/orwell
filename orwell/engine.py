@@ -14,6 +14,7 @@ from .bench import BenchExecutor
 from .pb_client import get_pb
 from .log_store import add_log
 from .report_builder import ReportDataBuilder
+from .app_config import get_float_config, get_int_config
 
 class AuditEngine:
     def __init__(self):
@@ -747,8 +748,8 @@ class AuditEngine:
         payload = {
             "model": request.model_name,
             "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 300
+            "temperature": request.temperature if request.temperature is not None else get_float_config("target_default_temperature", 0.7),
+            "max_tokens": get_int_config("target_default_max_tokens", 300)
         }
         
         # Inject Reasoning Parameters

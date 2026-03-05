@@ -18,6 +18,8 @@ from .pb_client import get_pb, PB_URL
 from .log_store import get_logs, subscribe_logs
 import httpx
 
+from .app_config import get_all_configs_grouped, update_config
+
 async def verify_model_connection(provider: str, base_url: str, model_key: str, api_key: Optional[str]):
     """
     Verifies that the model is reachable and working.
@@ -142,6 +144,10 @@ async def model_hub():
 @app.get("/login")
 async def login():
     return FileResponse("static/login.html")
+
+@app.get("/config")
+async def config_page():
+    return FileResponse("static/config.html")
 
 @app.get("/api/models", response_model=List[ModelConfig])
 async def list_models(category: Optional[str] = None):
@@ -1264,6 +1270,26 @@ async def update_system_prompt(id: str, req: UpdateSystemPromptRequest, user=Dep
         if data:
             pb.collection("system_prompts").update(id, data)
             
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class UpdateConfigRequest(BaseModel):
+    key: str
+    value: str
+
+@app.get("/api/config")
+async def get_app_config(user=Depends(get_optional_current_user)):
+    try:
+        return get_all_configs_grouped()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.patch("/api/config")
+async def update_app_config(req: UpdateConfigRequest, user=Depends(get_optional_current_user)):
+    try:
+        if not update_config(req.key, req.value):
+             raise HTTPException(status_code=404, detail="Config key not found or update failed")
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

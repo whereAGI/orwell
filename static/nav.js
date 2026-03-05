@@ -15,7 +15,8 @@ function renderNavbar(activePage) {
         'playground': 'playground',
         'data_studio': 'data studio',
         'prompt_studio': 'prompt studio',
-        'model_hub': 'model hub'
+        'model_hub': 'model hub',
+        'config': 'config'
     };
     
     const pageTitle = titleMap[activePage] || 'studio';
@@ -25,7 +26,8 @@ function renderNavbar(activePage) {
         { id: 'playground', href: '/', text: 'Playground' },
         { id: 'data_studio', href: '/studio', text: 'Data Studio' },
         { id: 'prompt_studio', href: '/prompt-studio', text: 'Prompt Studio' },
-        { id: 'model_hub', href: '/model-hub', text: 'Model Hub' }
+        { id: 'model_hub', href: '/model-hub', text: 'Model Hub' },
+        { id: 'config', href: '/config', text: 'Config' }
     ];
 
     // Filter out current page to match the pattern "links to other places"

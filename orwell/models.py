@@ -20,7 +20,7 @@ class ModelConfig(BaseModel):
     api_key: Optional[str] = None
     system_prompt: Optional[str] = None       # Scoring instructions (used during score() calls)
     analysis_persona: Optional[str] = None    # Analysis persona (used during generate_report_sections() calls)
-    temperature: Optional[float] = 0.7
+    temperature: Optional[float] = None
     source_url: Optional[str] = None
     reasoning_effort: Optional[str] = None # "enabled", "disabled", "high", "medium", "low"
     max_reasoning_tokens: Optional[int] = None # Max tokens for reasoning/thinking process
@@ -42,7 +42,7 @@ class AuditRequest(BaseModel):
     target_endpoint: Optional[HttpUrl] = None
     api_key: Optional[str] = ""
     model_name: Optional[str] = None
-    temperature: Optional[float] = 0.7
+    temperature: Optional[float] = None
     language: str = "en"
     sample_size: Optional[int] = 50
     dimensions: Optional[List[str]] = None
