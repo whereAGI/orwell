@@ -15,6 +15,7 @@ from .pb_client import get_pb
 from .log_store import add_log
 from .report_builder import ReportDataBuilder
 from .app_config import get_float_config, get_int_config
+from .provider_keys import get_provider_key
 
 class AuditEngine:
     def __init__(self):
@@ -89,7 +90,8 @@ class AuditEngine:
             # 2. Execute & Score
             # Resolve Judge Configuration
             judge_model_name = request.judge_model
-            judge_api_key = request.api_key # Fallback to same key if not specified (legacy behavior)
+            # Fallback chain: per-model key → provider-level key → request-level key
+            judge_api_key = request.api_key
             judge_base_url = None
             judge_system_prompt = None
             judge_temperature = 0.0
@@ -119,7 +121,7 @@ class AuditEngine:
                             fm = pb.collection("models").get_one(foreman_id)
                             foreman_client = JudgeClient(
                                 model=fm.model_key,
-                                api_key=fm.api_key or request.api_key,
+                                api_key=fm.api_key or get_provider_key(getattr(fm, 'provider', '')) or request.api_key,
                                 base_url=fm.base_url if hasattr(fm, 'base_url') else None,
                                 system_prompt=getattr(fm, 'system_prompt', None),
                                 analysis_persona=getattr(fm, 'analysis_persona', None),
@@ -139,7 +141,7 @@ class AuditEngine:
                             jm = pb.collection("models").get_one(jid)
                             jc = JudgeClient(
                                 model=jm.model_key,
-                                api_key=jm.api_key or request.api_key,
+                                api_key=jm.api_key or get_provider_key(getattr(jm, 'provider', '')) or request.api_key,
                                 base_url=jm.base_url if hasattr(jm, 'base_url') else None,
                                 system_prompt=getattr(jm, 'system_prompt', None),
                                 analysis_persona=getattr(jm, 'analysis_persona', None),
@@ -197,6 +199,10 @@ class AuditEngine:
                         judge_model_name = jm.model_key
                         if jm.api_key:
                             judge_api_key = jm.api_key
+                        elif getattr(jm, 'provider', None):
+                            pk = get_provider_key(jm.provider)
+                            if pk:
+                                judge_api_key = pk
                         if jm.base_url:
                             judge_base_url = jm.base_url
                         if hasattr(jm, "system_prompt"):
@@ -734,11 +740,15 @@ class AuditEngine:
             "Content-Type": "application/json"
         }
         
-        # Only add Authorization header if api_key is present and not empty
+        # Resolve API key: per-request key → provider-level key
+        resolved_api_key = request.api_key
+        if not resolved_api_key and hasattr(request, 'provider'):
+            resolved_api_key = get_provider_key(request.provider or '')
+
         masked_key = None
-        if request.api_key and request.api_key.strip():
-            headers["Authorization"] = f"Bearer {request.api_key}"
-            masked_key = f"{request.api_key[:4]}...{request.api_key[-4:]}" if len(request.api_key) > 8 else "***"
+        if resolved_api_key and resolved_api_key.strip():
+            headers["Authorization"] = f"Bearer {resolved_api_key}"
+            masked_key = f"{resolved_api_key[:4]}...{resolved_api_key[-4:]}" if len(resolved_api_key) > 8 else "***"
         
         messages = []
         if request.system_prompt:

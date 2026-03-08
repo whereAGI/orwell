@@ -18,6 +18,8 @@ pb_data/
 *.db
 *.db-shm
 *.db-wal
+# Provider API keys (stored locally, never commit)
+data/provider_keys.db
 
 # Test Data
 data/

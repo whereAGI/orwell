@@ -1,5 +1,6 @@
 let currentTab = 'target';
 let currentModels = {}; // Store models by ID to avoid escaping issues
+let providerKeyCache = {}; // { provider: {has_key, masked_key} }
 
 document.addEventListener('DOMContentLoaded', () => {
     loadModels();
@@ -18,7 +19,7 @@ async function switchTab(tab) {
     // Show/hide bench UI elements
     const benchBtn = document.getElementById('createBenchBtn');
     const benchSection = document.getElementById('benchSection');
-    
+
     // Load models first to ensure we have names for resolution
     await loadModels();
 
@@ -36,11 +37,11 @@ async function loadModels() {
     try {
         const response = await fetch(`/api/models?category=${currentTab}`);
         const models = await response.json();
-        
+
         // Store models in global map
         currentModels = {};
         models.forEach(m => currentModels[m.id] = m);
-        
+
         renderModels(models);
     } catch (err) {
         console.error('Failed to load models:', err);
@@ -108,7 +109,6 @@ function openModal() {
     document.getElementById('modelBaseUrl').value = 'https://api.openai.com/v1';
     document.getElementById('modelSourceUrl').value = '';
     document.getElementById('modelKeyInput').value = '';
-    document.getElementById('modelApiKey').value = '';
     document.getElementById('modelSystemPrompt').value = '';
     document.getElementById('modelAnalysisPersona').value = '';
     document.getElementById('modelReasoning').value = '';
@@ -139,7 +139,7 @@ function editModel(modelId) {
         console.error("Model not found:", modelId);
         return;
     }
-    
+
     document.getElementById('modelModal').style.display = 'flex';
     document.getElementById('modelId').value = model.id;
     document.getElementById('modelCategory').value = model.category;
@@ -150,7 +150,6 @@ function editModel(modelId) {
     document.getElementById('modelProvider').value = model.provider;
     document.getElementById('modelBaseUrl').value = model.base_url;
     document.getElementById('modelSourceUrl').value = model.source_url || '';
-    document.getElementById('modelApiKey').value = model.api_key || '';
 
     // Set existing prompt first
     document.getElementById('modelSystemPrompt').value = model.system_prompt || '';
@@ -199,7 +198,6 @@ function closeModal() {
     document.getElementById('modelName').value = '';
     document.getElementById('modelKeyInput').value = '';
     document.getElementById('modelKeySelect').innerHTML = '<option value="" disabled selected>Select a local model...</option>';
-    document.getElementById('modelApiKey').value = '';
     document.getElementById('modelSystemPrompt').value = '';
     document.getElementById('modelAnalysisPersona').value = '';
     document.getElementById('modelTemperature').value = '0.7';
@@ -217,10 +215,30 @@ function toggleJudgeFields() {
     });
 }
 
+/**
+ * Renders the provider key status notice into `el`.
+ * Shows ✅ if configured, or ⚠️ with a link to Settings if not.
+ */
+function renderProviderKeyStatus(el, provider, status) {
+    if (!el) return;
+    if (!status || !status.has_key) {
+        el.innerHTML = `
+            <span style="color:#f6ad55; font-weight:600;">⚠ No API key configured for this provider.</span>
+            <a href="/config#group-model-providers" target="_blank"
+               style="color:var(--primary); margin-left:6px; font-size:12px; text-decoration:underline;">
+               Set up in Settings →
+            </a>`;
+    } else {
+        el.innerHTML = `<span style="color:#48bb78; font-weight:600;">✅ API key configured</span>
+            <span style="color:var(--muted); font-size:11px; margin-left:6px;">${status.masked_key || ''}</span>`;
+    }
+}
+
 async function updateProviderDefaults() {
     const provider = document.getElementById('modelProvider').value;
     const baseUrlInput = document.getElementById('modelBaseUrl');
     const linkContainer = document.getElementById('providerLink');
+    const keyStatusEl = document.getElementById('providerKeyStatus');
 
     const keyInput = document.getElementById('modelKeyInput');
     const keySelect = document.getElementById('modelKeySelect');
@@ -230,6 +248,29 @@ async function updateProviderDefaults() {
     keyInput.style.display = 'block';
     keySelect.style.display = 'none';
     keyHelp.style.display = 'none';
+
+    // Fetch & update provider key status (only for managed providers)
+    const managedProviders = ['openai', 'openrouter'];
+    if (keyStatusEl) {
+        if (managedProviders.includes(provider)) {
+            // Use cache if available, otherwise fetch
+            if (providerKeyCache[provider] !== undefined) {
+                renderProviderKeyStatus(keyStatusEl, provider, providerKeyCache[provider]);
+            } else {
+                keyStatusEl.innerHTML = '<span style="color:var(--muted);">Checking key...</span>';
+                try {
+                    const res = await fetch('/api/provider-keys');
+                    if (res.ok) {
+                        const list = await res.json();
+                        list.forEach(p => { providerKeyCache[p.provider] = p; });
+                    }
+                } catch (e) { /* silent */ }
+                renderProviderKeyStatus(keyStatusEl, provider, providerKeyCache[provider]);
+            }
+        } else {
+            keyStatusEl.innerHTML = ''; // No status for ollama/custom
+        }
+    }
 
     switch (provider) {
         case 'openai':
@@ -305,14 +346,14 @@ async function saveModel() {
     }
 
     const model = {
-        id: id || undefined, // Include ID if editing
+        id: id || undefined,
         name: document.getElementById('modelName').value,
         category: currentTab,
         provider: provider,
         base_url: document.getElementById('modelBaseUrl').value,
         source_url: document.getElementById('modelSourceUrl').value || null,
         model_key: modelKey,
-        api_key: document.getElementById('modelApiKey').value || null,
+        api_key: null, // API key is managed at provider level in Settings
         system_prompt: document.getElementById('modelSystemPrompt').value || null,
         analysis_persona: document.getElementById('modelAnalysisPersona').value || null,
         reasoning_effort: document.getElementById('modelReasoning').value || null,
@@ -407,18 +448,18 @@ function renderBenches(benches) {
     let html = '';
     benches.forEach(b => {
         let modeLabel = '🎲 Random';
-        
+
         if (b.mode === 'all') modeLabel = '📋 All';
         if (b.mode === 'jury') modeLabel = '⚖️ Jury';
-        
+
         const judgeCount = (b.judge_model_ids || []).length;
-        
+
         // Resolve judge names
         const judgeNames = (b.judge_model_ids || []).map(id => {
             const m = currentModels[id];
             return m ? m.name : 'Unknown';
         });
-        
+
         // Resolve foreman
         let foremanName = null;
         if (b.mode === 'jury' && b.foreman_model_id) {
@@ -445,9 +486,9 @@ function renderBenches(benches) {
                 <div style="margin-top:12px; border-top:1px solid var(--border); padding-top:8px;">
                     <div style="font-size:12px; color:var(--muted); margin-bottom:4px;">Judges:</div>
                     <div style="display:flex; flex-wrap:wrap; gap:6px;">
-                        ${judgeNames.map(name => 
-                            `<span style="background:#1a202c; color:var(--text); padding:2px 8px; border-radius:4px; font-size:12px; border:1px solid var(--border);">${name}</span>`
-                        ).join('')}
+                        ${judgeNames.map(name =>
+            `<span style="background:#1a202c; color:var(--text); padding:2px 8px; border-radius:4px; font-size:12px; border:1px solid var(--border);">${name}</span>`
+        ).join('')}
                     </div>
                     
                     ${foremanName ? `
@@ -505,7 +546,7 @@ async function openBenchModal(existingBench) {
             opt.textContent = `${m.name} (${m.model_key})`;
             foremanSelect.appendChild(opt);
         });
-        
+
         // Set existing foreman if any
         if (existingBench && existingBench.foreman_model_id) {
             foremanSelect.value = existingBench.foreman_model_id;
@@ -659,10 +700,10 @@ async function runTest(payload, btn) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        
+
         const data = await res.json();
         showTestResult(data);
-        
+
     } catch (err) {
         showTestResult({
             success: false,
@@ -686,7 +727,7 @@ async function testModelFromList(modelId, btn) {
         provider: model.provider,
         base_url: model.base_url,
         model_key: model.model_key,
-        api_key: model.api_key || null
+        api_key: null // Resolved by backend from provider-level key in Settings
     };
 
     await runTest(payload, btn);
@@ -696,7 +737,6 @@ async function testConnection() {
     const provider = document.getElementById('modelProvider').value;
     const baseUrl = document.getElementById('modelBaseUrl').value;
     let modelKey = document.getElementById('modelKeyInput').value;
-    const apiKey = document.getElementById('modelApiKey').value;
 
     // If Ollama and select is visible, use that value
     if (provider === 'ollama' && document.getElementById('modelKeySelect').style.display !== 'none') {
@@ -708,14 +748,14 @@ async function testConnection() {
         return;
     }
 
+    // api_key is omitted — backend will resolve from provider-level key in Settings
     const payload = {
         provider,
         base_url: baseUrl,
         model_key: modelKey,
-        api_key: apiKey || null
+        api_key: null
     };
 
-    // Find the button in the modal
     const btn = document.querySelector('#modelModal button[onclick="testConnection()"]');
     await runTest(payload, btn);
 }
@@ -724,30 +764,30 @@ function showTestResult(result) {
     const modal = document.getElementById('testResultModal');
     const title = document.getElementById('testResultTitle');
     const content = document.getElementById('testResultContent');
-    
+
     modal.style.display = 'flex';
     // Ensure it's on top of the model modal
-    modal.style.zIndex = '1200'; 
-    
+    modal.style.zIndex = '1200';
+
     let html = '';
 
     if (result.success) {
         title.textContent = "✅ Connection Successful";
         title.style.color = "#48bb78"; // Green
-        
+
         html += `<div style="margin-bottom:16px; padding:12px; background:rgba(72, 187, 120, 0.1); border:1px solid #48bb78; border-radius:6px; color:#48bb78;">
             Model is active and responding.
         </div>`;
     } else {
         title.textContent = "❌ Connection Failed";
         title.style.color = "#f56565"; // Red
-        
+
         const errorMsg = result.error || "Unknown error occurred";
         html += `<div style="margin-bottom:16px; padding:12px; background:rgba(245, 101, 101, 0.1); border:1px solid #f56565; border-radius:6px; color:#f56565;">
             <strong>Error:</strong> ${errorMsg}
         </div>`;
     }
-    
+
     if (result.response || result.raw_text) {
         const raw = result.response ? JSON.stringify(result.response, null, 2) : result.raw_text;
         html += `
@@ -755,7 +795,7 @@ function showTestResult(result) {
             <pre style="background:#0e0e14; padding:12px; border-radius:6px; overflow-x:auto; font-size:12px; color:#e2e8f0; border:1px solid var(--border); max-height: 300px;">${escapeHtml(raw)}</pre>
         `;
     }
-    
+
     content.innerHTML = html;
 }
 

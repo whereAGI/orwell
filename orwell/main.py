@@ -21,6 +21,13 @@ import httpx
 
 from .app_config import get_all_configs_grouped, update_config
 from .config import get_db_path
+from .provider_keys import (
+    list_provider_keys,
+    get_provider_key,
+    save_provider_key,
+    delete_provider_key,
+    MANAGED_PROVIDERS,
+)
 import sqlite3
 
 async def verify_model_connection(provider: str, base_url: str, model_key: str, api_key: Optional[str]):
@@ -257,11 +264,57 @@ async def list_models(category: Optional[str] = None):
         print(f"Error fetching models: {e}")
         return []
 
+# ──────────────────────────────────────────────────
+# Provider Key Endpoints
+# ──────────────────────────────────────────────────
+
+@app.get("/api/provider-keys")
+async def get_provider_keys():
+    """Return provider key status (masked, never the raw key)."""
+    return list_provider_keys()
+
+
+class ProviderKeyRequest(BaseModel):
+    api_key: str
+
+
+@app.put("/api/provider-keys/{provider}")
+async def set_provider_key(provider: str, req: ProviderKeyRequest):
+    """Save an API key for a provider."""
+    if provider not in MANAGED_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{provider}' does not support managed API keys."
+        )
+    if not req.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key cannot be empty.")
+    save_provider_key(provider, req.api_key.strip())
+    return {"success": True}
+
+
+@app.delete("/api/provider-keys/{provider}")
+async def remove_provider_key(provider: str):
+    """Delete the stored API key for a provider."""
+    if provider not in MANAGED_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{provider}' does not support managed API keys."
+        )
+    delete_provider_key(provider)
+    return {"success": True}
+
+
+# ──────────────────────────────────────────────────
+# Model Test / CRUD
+# ──────────────────────────────────────────────────
+
 @app.post("/api/models/test")
 async def test_model_connection(req: TestConnectionRequest):
     headers = {"Content-Type": "application/json"}
-    if req.api_key:
-        headers["Authorization"] = f"Bearer {req.api_key}"
+    # Resolve API key: use per-request key first, fall back to provider-level key
+    resolved_key = req.api_key or get_provider_key(req.provider)
+    if resolved_key:
+        headers["Authorization"] = f"Bearer {resolved_key}"
     
     # Payload for a minimal check
     payload = {
@@ -342,8 +395,10 @@ async def test_model_connection(req: TestConnectionRequest):
 
 @app.post("/api/models", response_model=ModelConfig)
 async def create_model(config: ModelConfig):
+    # Resolve API key: fall back to provider-level key when none given per-model
+    resolved_key = config.api_key or get_provider_key(config.provider)
     # Verify connection before creating
-    await verify_model_connection(config.provider, config.base_url, config.model_key, config.api_key)
+    await verify_model_connection(config.provider, config.base_url, config.model_key, resolved_key)
 
     pb = get_pb()
     try:
@@ -381,8 +436,10 @@ async def create_model(config: ModelConfig):
 
 @app.put("/api/models/{model_id}", response_model=ModelConfig)
 async def update_model(model_id: str, config: ModelConfig):
+    # Resolve API key: fall back to provider-level key when none given per-model
+    resolved_key = config.api_key or get_provider_key(config.provider)
     # Verify connection before updating
-    await verify_model_connection(config.provider, config.base_url, config.model_key, config.api_key)
+    await verify_model_connection(config.provider, config.base_url, config.model_key, resolved_key)
 
     pb = get_pb()
     try:

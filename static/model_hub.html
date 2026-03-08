@@ -129,6 +129,7 @@
                     <option value="custom">Custom</option>
                 </select>
                 <div id="providerLink" style="font-size:12px; margin-top:4px;"></div>
+                <div id="providerKeyStatus" style="font-size:12px; margin-top:6px;"></div>
             </div>
             <div class="form-group">
                 <label>Base URL</label>
@@ -136,7 +137,8 @@
             </div>
             <div class="form-group">
                 <label>Source URL (Optional)</label>
-                <input type="text" id="modelSourceUrl" style="width:100%" placeholder="e.g. https://huggingface.co/meta-llama/Llama-3-70b">
+                <input type="text" id="modelSourceUrl" style="width:100%"
+                    placeholder="e.g. https://huggingface.co/meta-llama/Llama-3-70b">
             </div>
             <div class="form-group">
                 <label>Model Key</label>
@@ -148,12 +150,6 @@
                 </select>
                 <div id="modelKeyHelp" style="font-size:12px; color:var(--muted); margin-top:4px; display:none;">
                     Fetching local models...</div>
-            </div>
-            <div class="form-group">
-                <label>API Key (Optional)</label>
-                <input type="password" id="modelApiKey" style="width:100%" placeholder="e.g. sk-...">
-                <div style="font-size:12px; color:var(--muted); margin-top:4px;">Left blank for Ollama or if using
-                    environment variables.</div>
             </div>
 
             <div id="judgeSystemPromptContainer" class="form-group" style="display:none;">
@@ -214,7 +210,8 @@
 
     <!-- Test Result Modal -->
     <div id="testResultModal" class="modal">
-        <div class="card" style="width: 600px; margin: 0; max-height: 80vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border);">
+        <div class="card"
+            style="width: 600px; margin: 0; max-height: 80vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border);">
             <h3 id="testResultTitle" style="margin-top:0; color: var(--text);">Test Result</h3>
             <div id="testResultContent" style="overflow-y: auto; flex: 1; color: var(--text);">
                 <!-- Content injected here -->
@@ -269,13 +266,16 @@
                 <div id="benchModeDesc" style="font-size:12px; color:var(--muted); margin-top:6px;">
                     Random: A random judge scores each response. Low scores (&lt;4) trigger a re-score by another judge.
                 </div>
-                
-                <div id="foremanSelectContainer" style="display:none; margin-top:12px; padding: 10px; background: #0e0e14; border: 1px solid var(--border); border-radius: 6px;">
+
+                <div id="foremanSelectContainer"
+                    style="display:none; margin-top:12px; padding: 10px; background: #0e0e14; border: 1px solid var(--border); border-radius: 6px;">
                     <label style="font-size:14px; font-weight:600;">Jury Foreman</label>
                     <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">
-                        The Foreman synthesizes the final verdict based on the jury's arguments. It can be one of the jurors or an external model.
+                        The Foreman synthesizes the final verdict based on the jury's arguments. It can be one of the
+                        jurors or an external model.
                     </div>
-                    <select id="benchForeman" style="width:100%; padding:6px; background:#0e0e14; color:var(--text); border:1px solid var(--border); border-radius:4px;">
+                    <select id="benchForeman"
+                        style="width:100%; padding:6px; background:#0e0e14; color:var(--text); border:1px solid var(--border); border-radius:4px;">
                         <option value="">Select a foreman...</option>
                     </select>
                 </div>
