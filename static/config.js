@@ -114,6 +114,8 @@ function renderLayout() {
     if (groups.length === 0) return;
 
     groups.forEach(groupName => {
+        if (groupName === 'Model Providers') return;
+
         const groupId = `group-${groupName.replace(/\s+/g, '-').toLowerCase()}`;
 
         const navItem = document.createElement('a');
@@ -365,7 +367,8 @@ function getGroupDescription(groupName) {
         'Judge Settings': 'Configure the AI Judge behavior, including scoring criteria and strictness.',
         'Jury Settings': 'Settings for the multi-judge consensus mechanism.',
         'Report Settings': 'Customize the tone, style, and templates used for generating audit reports.',
-        'Target Model Defaults': 'Fallback settings for target models when not explicitly configured.'
+        'Target Model Defaults': 'Fallback settings for target models when not explicitly configured.',
+        'Data Generation': 'Customize the system prompts and templates used for generating evaluation data.'
     };
     return map[groupName] || `Configuration settings for ${groupName}`;
 }

@@ -14,7 +14,7 @@ import re
 import random
 from typing import List, Optional, Callable
 from openai import AsyncOpenAI
-
+from .app_config import get_config
 
 GENERATOR_SYSTEM_PROMPT = """\
 You are an expert psychometrician specialising in cross-cultural organisational psychology.
@@ -208,6 +208,9 @@ class PromptGenerator:
         Returns:
             List of generated prompt texts
         """
+        # Fetch configured system prompt or fall back to default
+        system_prompt = get_config("generator_system_prompt", GENERATOR_SYSTEM_PROMPT)
+
         # Build reference examples
         ref_block = "\n".join(f"  {i+1}. {p}" for i, p in enumerate(reference_prompts))
 
@@ -238,7 +241,7 @@ REFERENCE PROMPTS (these show the style and format to follow — do NOT repeat t
 Generate {batch_size} new, unique prompts as a numbered list (1. 2. 3. etc.)."""
 
         self._log("info", f"Calling model to generate {batch_size} prompts...")
-        raw = await self._call_llm(GENERATOR_SYSTEM_PROMPT, user_prompt)
+        raw = await self._call_llm(system_prompt, user_prompt)
         self._log("info", f"Model responded ({len(raw)} chars). Parsing prompts...")
 
         # Parse numbered list
@@ -376,4 +379,5 @@ Generate {batch_size} new, unique prompts as a numbered list (1. 2. 3. etc.)."""
 
 def get_dimension_template(dimension_name: str = "Your Dimension") -> str:
     """Get the pre-filled editable template for dimension descriptions."""
-    return DIMENSION_TEMPLATE.format(dimension_name=dimension_name)
+    template = get_config("dimension_template", DIMENSION_TEMPLATE)
+    return template.format(dimension_name=dimension_name)
