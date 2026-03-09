@@ -17,9 +17,10 @@ function renderNavbar(activePage) {
         'prompt_studio': 'prompt studio',
         'model_hub': 'model hub',
         'config': 'config',
-        'docs': 'docs'
+        'docs': 'docs',
+        'generate': 'generate'
     };
-    
+
     const pageTitle = titleMap[activePage] || 'studio';
 
     // Define all available links
@@ -28,6 +29,7 @@ function renderNavbar(activePage) {
         { id: 'data_studio', href: '/studio', text: 'Data Studio' },
         { id: 'prompt_studio', href: '/prompt-studio', text: 'Prompt Studio' },
         { id: 'model_hub', href: '/model-hub', text: 'Model Hub' },
+        { id: 'generate', href: '/generate', text: 'Generate' },
         { id: 'config', href: '/config', text: 'Config' },
         { id: 'docs', href: '/docs', text: 'Docs' }
     ];
@@ -77,7 +79,7 @@ function attachNavListeners() {
         });
     }
     */
-    
+
     // 3. Handle Criteria Link
     const criteriaLink = document.getElementById('criteriaLink');
     if (criteriaLink) {
@@ -87,10 +89,10 @@ function attachNavListeners() {
         // If we are ALREADY on playground, we should prevent default and open modal (if logic exists).
         // But the navbar is shared. The playground specific logic (opening modal) might need to be hooked up.
         // However, the prompt studio link just goes to "/".
-        
+
         // Let's keep it simple: if on playground, try to open modal. If not, go to /.
         if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
-             criteriaLink.addEventListener('click', (e) => {
+            criteriaLink.addEventListener('click', (e) => {
                 e.preventDefault();
                 // Check if the modal logic exists (it's in dashboard.js usually)
                 // We can dispatch a custom event or check for the modal element directly

@@ -11,12 +11,13 @@ from typing import List, Optional
 import os
 import re
 
-from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig, JudgeBench
+from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig, JudgeBench, GeneratePromptsRequest
 from .engine import AuditEngine
 from .llm_globe import LLMGlobeModule
 from .judge import DEFAULT_JUDGE_SYSTEM_PROMPT
 from .pb_client import get_pb, PB_URL
-from .log_store import get_logs, subscribe_logs
+from .log_store import get_logs, subscribe_logs, add_log
+from .prompt_generator import PromptGenerator, get_dimension_template
 import httpx
 
 from .app_config import get_all_configs_grouped, update_config
@@ -162,6 +163,10 @@ async def config_page():
 @app.get("/docs")
 async def docs_page():
     return FileResponse("static/docs.html")
+
+@app.get("/generate")
+async def generate_page():
+    return FileResponse("static/prompt_gen.html")
 
 @app.get("/api/docs/list")
 async def list_docs():
@@ -1049,12 +1054,12 @@ def get_dimensions(user=Depends(get_optional_current_user)):
         params = []
         
         if user:
-            # type='system' OR (type='custom' AND user=?)
-            query += " AND (type = 'system' OR (type = 'custom' AND user = ?))"
+            # type='system' OR (type='custom' AND (user=? OR user IS NULL OR user=''))
+            query += " AND (type = 'system' OR (type = 'custom' AND (user = ? OR user IS NULL OR user = '')))"
             params.append(user.id)
         else:
-            # only system prompts
-            query += " AND type = 'system'"
+            # type='system' OR (type='custom' AND (user IS NULL OR user=''))
+            query += " AND (type = 'system' OR (type = 'custom' AND (user IS NULL OR user = '')))"
             
         query += " ORDER BY dimension"
         
@@ -1188,6 +1193,7 @@ async def list_prompts(
     dimension: Optional[str] = None,
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
+    sort: str = Query("-created", regex="^-?created$"),
     user=Depends(get_optional_current_user)
 ):
     pb = get_pb()
@@ -1198,14 +1204,17 @@ async def list_prompts(
     if source == "system":
         filters.append('type = "system"')
     elif source == "custom":
-        if not user:
-             raise HTTPException(status_code=401, detail="Authentication required for custom prompts")
-        filters.append(f'type = "custom" && user = "{user.id}"')
+        if user:
+            # Show user's prompts OR prompts with no user (anonymous/legacy)
+            filters.append(f'type = "custom" && (user = "{user.id}" || user = "")')
+        else:
+            # Show only anonymous custom prompts if not logged in
+            filters.append('type = "custom" && user = ""')
     else: # all
         if user:
-            filters.append(f'(type = "system" || (type = "custom" && user = "{user.id}"))')
+            filters.append(f'(type = "system" || (type = "custom" && (user = "{user.id}" || user = "")))')
         else:
-            filters.append('type = "system"')
+            filters.append('(type = "system" || (type = "custom" && user = ""))')
 
     if search:
         # Escape quotes in search term to prevent injection/errors
@@ -1226,7 +1235,7 @@ async def list_prompts(
     try:
         result = pb.collection("custom_prompts").get_list(page, per_page, {
             "filter": filter_expr,
-            "sort": "-created"
+            "sort": sort
         })
         
         items = []
@@ -1429,6 +1438,229 @@ async def delete_system_prompt(id: str, user=Depends(get_current_user)):
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ──────────────────────────────────────────────────
+# Prompt Generation Endpoints
+# ──────────────────────────────────────────────────
+
+# In-memory job tracking for prompt generation (short-lived, no persistence needed)
+_generation_jobs: dict = {}
+
+
+async def _run_prompt_generation(job_id: str, req: GeneratePromptsRequest, model_record):
+    """Background task for iterative prompt generation. Stores prompts in job for human review — does NOT auto-save."""
+    job = _generation_jobs[job_id]
+
+    try:
+        job["status"] = "running"
+        job["model_name"] = model_record.name  # Store model name for saving later
+        add_log(job_id, "info", f"Starting prompt generation for dimension: {req.dimension_name}")
+        add_log(job_id, "info", f"Target: {req.total_count} prompts using model: {model_record.name}")
+
+        # Resolve API key (same as engine / judge_client pattern)
+        provider = getattr(model_record, 'provider', '') or ''
+        resolved_key = model_record.api_key or get_provider_key(provider)
+        max_reasoning_tokens = getattr(model_record, 'max_reasoning_tokens', None)
+
+        generator = PromptGenerator(
+            model=model_record.model_key,
+            api_key=resolved_key,
+            base_url=model_record.base_url,
+            provider=provider,
+            max_reasoning_tokens=max_reasoning_tokens,
+            log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
+        )
+
+        # Load reference prompts from existing GLOBE data
+        add_log(job_id, "info", "Loading reference prompts from GLOBE data...")
+        globe = LLMGlobeModule()
+        await globe.load()
+        
+        # If existing dimension, use ONLY prompts from that dimension as reference
+        target_dims = [req.dimension_name] if not req.is_new_dimension else None
+        
+        all_globe_prompts = globe.generate_prompts(language="en", sample_size=200, dimensions=target_dims)
+        reference_pool = [p["text"] for p in all_globe_prompts]
+        
+        if not reference_pool and target_dims:
+            # Fallback if no prompts found for existing dimension
+            add_log(job_id, "warning", f"No reference prompts found for dimension '{req.dimension_name}'. Using general pool.")
+            all_globe_prompts = globe.generate_prompts(language="en", sample_size=200)
+            reference_pool = [p["text"] for p in all_globe_prompts]
+            
+        add_log(job_id, "success", f"Loaded {len(reference_pool)} reference prompts")
+
+        # Progress callback
+        def on_progress(generated, total):
+            job["generated"] = generated
+            job["progress"] = generated / total if total > 0 else 0
+
+        # Generate prompts iteratively — NO auto-save; store for human review
+        add_log(job_id, "info", f"Starting iterative generation ({req.total_count} prompts in batches of 20)...")
+        generated_prompts = await generator.generate_all(
+            dimension_name=req.dimension_name,
+            dimension_description=req.dimension_description,
+            total_count=req.total_count,
+            reference_pool=reference_pool,
+            batch_size=20,
+            progress_callback=on_progress,
+        )
+
+        # Store prompts in job for the review step — user approves before saving
+        job["prompts"] = generated_prompts
+        job["generated"] = len(generated_prompts)
+        job["progress"] = 1.0
+        job["status"] = "completed"
+        job["errors"] = []
+        add_log(job_id, "success", f"✓ Generation complete: {len(generated_prompts)} prompts ready for review")
+        add_log(job_id, "info", "Review the prompts below and click 'Save Approved Prompts' to add them to your dataset.")
+
+    except Exception as e:
+        job["status"] = "failed"
+        job["errors"] = [str(e)]
+        add_log(job_id, "error", f"Prompt generation failed: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+@app.post("/api/data/generate-prompts")
+async def generate_prompts(req: GeneratePromptsRequest, background_tasks: BackgroundTasks):
+    """Start AI-powered prompt generation for a dimension."""
+    # Validate count
+    if req.total_count < 1 or req.total_count > 500:
+        raise HTTPException(status_code=400, detail="Prompt count must be between 1 and 500")
+
+    if not req.dimension_name.strip():
+        raise HTTPException(status_code=400, detail="Dimension name is required")
+
+    if not req.dimension_description.strip():
+        raise HTTPException(status_code=400, detail="Dimension description is required")
+
+    # Validate model exists and is judge category
+    pb = get_pb()
+    try:
+        model_record = pb.collection("models").get_one(req.generator_model_id)
+        if model_record.category != "judge":
+            raise HTTPException(status_code=400, detail="Selected model must be a judge-category model")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail=f"Model with ID {req.generator_model_id} not found")
+
+    # Create job
+    job_id = str(uuid.uuid4())
+    _generation_jobs[job_id] = {
+        "status": "pending",
+        "generated": 0,
+        "total": req.total_count,
+        "progress": 0.0,
+        "errors": [],
+        "dimension_name": req.dimension_name,
+    }
+
+    # Launch background task
+    background_tasks.add_task(_run_prompt_generation, job_id, req, model_record)
+
+    return {"job_id": job_id, "status": "pending", "total": req.total_count}
+
+
+@app.get("/api/data/generate-prompts/{job_id}/status")
+async def get_generation_status(job_id: str):
+    """Poll for prompt generation progress."""
+    job = _generation_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Generation job not found")
+
+    return {
+        "status": job["status"],
+        "generated": job["generated"],
+        "total": job["total"],
+        "progress": job["progress"],
+        "errors": job["errors"],
+        "dimension_name": job.get("dimension_name", ""),
+        # Include generated prompts once complete (for review step)
+        "prompts": job.get("prompts", []) if job["status"] == "completed" else [],
+    }
+
+
+@app.post("/api/data/generate-prompts/{job_id}/save")
+async def save_generated_prompts(
+    job_id: str,
+    body: dict,
+    user=Depends(get_optional_current_user)
+):
+    """
+    Save user-approved prompts from a completed generation job.
+    Body: {"approved_prompts": ["text1", "text2", ...], "dimension_name": "...", "language": "en"}
+    """
+    job = _generation_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Generation job not found")
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Generation job is not yet complete")
+
+    approved_prompts = body.get("approved_prompts", [])
+    dimension_name = body.get("dimension_name", job.get("dimension_name", ""))
+    model_name = job.get("model_name", "")
+    language = body.get("language", "en")
+
+    if not approved_prompts:
+        raise HTTPException(status_code=400, detail="No prompts to save")
+
+    pb = get_pb()
+    saved_count = 0
+    errors = []
+
+    from datetime import datetime, timezone
+    
+    for i, prompt_text in enumerate(approved_prompts):
+        if not prompt_text or not prompt_text.strip():
+            continue
+        try:
+            # Generate current time for each prompt to ensure unique timestamps for sorting
+            created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + "Z"
+            
+            record_data = {
+                "dimension": dimension_name,
+                "text": prompt_text.strip(),
+                "language": language,
+                "type": "custom",
+                "model": model_name,
+                "created": created_at,
+            }
+            # Associate with user if authenticated
+            if user:
+                record_data["user"] = user.id
+            pb.collection("custom_prompts").create(record_data)
+            saved_count += 1
+        except Exception as e:
+            errors.append(f"Prompt {i+1}: {str(e)}")
+
+    return {
+        "saved": saved_count,
+        "errors": errors,
+        "dimension_name": dimension_name,
+    }
+
+
+@app.get("/api/data/generate-prompts/{job_id}/stream")
+async def stream_generation_logs(job_id: str):
+    """SSE stream for prompt generation logs (same pattern as audit logs)."""
+    async def event_generator():
+        try:
+            async for log in subscribe_logs(job_id):
+                yield f"data: {json.dumps(log)}\n\n"
+        except Exception as e:
+            print(f"Generation stream error for job {job_id}: {e}")
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@app.get("/api/data/dimension-template")
+async def get_dim_template(name: str = Query("Your Dimension")):
+    """Return a pre-filled editable template for dimension descriptions."""
+    return {"template": get_dimension_template(name)}
+
 
 @app.get("/health")
 async def health_check():

@@ -18,6 +18,107 @@
             gap: 12px;
             margin-bottom: 16px;
         }
+
+        /* Generation Modal Styles */
+        .gen-mode-toggle {
+            display: flex;
+            gap: 0;
+            margin-bottom: 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .gen-mode-toggle button {
+            flex: 1;
+            border: none;
+            border-radius: 0;
+            padding: 10px;
+            font-size: 13px;
+            background: #0e0e14;
+            color: var(--muted);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .gen-mode-toggle button.active {
+            background: var(--primary);
+            color: #fff;
+        }
+
+        .info-tooltip {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--border);
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: bold;
+            cursor: help;
+            position: relative;
+            margin-left: 6px;
+            flex-shrink: 0;
+        }
+
+        .info-tooltip .info-content {
+            display: none;
+            position: absolute;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            width: 320px;
+            background: #1a1a23;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 12px;
+            font-weight: normal;
+            color: var(--text);
+            line-height: 1.5;
+            z-index: 100;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .info-tooltip:hover .info-content {
+            display: block;
+        }
+
+        .gen-terminal {
+            background: #0d0d10;
+            border: 1px solid #333;
+            border-radius: 6px;
+            max-height: 250px;
+            overflow-y: auto;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #e5e7eb;
+            padding: 12px;
+            margin-top: 12px;
+        }
+
+        .gen-progress-bar {
+            width: 100%;
+            background: #0f1320;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+
+        .gen-progress-fill {
+            width: 0%;
+            background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%);
+            color: #fff;
+            text-align: center;
+            padding: 8px 0;
+            font-size: 13px;
+            font-weight: 600;
+            transition: width 0.3s ease;
+        }
     </style>
     <script src="https://unpkg.com/pocketbase@0.21.5/dist/pocketbase.umd.js"></script>
     <script src="/config.js"></script>
@@ -40,14 +141,21 @@
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
                 <h2 style="margin:0">Manage Prompts</h2>
                 <div style="display:flex; gap:8px;">
-                    <button id="bulkDeleteBtn" class="danger" style="width: auto; display: none;" onclick="bulkDelete()">Delete Selected</button>
-                    <input type="file" id="csvUpload" accept=".csv" style="display:none" onchange="handleFileUpload(this)">
-                    <button onclick="document.getElementById('csvUpload').click()" style="width: auto;" class="secondary">Import CSV</button>
+                    <button id="bulkDeleteBtn" class="danger" style="width: auto; display: none;"
+                        onclick="bulkDelete()">Delete Selected</button>
+                    <input type="file" id="csvUpload" accept=".csv" style="display:none"
+                        onchange="handleFileUpload(this)">
+                    <button onclick="document.getElementById('csvUpload').click()" style="width: auto;"
+                        class="secondary">Import CSV</button>
+                    <button onclick="window.location.href='/generate'"
+                        style="width: auto; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-color: transparent;">⚡
+                        Generate Prompts</button>
                     <button onclick="openAddModal()" style="width: auto;">+ Add New Prompt</button>
                 </div>
             </div>
 
-            <div class="filters" style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+            <div class="filters"
+                style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
                 <div style="display:flex; gap:12px; align-items: center;">
                     <input type="text" id="search" placeholder="Search prompts..." style="width: 200px;">
                     <select id="dimFilter" style="width: 150px;">
@@ -58,7 +166,8 @@
                         <option value="custom">Custom Only</option>
                         <option value="system">System Only</option>
                     </select>
-                    <div style="display:flex; gap:8px; align-items:center; border-left: 1px solid var(--border); padding-left: 12px;">
+                    <div
+                        style="display:flex; gap:8px; align-items:center; border-left: 1px solid var(--border); padding-left: 12px;">
                         <label style="font-size:12px; color:var(--muted)">Date:</label>
                         <input type="date" id="fromDate" style="width: 130px; color-scheme: dark;" title="From Date">
                         <span style="color:var(--muted)">-</span>
@@ -76,10 +185,15 @@
                 <table style="table-layout: fixed; width: 100%;">
                     <thead>
                         <tr>
-                            <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()"></th>
+                            <th style="width: 40px;"><input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+                            </th>
                             <th style="width: 60px;">#</th>
-                            <th style="width: 150px; resize: horizontal; overflow: hidden;">Created At</th>
+                            <th style="width: 150px; resize: horizontal; overflow: hidden; cursor: pointer; user-select: none;"
+                                onclick="toggleDateSort()" title="Click to sort by date">
+                                <span>Created At</span> <span id="sortCreatedBtn" style="font-size:11px;">▼</span>
+                            </th>
                             <th style="width: 150px; resize: horizontal; overflow: hidden;">Dimension</th>
+                            <th id="thModel" style="width: 120px; resize: horizontal; overflow: hidden; display: none;">Model</th>
                             <th style="resize: horizontal; overflow: hidden;">Prompt Text</th>
                             <th style="width: 80px; resize: horizontal; overflow: hidden;">Lang</th>
                             <th style="width: 100px; resize: horizontal; overflow: hidden;">Source</th>
@@ -175,10 +289,130 @@
         <div class="card" style="width: 500px; margin: 0;">
             <h3>Import Result</h3>
             <p id="importMessage"></p>
-            <div id="importErrors" style="margin-top: 12px; max-height: 150px; overflow-y: auto; background: #0e0e14; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; display: none;">
+            <div id="importErrors"
+                style="margin-top: 12px; max-height: 150px; overflow-y: auto; background: #0e0e14; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 12px; display: none;">
             </div>
             <div style="display:flex;justify-content:flex-end;margin-top:16px;">
                 <button onclick="closeImportModal()">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generation Modal -->
+    <div id="generateModal" class="modal">
+        <div class="card" style="width: 600px; margin: 0; max-height: 90vh; overflow-y: auto;">
+            <h3 style="margin-top:0;">⚡ Generate Prompts</h3>
+
+            <!-- Mode Toggle -->
+            <div class="gen-mode-toggle">
+                <button id="genModeNew" class="active" onclick="toggleDimensionMode('new')">New Dimension</button>
+                <button id="genModeExisting" onclick="toggleDimensionMode('existing')">Existing Dimension</button>
+            </div>
+
+            <!-- New Dimension Fields -->
+            <div id="genNewFields">
+                <div style="margin-bottom:12px;">
+                    <label style="display:flex;align-items:center;color:var(--muted);font-size:12px;margin-bottom:4px;">
+                        Dimension Name
+                        <span class="info-tooltip">ℹ
+                            <span class="info-content">
+                                <strong>What is a dimension?</strong><br>
+                                A dimension is a cultural or behavioral trait used to evaluate how an AI model responds.
+                                Each dimension has two poles — for example, "Performance Orientation" ranges from
+                                valuing
+                                relationships &amp; harmony (low) to valuing results &amp; competition (high).<br><br>
+                                <strong>How to define one:</strong><br>
+                                Define what high and low scores look like for your dimension. Think about contrasting
+                                societal or organizational values, behaviors, and attitudes.
+                            </span>
+                        </span>
+                    </label>
+                    <input type="text" id="genDimName"
+                        placeholder="e.g. Environmental Consciousness, Digital Literacy Orientation..."
+                        style="width:100%">
+                </div>
+                <div style="margin-bottom:12px;">
+                    <label style="display:flex;align-items:center;color:var(--muted);font-size:12px;margin-bottom:4px;">
+                        Dimension Description (Rubric)
+                        <span class="info-tooltip">ℹ
+                            <span class="info-content">
+                                Describe the characteristics of societies/organizations that score high vs. low on this
+                                dimension.
+                                This template is pre-filled — <strong>edit it</strong> to match your dimension.
+                                The model uses this to generate prompts that test for these traits.
+                            </span>
+                        </span>
+                    </label>
+                    <textarea id="genDimDesc" rows="12" placeholder="Loading template..."
+                        style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);font-family:inherit;font-size:13px;line-height:1.5;"></textarea>
+                </div>
+            </div>
+
+            <!-- Existing Dimension Fields -->
+            <div id="genExistingFields" style="display:none;">
+                <div style="margin-bottom:12px;">
+                    <label style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Select
+                        Dimension</label>
+                    <select id="genExistingDim" style="width:100%">
+                        <option value="" disabled selected>Loading dimensions...</option>
+                    </select>
+                    <p style="font-size:12px;color:var(--muted);margin-top:6px;">
+                        Generate fresh prompts for an existing dimension using its established rubric.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Common Fields -->
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Number of
+                        Prompts</label>
+                    <input type="number" id="genCount" value="20" min="1" max="500" style="width:100%">
+                    <span style="font-size:11px;color:var(--muted);">1–500 prompts</span>
+                </div>
+                <div>
+                    <label style="display:block;color:var(--muted);font-size:12px;margin-bottom:4px;">Generator
+                        Model</label>
+                    <select id="genModelSelect" style="width:100%">
+                        <option value="" disabled selected>Loading models...</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:16px;">
+                <button onclick="startGeneration()"
+                    style="background: linear-gradient(135deg, #6366f1, #8b5cf6); border-color: transparent;">Generate</button>
+                <button class="secondary" onclick="closeGenerateModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generation Progress Modal -->
+    <div id="genProgressModal" class="modal">
+        <div class="card" style="width: 650px; margin: 0; max-height: 90vh; overflow-y: auto;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <h3 style="margin:0;">Generating Prompts</h3>
+                <span id="genProgressStatus" style="font-size:12px;color:var(--muted);">Starting...</span>
+            </div>
+            <div style="margin-top:8px;font-size:13px;color:var(--muted);">
+                Dimension: <strong id="genProgressDimName" style="color:var(--text);">—</strong>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="gen-progress-bar">
+                <div id="genProgressFill" class="gen-progress-fill">0%</div>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px;">
+                <span id="genProgressText">Generated 0 / 0 prompts</span>
+            </div>
+
+            <!-- Terminal Log -->
+            <div id="genTerminal" class="gen-terminal">
+                <div style="color:#666;font-style:italic;">Waiting for logs...</div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+                <button id="genDoneBtn" class="secondary" onclick="closeProgressModal()" disabled>Close</button>
             </div>
         </div>
     </div>

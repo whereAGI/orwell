@@ -51,6 +51,13 @@ class AuditRequest(BaseModel):
     reasoning_effort: Optional[str] = None
     max_reasoning_tokens: Optional[int] = None
 
+class GeneratePromptsRequest(BaseModel):
+    dimension_name: str
+    dimension_description: str  # Rubric-style characteristics (high/low)
+    total_count: int            # 1-500
+    generator_model_id: str
+    is_new_dimension: bool = True
+
 class JobResponse(BaseModel):
     job_id: str
     name: Optional[str] = None

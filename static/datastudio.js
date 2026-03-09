@@ -1,6 +1,7 @@
 let allPrompts = [];
 let deleteTargetId = null;
 let editTargetId = null;
+let currentSort = '-created'; // Default: newest first
 
 // Wrap fetch to include token
 const originalFetch = window.fetch;
@@ -28,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => loadPrompts(1), 300);
     });
-    
+
     document.getElementById('dimFilter').addEventListener('change', () => loadPrompts(1));
     document.getElementById('sourceFilter').addEventListener('change', () => loadPrompts(1));
     document.getElementById('fromDate').addEventListener('change', () => loadPrompts(1));
@@ -65,13 +66,13 @@ async function loadPrompts(page = 1) {
         const dimension = document.getElementById('dimFilter').value;
         const fromDate = document.getElementById('fromDate').value;
         const toDate = document.getElementById('toDate').value;
-        
-        let url = `/api/data/prompts?page=${page}&per_page=${perPage}&source=${source}`;
+
+        let url = `/api/data/prompts?page=${page}&per_page=${perPage}&source=${source}&sort=${currentSort}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
         if (dimension) url += `&dimension=${encodeURIComponent(dimension)}`;
         if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
         if (toDate) url += `&to_date=${encodeURIComponent(toDate)}`;
-        
+
         const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to load prompts');
         const data = await res.json();
@@ -101,9 +102,9 @@ function renderPagination() {
     if (!container) return; // Should exist
 
     document.getElementById('pageInfo').textContent = `Page ${currentPage} of ${totalPages} (Total: ${totalItems})`;
-    
+
     container.innerHTML = '';
-    
+
     // Helper to create button
     const createBtn = (text, page, active = false, disabled = false) => {
         const btn = document.createElement('button');
@@ -139,17 +140,17 @@ function renderPagination() {
     } else {
         pagesToShow.push(1);
         if (currentPage > 3) pagesToShow.push('...');
-        
+
         let start = Math.max(2, currentPage - 1);
         let end = Math.min(totalPages - 1, currentPage + 1);
-        
+
         if (currentPage <= 3) { end = 4; }
         if (currentPage >= totalPages - 2) { start = totalPages - 3; }
-        
+
         for (let i = start; i <= end; i++) {
             if (i > 1 && i < totalPages) pagesToShow.push(i);
         }
-        
+
         if (currentPage < totalPages - 2) pagesToShow.push('...');
         pagesToShow.push(totalPages);
     }
@@ -191,17 +192,17 @@ function updateBulkDeleteState() {
 async function bulkDelete() {
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
     const ids = Array.from(checkboxes).map(cb => cb.value);
-    
+
     if (ids.length === 0) return;
-    
+
     // Use the custom modal for bulk delete too
     deleteTargetId = ids; // Store array for bulk delete logic
     document.getElementById('deleteModal').classList.add('active');
-    
+
     // Update message
     const msg = document.querySelector('#deleteModal p');
     if (msg) msg.textContent = `Are you sure you want to delete ${ids.length} prompts? This action cannot be undone.`;
-    
+
     document.getElementById('confirmDeleteBtn').onclick = () => performBulkDelete(ids);
 }
 
@@ -212,7 +213,7 @@ async function performBulkDelete(ids) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(ids)
         });
-        
+
         if (res.ok) {
             loadPrompts(currentPage);
             const selectAll = document.getElementById('selectAll');
@@ -231,11 +232,17 @@ async function performBulkDelete(ids) {
 function renderTable() {
     const tbody = document.getElementById('promptTable');
     tbody.innerHTML = '';
-    
+
     // Reset select all
     const selectAll = document.getElementById('selectAll');
     if (selectAll) selectAll.checked = false;
     updateBulkDeleteState();
+
+    // Check filter to toggle Model column
+    const sourceFilter = document.getElementById('sourceFilter').value;
+    const showModel = sourceFilter === 'custom';
+    const thModel = document.getElementById('thModel');
+    if (thModel) thModel.style.display = showModel ? 'table-cell' : 'none';
 
     // Data is already filtered by server
     allPrompts.forEach((p, index) => {
@@ -244,9 +251,24 @@ function renderTable() {
 
         // Row Index (Global)
         const globalIndex = (currentPage - 1) * perPage + index + 1;
-        
+
         // Format Date
-        const dateStr = p.created_at ? new Date(p.created_at).toLocaleString() : '-';
+        let dateStr = '-';
+        if (p.created_at) {
+            let utcStr = p.created_at;
+            // Ensure ISO 8601 format (replace space with T, append Z if missing)
+            if (utcStr.includes(' ') && !utcStr.includes('T')) {
+                utcStr = utcStr.replace(' ', 'T');
+            }
+            if (!utcStr.endsWith('Z')) {
+                utcStr += 'Z';
+            }
+            try {
+                dateStr = new Date(utcStr).toLocaleString();
+            } catch (e) {
+                dateStr = p.created_at; // Fallback
+            }
+        }
 
         tr.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -257,6 +279,7 @@ function renderTable() {
             <td class="px-6 py-4 text-sm text-gray-900">
                 <div class="line-clamp-2" title="${p.dimension}">${p.dimension}</div>
             </td>
+            ${showModel ? `<td class="px-6 py-4 text-sm text-gray-500">${p.model || '-'}</td>` : ''}
             <td class="px-6 py-4 text-sm text-gray-900">
                 <div class="line-clamp-2" title="${p.text}">${p.text}</div>
             </td>
@@ -293,12 +316,12 @@ function closeAddModal() {
 function openEditModal(id) {
     const prompt = allPrompts.find(p => p.id === id);
     if (!prompt) return;
-    
+
     editTargetId = id;
     document.getElementById('editDimension').value = prompt.dimension;
     document.getElementById('editText').value = prompt.text;
     document.getElementById('editLanguage').value = prompt.language || 'en';
-    
+
     document.getElementById('editModal').classList.add('active');
 }
 
@@ -337,23 +360,23 @@ async function submitNewPrompt() {
 
 async function submitEditPrompt() {
     if (!editTargetId) return;
-    
+
     const dim = document.getElementById('editDimension').value.trim();
     const text = document.getElementById('editText').value.trim();
     const lang = document.getElementById('editLanguage').value.trim();
-    
+
     if (!dim || !text) {
         alert("Dimension and Text are required");
         return;
     }
-    
+
     try {
         const res = await fetch(`/api/data/prompts/${editTargetId}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ dimension: dim, text: text, language: lang })
         });
-        
+
         if (res.ok) {
             closeEditModal();
             loadPrompts(currentPage);
@@ -370,11 +393,11 @@ async function submitEditPrompt() {
 function openDeleteModal(id) {
     deleteTargetId = id;
     document.getElementById('deleteModal').classList.add('active');
-    
+
     // Reset message for single delete
     const msg = document.querySelector('#deleteModal p');
     if (msg) msg.textContent = "Are you sure you want to delete this prompt? This action cannot be undone.";
-    
+
     document.getElementById('confirmDeleteBtn').onclick = () => deletePrompt(id);
 }
 
@@ -417,7 +440,7 @@ async function handleFileUpload(input) {
             headers: {
                 // Do NOT set Content-Type header when sending FormData, 
                 // the browser sets it automatically with the boundary
-                'Authorization': `Bearer ${pb.authStore.token}` 
+                'Authorization': `Bearer ${pb.authStore.token}`
             },
             body: formData
         });
@@ -425,20 +448,20 @@ async function handleFileUpload(input) {
         if (res.ok) {
             const result = await res.json();
             let msg = `Successfully imported ${result.imported} prompts.`;
-            
+
             // Use custom modal
             document.getElementById('importMessage').textContent = msg;
             const errorDiv = document.getElementById('importErrors');
-            
+
             if (result.errors && result.errors.length > 0) {
                 errorDiv.style.display = 'block';
-                errorDiv.innerHTML = `<div style="color:var(--danger);margin-bottom:4px;">${result.errors.length} errors occurred:</div>` + 
+                errorDiv.innerHTML = `<div style="color:var(--danger);margin-bottom:4px;">${result.errors.length} errors occurred:</div>` +
                     result.errors.join('<br>');
             } else {
                 errorDiv.style.display = 'none';
                 errorDiv.innerHTML = '';
             }
-            
+
             document.getElementById('importModal').classList.add('active');
             loadPrompts(1);
         } else {
@@ -459,4 +482,347 @@ async function handleFileUpload(input) {
 
 function closeImportModal() {
     document.getElementById('importModal').classList.remove('active');
+}
+
+// Sortable Created At column
+function toggleDateSort() {
+    currentSort = currentSort === '-created' ? 'created' : '-created';
+    const btn = document.getElementById('sortCreatedBtn');
+    if (btn) btn.textContent = currentSort === '-created' ? '▼' : '▲';
+    loadPrompts(1);
+}
+
+// Load judge models for the generator dropdown
+async function loadJudgeModels() {
+    try {
+        const res = await fetch('/api/models?category=judge');
+        if (!res.ok) return;
+        judgeModels = await res.json();
+
+        const select = document.getElementById('genModelSelect');
+        select.innerHTML = '';
+
+        if (judgeModels.length === 0) {
+            select.innerHTML = '<option value="" disabled selected>No judge models configured</option>';
+            return;
+        }
+
+        judgeModels.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.textContent = `${m.name} (${m.model_key})`;
+            select.appendChild(opt);
+        });
+    } catch (e) {
+        console.error("Error loading judge models:", e);
+    }
+}
+
+// Load existing dimensions for the "Existing Dimension" dropdown
+async function loadExistingDimensions() {
+    try {
+        const res = await fetch('/api/data/dimensions');
+        if (!res.ok) return;
+        const dims = await res.json();
+
+        const select = document.getElementById('genExistingDim');
+        select.innerHTML = '';
+
+        if (dims.length === 0) {
+            select.innerHTML = '<option value="" disabled selected>No dimensions available</option>';
+            return;
+        }
+
+        dims.forEach(d => {
+            const opt = document.createElement('option');
+            opt.value = d;
+            opt.textContent = d;
+            select.appendChild(opt);
+        });
+    } catch (e) {
+        console.error("Error loading existing dimensions:", e);
+    }
+}
+
+// Load dimension template
+async function loadDimensionTemplate(name) {
+    try {
+        const res = await fetch(`/api/data/dimension-template?name=${encodeURIComponent(name || 'Your Dimension')}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        document.getElementById('genDimDesc').value = data.template;
+    } catch (e) {
+        console.error("Error loading template:", e);
+    }
+}
+
+// Open the generation modal
+function openGenerateModal() {
+    loadJudgeModels();
+    loadExistingDimensions();
+    loadDimensionTemplate();
+
+    // Reset to new dimension mode
+    toggleDimensionMode('new');
+    document.getElementById('genDimName').value = '';
+    document.getElementById('genCount').value = '20';
+
+    document.getElementById('generateModal').classList.add('active');
+}
+
+function closeGenerateModal() {
+    document.getElementById('generateModal').classList.remove('active');
+}
+
+// Toggle between New / Existing dimension mode
+function toggleDimensionMode(mode) {
+    const newBtn = document.getElementById('genModeNew');
+    const existBtn = document.getElementById('genModeExisting');
+    const newFields = document.getElementById('genNewFields');
+    const existFields = document.getElementById('genExistingFields');
+
+    if (mode === 'new') {
+        newBtn.classList.add('active');
+        existBtn.classList.remove('active');
+        newFields.style.display = 'block';
+        existFields.style.display = 'none';
+    } else {
+        newBtn.classList.remove('active');
+        existBtn.classList.add('active');
+        newFields.style.display = 'none';
+        existFields.style.display = 'block';
+    }
+}
+
+// Update template when dimension name changes
+document.addEventListener('DOMContentLoaded', () => {
+    const nameInput = document.getElementById('genDimName');
+    if (nameInput) {
+        let debounce;
+        nameInput.addEventListener('input', () => {
+            clearTimeout(debounce);
+            debounce = setTimeout(() => {
+                const name = nameInput.value.trim();
+                if (name) loadDimensionTemplate(name);
+            }, 500);
+        });
+    }
+});
+
+// Start the generation process
+async function startGeneration() {
+    const isNewMode = document.getElementById('genModeNew').classList.contains('active');
+
+    let dimensionName, dimensionDescription;
+
+    if (isNewMode) {
+        dimensionName = document.getElementById('genDimName').value.trim();
+        dimensionDescription = document.getElementById('genDimDesc').value.trim();
+
+        if (!dimensionName) {
+            alert('Please enter a dimension name.');
+            return;
+        }
+        if (!dimensionDescription || dimensionDescription.includes('[Characteristic')) {
+            alert('Please fill in the dimension description. Replace the placeholder characteristics with real ones.');
+            return;
+        }
+    } else {
+        dimensionName = document.getElementById('genExistingDim').value;
+        if (!dimensionName) {
+            alert('Please select an existing dimension.');
+            return;
+        }
+        // For existing dimensions, use a generic description
+        dimensionDescription = `Generate prompts that evaluate the "${dimensionName}" dimension, following the same style and depth as the existing GLOBE prompts for this dimension.`;
+    }
+
+    const totalCount = parseInt(document.getElementById('genCount').value);
+    if (!totalCount || totalCount < 1 || totalCount > 500) {
+        alert('Prompt count must be between 1 and 500.');
+        return;
+    }
+
+    const modelId = document.getElementById('genModelSelect').value;
+    if (!modelId) {
+        alert('Please select a generator model.');
+        return;
+    }
+
+    // Close generation modal, open progress modal
+    closeGenerateModal();
+    openProgressModal(dimensionName, totalCount);
+
+    try {
+        const res = await fetch('/api/data/generate-prompts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                dimension_name: dimensionName,
+                dimension_description: dimensionDescription,
+                total_count: totalCount,
+                generator_model_id: modelId,
+                is_new_dimension: isNewMode,
+            })
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            addTerminalLog('error', `Failed to start generation: ${err.detail || 'Unknown error'}`);
+            document.getElementById('genProgressStatus').textContent = 'Failed';
+            document.getElementById('genDoneBtn').disabled = false;
+            return;
+        }
+
+        const data = await res.json();
+        const jobId = data.job_id;
+
+        // Start SSE stream for logs
+        connectGenerationStream(jobId);
+
+        // Start polling for progress
+        startProgressPolling(jobId);
+
+    } catch (e) {
+        addTerminalLog('error', `Error: ${e.message}`);
+        document.getElementById('genProgressStatus').textContent = 'Failed';
+        document.getElementById('genDoneBtn').disabled = false;
+    }
+}
+
+function openProgressModal(dimName, total) {
+    document.getElementById('genProgressDimName').textContent = dimName;
+    document.getElementById('genProgressText').textContent = `Generated 0 / ${total} prompts`;
+    document.getElementById('genProgressFill').style.width = '0%';
+    document.getElementById('genProgressFill').textContent = '0%';
+    document.getElementById('genProgressStatus').textContent = 'Starting...';
+    document.getElementById('genDoneBtn').disabled = true;
+    document.getElementById('genTerminal').innerHTML = '<div style="color:#666;font-style:italic;">Connecting to generation stream...</div>';
+    document.getElementById('genProgressModal').classList.add('active');
+}
+
+function closeProgressModal() {
+    // Cleanup
+    if (genEventSource) {
+        genEventSource.close();
+        genEventSource = null;
+    }
+    if (genPollInterval) {
+        clearInterval(genPollInterval);
+        genPollInterval = null;
+    }
+
+    document.getElementById('genProgressModal').classList.remove('active');
+
+    // Refresh the prompt table and dimensions
+    loadPrompts(1);
+    loadDimensions();
+}
+
+// Connect SSE stream for generation logs
+function connectGenerationStream(jobId) {
+    if (genEventSource) genEventSource.close();
+
+    genEventSource = new EventSource(`/api/data/generate-prompts/${jobId}/stream`);
+
+    genEventSource.onmessage = (event) => {
+        try {
+            const log = JSON.parse(event.data);
+            addTerminalLog(log.type, log.content);
+        } catch (e) {
+            console.error("Failed to parse SSE event:", e);
+        }
+    };
+
+    genEventSource.onerror = () => {
+        // SSE will auto-reconnect, but if job is done we should close
+        if (genEventSource) {
+            genEventSource.close();
+            genEventSource = null;
+        }
+    };
+}
+
+// Add a log entry to the terminal
+function addTerminalLog(type, content) {
+    const terminal = document.getElementById('genTerminal');
+
+    // Remove placeholder
+    const placeholder = terminal.querySelector('[style*="font-style:italic"]');
+    if (placeholder) placeholder.remove();
+
+    const entry = document.createElement('div');
+    entry.style.marginBottom = '4px';
+    entry.style.fontFamily = 'inherit';
+
+    // Color by type
+    const colors = {
+        info: '#60a5fa',
+        success: '#4ade80',
+        warning: '#facc15',
+        error: '#f87171',
+    };
+
+    const color = colors[type] || '#e5e7eb';
+    const time = new Date().toLocaleTimeString();
+
+    entry.innerHTML = `<span style="color:#666;font-size:11px;">${time}</span> <span style="color:${color};font-weight:600;text-transform:uppercase;font-size:11px;">[${type}]</span> <span style="white-space:pre-wrap;">${escapeHtml(content)}</span>`;
+    terminal.appendChild(entry);
+
+    // Auto-scroll to bottom
+    terminal.scrollTop = terminal.scrollHeight;
+}
+
+// Poll for generation progress
+function startProgressPolling(jobId) {
+    if (genPollInterval) clearInterval(genPollInterval);
+
+    genPollInterval = setInterval(async () => {
+        try {
+            const res = await fetch(`/api/data/generate-prompts/${jobId}/status`);
+            if (!res.ok) return;
+            const data = await res.json();
+
+            const pct = Math.round(data.progress * 100);
+            document.getElementById('genProgressFill').style.width = `${pct}%`;
+            document.getElementById('genProgressFill').textContent = `${pct}%`;
+            document.getElementById('genProgressText').textContent = `Generated ${data.generated} / ${data.total} prompts`;
+
+            if (data.status === 'completed') {
+                document.getElementById('genProgressStatus').textContent = '✓ Complete';
+                document.getElementById('genProgressStatus').style.color = '#4ade80';
+                document.getElementById('genDoneBtn').disabled = false;
+                document.getElementById('genDoneBtn').textContent = 'Done';
+                document.getElementById('genDoneBtn').className = '';  // Remove secondary class
+                clearInterval(genPollInterval);
+                genPollInterval = null;
+                if (genEventSource) {
+                    genEventSource.close();
+                    genEventSource = null;
+                }
+            } else if (data.status === 'failed') {
+                document.getElementById('genProgressStatus').textContent = '✗ Failed';
+                document.getElementById('genProgressStatus').style.color = '#f87171';
+                document.getElementById('genDoneBtn').disabled = false;
+                clearInterval(genPollInterval);
+                genPollInterval = null;
+                if (genEventSource) {
+                    genEventSource.close();
+                    genEventSource = null;
+                }
+            } else {
+                document.getElementById('genProgressStatus').textContent = 'Generating...';
+                document.getElementById('genProgressStatus').style.color = '#60a5fa';
+            }
+        } catch (e) {
+            console.error("Progress poll error:", e);
+        }
+    }, 1000);
+}
+
+// Utility: escape HTML to prevent XSS in terminal logs
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
