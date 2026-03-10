@@ -100,7 +100,7 @@ function renderLayout() {
     // 2. Always render the Model Providers section first
     const providerNavItem = document.createElement('a');
     providerNavItem.className = 'nav-item active';
-    providerNavItem.textContent = '🔑 Model Providers';
+    providerNavItem.textContent = 'Model Providers';
     providerNavItem.href = '#group-model-providers';
     providerNavItem.onclick = (e) => {
         e.preventDefault();
@@ -142,14 +142,12 @@ function renderLayout() {
 const PROVIDER_META = {
     openai: {
         label: 'OpenAI',
-        icon: '🤖',
         docsUrl: 'https://platform.openai.com/api-keys',
         docsLabel: 'Get API key →',
         placeholder: 'sk-...',
     },
     openrouter: {
         label: 'OpenRouter',
-        icon: '🔀',
         docsUrl: 'https://openrouter.ai/settings/keys',
         docsLabel: 'Get API key →',
         placeholder: 'sk-or-...',
@@ -187,7 +185,7 @@ function buildProviderCard(provider, meta) {
 
     card.innerHTML = `
         <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span class="config-label" style="margin:0;">${meta.icon} ${meta.label}</span>
+            <span class="config-label" style="margin:0;">${meta.label}</span>
             <span id="provider-status-${provider}" style="font-size:12px; font-weight:600; color:${status.has_key ? 'var(--success, #48bb78)' : 'var(--muted)'};">
                 ${status.has_key ? `✅ Configured &nbsp;<code style="font-size:11px; opacity:0.7;">${status.masked_key}</code>` : '⚪ Not configured'}
             </span>

@@ -297,18 +297,26 @@ function connectStream(jobId) {
                 } else {
                     // Single judge mode
                     const judgeName = d.judge_model || 'Unknown Judge';
+                    const cleanReason = (d.reason || '').replace(/^(?:\\n|\n)?Reason:\s*/i, '');
                     content = `
                         <div style="margin-bottom:8px;font-family:monospace;font-size:12px;color:var(--muted);">
                             <strong>JUDGE:</strong> ${escapeHtml(judgeName)}<br>
                             <strong>SCORE:</strong> ${d.score.toFixed(1)}/7
                         </div>
                         <strong>REASON:</strong><br>
-                        ${escapeHtml(d.reason)}
+                        ${renderMarkdown(cleanReason)}
                     `;
                 }
                 
                 reasonEl.innerHTML = content;
                 reasonWrap.style.display = 'block';
+
+                // Also re-render the target model response with markdown now that it's complete
+                const respEl = document.getElementById(`resp-${pid}`);
+                if (respEl) {
+                    respEl.innerHTML = renderMarkdown(respEl.textContent);
+                    respEl.style.whiteSpace = 'normal'; // Allow markdown to wrap naturally
+                }
             }
         }
       } else if (log.type === 'success' && log.content.includes('Audit completed')) {
@@ -1159,8 +1167,11 @@ async function loadPromptsAndResponses() {
           </div>
           <div id="acc-${pid}" style="display:none;margin-top:10px;">
             <div><span class="label">Prompt</span><div style="margin-top:6px">${escapeHtml(p.text)}</div></div>
-            <div style="margin-top:10px"><span class="label">Response</span><div style="margin-top:6px">${r ? formatResponse(r.raw_response) : '<em>No response</em>'}</div></div>
-            ${r && r.reason ? `<div style="margin-top:10px"><span class="label">Judge Reason</span><div class="reason" style="margin-top:6px; white-space:pre-wrap;">${r.reason}</div></div>` : ''}
+            <div style="margin-top:10px"><span class="label">Response</span><div style="margin-top:6px">${r ? renderMarkdown(r.raw_response) : '<em>No response</em>'}</div></div>
+            ${r && r.reason ? (() => {
+                const cleanReason = (r.reason || '').replace(/^(?:\\n|\n)?Reason:\s*/i, '');
+                return `<div style="margin-top:10px"><span class="label">Judge Reason</span><div class="reason" style="margin-top:6px;">${renderMarkdown(cleanReason)}</div></div>`;
+            })() : ''}
           </div>
         </div>`;
     }

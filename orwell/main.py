@@ -646,6 +646,7 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
                 tm = pb.collection("models").get_one(request.target_model_id)
                 request.target_endpoint = tm.base_url
                 request.model_name = tm.model_key
+                request.provider = getattr(tm, "provider", None)
                 if tm.api_key:
                     request.api_key = tm.api_key
                 if hasattr(tm, "reasoning_effort"):

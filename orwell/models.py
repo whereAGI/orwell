@@ -40,6 +40,7 @@ class AuditRequest(BaseModel):
 
     # Fallback / Custom fields
     target_endpoint: Optional[HttpUrl] = None
+    provider: Optional[str] = None
     api_key: Optional[str] = ""
     model_name: Optional[str] = None
     temperature: Optional[float] = None
