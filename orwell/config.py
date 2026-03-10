@@ -26,10 +26,17 @@ def get_db_path() -> str:
     # Default to PocketBase data file if not specified
     return str(cfg.get("database", {}).get("path", "data/orwell.db"))
 
-def get_llm_globe_data_path() -> Path:
+def get_orwell_data_path() -> Path:
     cfg = load_config()
-    p = cfg.get("llm_globe", {}).get("data_path", "./data/llm_globe")
+    p = (
+        cfg.get("orwell_data", {}).get("data_path")
+        or cfg.get("llm_globe", {}).get("data_path")
+        or "./data/orwell_data"
+    )
     return Path(p)
+
+def get_llm_globe_data_path() -> Path:
+    return get_orwell_data_path()
 
 def is_mock_mode() -> bool:
     v = os.getenv("ORWELL_MOCK_MODE", "").lower()

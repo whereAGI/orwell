@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN mkdir -p data/llm_globe
+RUN mkdir -p data/orwell_data
 
 EXPOSE 8000
 

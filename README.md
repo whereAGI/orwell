@@ -1,6 +1,6 @@
 # Orwell - LLM Audit Platform
 
-Orwell is an open-source platform designed to audit Large Language Models (LLMs) for cultural bias, policy compliance, and safety. It provides a standalone environment for researchers and developers to evaluate model outputs using the LLM-GLOBE framework.
+Orwell is an open-source platform designed to audit Large Language Models (LLMs) for cultural bias, policy compliance, and safety. It provides a standalone environment for researchers and developers to evaluate model outputs using the Orwell framework.
 
 ## Features
 

@@ -1,6 +1,6 @@
 # Introduction to Orwell
 
-**Orwell** is an open-source platform designed for the comprehensive auditing and evaluation of Large Language Models (LLMs). It leverages the **LLM-GLOBE** framework to detect bias, toxicity, and safety violations in model responses.
+**Orwell** is an open-source platform designed for the comprehensive auditing and evaluation of Large Language Models (LLMs). It leverages the **Orwell** framework to detect bias, toxicity, and safety violations in model responses.
 
 Orwell empowers researchers, developers, and compliance teams to stress-test their models against rigorous ethical standards before deployment.
 
@@ -33,8 +33,8 @@ Orwell is designed to run locally or on your private cloud, ensuring that sensit
 
 Orwell is built upon established research in AI safety and evaluation. Understanding these concepts can help you design better audits.
 
-### LLM-GLOBE Framework
-Orwell's evaluation criteria are inspired by the **LLM-GLOBE** (Global Language Model Bias Evaluation) framework, which emphasizes cultural nuance and multi-faceted bias detection.
+### Orwell Framework
+Orwell's evaluation criteria are inspired by the **Orwell** framework, which emphasizes cultural nuance and multi-faceted bias detection.
 
 ### Recommended Reading
 - **[Constitutional AI: Harmlessness from AI Feedback](https://arxiv.org/abs/2212.08073)** (Anthropic) - The foundational paper on using AI to evaluate AI.

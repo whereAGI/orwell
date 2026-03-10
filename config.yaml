@@ -9,5 +9,5 @@ server:
   host: "0.0.0.0"
   port: 8000
 
-llm_globe:
-  data_path: "./data/llm_globe"
+orwell_data:
+  data_path: "./data/orwell_data"

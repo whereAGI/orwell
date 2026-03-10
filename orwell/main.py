@@ -13,7 +13,7 @@ import re
 
 from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig, JudgeBench, GeneratePromptsRequest
 from .engine import AuditEngine
-from .llm_globe import LLMGlobeModule
+from .orwell_data import OrwellDataModule
 from .judge import DEFAULT_JUDGE_SYSTEM_PROMPT
 from .log_store import get_logs, subscribe_logs, add_log
 from .prompt_generator import PromptGenerator, get_dimension_template
@@ -1149,19 +1149,19 @@ async def _run_prompt_generation(job_id: str, req: GeneratePromptsRequest, model
             log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
         )
 
-        add_log(job_id, "info", "Loading reference prompts from GLOBE data...")
-        globe = LLMGlobeModule()
-        await globe.load()
+        add_log(job_id, "info", "Loading reference prompts from Orwell data...")
+        orwell_data = OrwellDataModule()
+        await orwell_data.load()
 
         target_dims = [req.dimension_name] if not req.is_new_dimension else None
-        all_globe_prompts = globe.generate_prompts(language="en", sample_size=200, dimensions=target_dims)
-        reference_pool = [p["text"] for p in all_globe_prompts]
+        all_orwell_prompts = orwell_data.generate_prompts(language="en", sample_size=200, dimensions=target_dims)
+        reference_pool = [p["text"] for p in all_orwell_prompts]
 
         if not reference_pool and target_dims:
             add_log(job_id, "warning",
                     f"No reference prompts found for dimension '{req.dimension_name}'. Using general pool.")
-            all_globe_prompts = globe.generate_prompts(language="en", sample_size=200)
-            reference_pool = [p["text"] for p in all_globe_prompts]
+            all_orwell_prompts = orwell_data.generate_prompts(language="en", sample_size=200)
+            reference_pool = [p["text"] for p in all_orwell_prompts]
 
         add_log(job_id, "success", f"Loaded {len(reference_pool)} reference prompts")
 

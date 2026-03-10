@@ -4,6 +4,7 @@ __all__ = [
     "engine",
     "judge",
     "llm_globe",
+    "orwell_data",
     "main",
     "models",
 ]

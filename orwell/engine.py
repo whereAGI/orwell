@@ -8,7 +8,7 @@ import os
 import asyncio
 
 from .models import AuditRequest, JobStatus
-from .llm_globe import LLMGlobeModule
+from .orwell_data import OrwellDataModule
 from .judge import JudgeClient
 from .bench import BenchExecutor
 from .database import get_db, new_id
@@ -55,11 +55,11 @@ class AuditEngine:
                 return
 
             # 1. Generate Prompts
-            add_log(job_id, "info", "Generating prompts via LLM-GLOBE",
+            add_log(job_id, "info", "Generating prompts via Orwell",
                     {"language": request.language, "dimensions": request.dimensions})
-            globe = LLMGlobeModule()
-            await globe.load()
-            prompts = globe.generate_prompts(
+            orwell_data = OrwellDataModule()
+            await orwell_data.load()
+            prompts = orwell_data.generate_prompts(
                 language=request.language,
                 sample_size=request.sample_size,
                 dimensions=request.dimensions,

@@ -1,6 +1,6 @@
 # Evaluation Criteria
 
-Orwell uses the **LLM-GLOBE** framework to evaluate the safety and neutrality of LLM responses. This document outlines the scoring system, risk levels, and dimensions used in the auditing process.
+Orwell uses the **Orwell** framework to evaluate the safety and neutrality of LLM responses. This document outlines the scoring system, risk levels, and dimensions used in the auditing process.
 
 ## 1. Scoring System
 
