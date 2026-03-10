@@ -203,7 +203,7 @@
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
                 <button class="secondary" onclick="testConnection()" style="margin-right:auto;">Test Connection</button>
                 <button class="secondary" onclick="closeModal()">Cancel</button>
-                <button onclick="saveModel()">Save Model</button>
+                <button id="saveModelBtn" onclick="saveModel()">Save Model</button>
             </div>
         </div>
     </div>
@@ -304,8 +304,6 @@
         </div>
     </div>
 
-    <script src="https://unpkg.com/pocketbase@0.21.5/dist/pocketbase.umd.js"></script>
-    <script src="/config.js"></script>
     <script src="/static/auth.js"></script>
     <script>
         // Protect route - Disabled for local mode

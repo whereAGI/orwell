@@ -15,8 +15,8 @@ def add_log(job_id: str, log_type: str, content: str, details: dict = None):
     # Check for stream update (only if it's the same type)
     is_update = False
     
-    # We want to support streaming for both target (target_stream) and judge (judge_stream)
-    stream_types = ("target_stream", "judge_stream")
+    # We want to support streaming for both target (target_stream), judge (judge_stream) and thinking (thought_stream)
+    stream_types = ("target_stream", "judge_stream", "thought_stream")
     
     if log_type in stream_types and job_logs[job_id]:
         last_entry = job_logs[job_id][-1]

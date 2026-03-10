@@ -24,7 +24,7 @@ def get_db_path() -> str:
         return env_path
     cfg = load_config()
     # Default to PocketBase data file if not specified
-    return str(cfg.get("database", {}).get("path", "pb_data/data.db"))
+    return str(cfg.get("database", {}).get("path", "data/orwell.db"))
 
 def get_llm_globe_data_path() -> Path:
     cfg = load_config()

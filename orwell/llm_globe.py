@@ -42,66 +42,46 @@ class LLMGlobeModule:
             self.dimensions = _PROMPT_CACHE["dimensions"]
             return
         
-        # Load prompts from PocketBase instead of CSVs
-        from orwell.pb_client import get_pb
-        pb = get_pb()
+        # Load prompts from SQLite
+        from .database import get_db
         
         self.closed_prompts = []
         self.open_prompts = []
         self.custom_prompts = []
         
         try:
-            # Fetch all system prompts (these replace CSV prompts)
-            page = 1
-            per_page = 500
-            while True:
-                result = pb.collection("custom_prompts").get_list(page, per_page, {
-                    "filter": 'type="system"'
-                })
-                for r in result.items:
+            async with get_db() as db:
+                # Fetch all system prompts
+                rows = await db.execute("SELECT * FROM custom_prompts WHERE type='system'")
+                async for r in rows:
                     prompt_data = {
-                        "id": r.id,
-                        "dimension": r.dimension,
-                        "Dimension": r.dimension,  # Keep both for compatibility
-                        "text": r.text,
-                        "prompt": r.text,  # Alias
-                        "Prompt_EN": r.text,  # Alias
-                        "language": r.language
+                        "id": r["id"],
+                        "dimension": r["dimension"],
+                        "Dimension": r["dimension"],
+                        "text": r["text"],
+                        "prompt": r["text"],
+                        "Prompt_EN": r["text"],
+                        "language": r["language"]
                     }
-                    # We'll treat all system prompts as "closed" for simplicity
                     self.closed_prompts.append(prompt_data)
-                    
-                if page >= result.total_pages:
-                    break
-                page += 1
                 
-            # If not skipping custom, load user-specific custom prompts
-            # However, we don't know which user at this point, so we'll load ALL custom prompts
-            # The filtering will happen in generate_prompts if needed
-            if not skip_custom:
-                page = 1
-                while True:
-                    result = pb.collection("custom_prompts").get_list(page, per_page, {
-                        "filter": 'type="custom"'
-                    })
-                    for r in result.items:
+                # Fetch custom prompts if not skipped
+                if not skip_custom:
+                    rows = await db.execute("SELECT * FROM custom_prompts WHERE type='custom'")
+                    async for r in rows:
                         prompt_data = {
-                            "id": r.id,
-                            "dimension": r.dimension,
-                            "Dimension": r.dimension,
-                            "text": r.text,
-                            "prompt": r.text,
-                            "language": r.language,
-                            "created_at": r.created
+                            "id": r["id"],
+                            "dimension": r["dimension"],
+                            "Dimension": r["dimension"],
+                            "text": r["text"],
+                            "prompt": r["text"],
+                            "language": r["language"],
+                            "created_at": r["created_at"]
                         }
                         self.custom_prompts.append(prompt_data)
-                        
-                    if page >= result.total_pages:
-                        break
-                    page += 1
                     
         except Exception as e:
-            print(f"Failed to load prompts from PocketBase: {e}")
+            print(f"Failed to load prompts from Database: {e}")
             # Fallback to empty
             self.closed_prompts = []
             self.open_prompts = []

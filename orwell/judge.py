@@ -367,7 +367,9 @@ class JudgeClient:
             json_str = content
             
             # Remove "Thinking Process" if present to avoid confusion
-            if "Thinking Process:" in content:
+            if "===END_THINKING===" in content:
+                json_str = content.split("===END_THINKING===", 1)[1]
+            elif "Thinking Process:" in content:
                 parts = content.split("\n\n", 1)
                 if len(parts) > 1 and "Thinking Process:" in parts[0]:
                     json_str = parts[1]
@@ -700,6 +702,14 @@ class JudgeClient:
 
     async def _call_llm(self, system: str, user: str, max_tokens: int = 500) -> str:
         """Make a single LLM call with the given system/user prompts."""
+        
+        # Log request details
+        self._log("info", f"Generating with model: {self.model}")
+        self._log("info", "─── SENDING REQUEST ───")
+        self._log("info", f"[System Prompt]\n{system}")
+        self._log("info", f"[User Prompt]\n{user}")
+        self._log("info", "───────────────────────")
+
         extra_body = {"include_reasoning": True}
         if self.max_reasoning_tokens:
             extra_body["reasoning"] = {"max_tokens": int(self.max_reasoning_tokens)}
@@ -737,6 +747,11 @@ class JudgeClient:
         text = full_content
         if full_reasoning:
              text = f"Thinking Process:\n{full_reasoning}\n===END_THINKING===\n\n{text}"
+             
+        # Log response
+        self._log("info", "─── RECEIVED RESPONSE ───")
+        self._log("info", text)
+        self._log("info", "─────────────────────────")
              
         return text
 

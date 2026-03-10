@@ -365,6 +365,11 @@ async function saveModel() {
         return;
     }
 
+    const saveBtn = document.getElementById('saveModelBtn');
+    const originalText = saveBtn.textContent;
+    saveBtn.textContent = 'Saving...';
+    saveBtn.disabled = true;
+
     try {
         let response;
         if (id) {
@@ -383,12 +388,24 @@ async function saveModel() {
             });
         }
 
-        if (!response.ok) throw new Error(await response.text());
+        if (!response.ok) {
+            const errorText = await response.text();
+            try {
+                const errorJson = JSON.parse(errorText);
+                throw new Error(errorJson.detail || errorText);
+            } catch (e) {
+                if (e.message && e.message !== 'Unexpected end of JSON input') throw e;
+                throw new Error(errorText);
+            }
+        }
 
         closeModal();
         loadModels();
     } catch (err) {
         alert('Failed to save model: ' + err.message);
+    } finally {
+        saveBtn.textContent = originalText;
+        saveBtn.disabled = false;
     }
 }
 

@@ -1,17 +1,10 @@
 let allPrompts = [];
 let deleteTargetId = null;
 let editTargetId = null;
-let currentSort = '-created'; // Default: newest first
+let currentSort = '-created_at'; // Default: newest first
 
-// Wrap fetch to include token
-const originalFetch = window.fetch;
-window.fetch = async (url, options = {}) => {
-    if (!options.headers) options.headers = {};
-    if (pb.authStore.isValid) {
-        options.headers['Authorization'] = `Bearer ${pb.authStore.token} `;
-    }
-    return originalFetch(url, options);
-};
+// Removed fetch wrapper for pb auth token
+
 
 let currentPage = 1;
 let perPage = 100; // Default to 100
@@ -440,7 +433,6 @@ async function handleFileUpload(input) {
             headers: {
                 // Do NOT set Content-Type header when sending FormData, 
                 // the browser sets it automatically with the boundary
-                'Authorization': `Bearer ${pb.authStore.token}`
             },
             body: formData
         });
@@ -486,9 +478,9 @@ function closeImportModal() {
 
 // Sortable Created At column
 function toggleDateSort() {
-    currentSort = currentSort === '-created' ? 'created' : '-created';
+    currentSort = currentSort === '-created_at' ? 'created_at' : '-created_at';
     const btn = document.getElementById('sortCreatedBtn');
-    if (btn) btn.textContent = currentSort === '-created' ? '▼' : '▲';
+    if (btn) btn.textContent = currentSort === '-created_at' ? '▼' : '▲';
     loadPrompts(1);
 }
 

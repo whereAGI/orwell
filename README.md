@@ -31,7 +31,6 @@ Orwell is an open-source platform designed to audit Large Language Models (LLMs)
    cp .env.example .env
    ```
    Edit `.env` to set your desired credentials and configuration.
-   *Note: For remote deployment, update `PUBLIC_POCKETBASE_URL` in `.env` to your server's IP/domain.*
 
 3. **Start the Application:**
    ```bash
@@ -40,7 +39,6 @@ Orwell is an open-source platform designed to audit Large Language Models (LLMs)
 
 4. **Access the App:**
    - **Dashboard**: [http://localhost:8000](http://localhost:8000)
-   - **PocketBase Admin**: [http://localhost:8090/_/](http://localhost:8090/_/)
 
 ### Option 2: Local Development
 
@@ -51,41 +49,30 @@ Orwell is an open-source platform designed to audit Large Language Models (LLMs)
    pip install -r requirements.txt
    ```
 
-2. **Download PocketBase:**
-   Download the PocketBase binary for your OS from [pocketbase.io](https://pocketbase.io/docs/) and place it in the project root.
-   *Note: The project includes a helper script `setup_pb.py` to initialize collections if needed, but the app handles this automatically.*
-
-3. **Configure Environment:**
+2. **Configure Environment:**
    ```bash
    cp .env.example .env
    ```
 
-4. **Run the Application:**
-   Use the startup script to launch both PocketBase and the FastAPI app:
+3. **Run the Application:**
    ```bash
    ./start.sh
    ```
 
 ## Configuration
 
-The application is configured via the `.env` file. Key variables include:
-
-- `ADMIN_EMAIL` / `ADMIN_PASSWORD`: Credentials for the initial admin user.
-- `PUBLIC_POCKETBASE_URL`: The URL where the frontend can reach PocketBase (browser-accessible).
-- `POCKETBASE_URL`: Internal URL for backend communication (usually `http://127.0.0.1:8090` or `http://pocketbase:8090` in Docker).
+The application is configured via the `.env` file.
 
 ## Usage
 
-1. **Login**: Use the admin credentials defined in your `.env` file.
-2. **Add Models**: Go to "Model Hub" to configure target models (e.g., GPT-4, Ollama) and judge models.
-3. **Run Audit**: Use the "Playground" to select dimensions, models, and run audits.
-4. **Analyze**: View detailed reports in the "Data Studio".
+1. **Add Models**: Go to "Model Hub" to configure target models (e.g., GPT-4, Ollama) and judge models.
+2. **Run Audit**: Use the "Playground" to select dimensions, models, and run audits.
+3. **Analyze**: View detailed reports in the "Data Studio".
 
 ## Security Note
 
 - **Secrets**: Never commit your `.env` file. It is included in `.gitignore`.
-- **Production**: For public deployment, ensure you change the default `ADMIN_PASSWORD` and `SECRET_KEY` (if applicable).
-- **Database**: The SQLite database is stored in `pb_data/`. Backup this directory to persist data.
+- **Database**: The SQLite database is stored in `data/orwell.db`. Backup this directory to persist data.
 
 ## Contributing
 

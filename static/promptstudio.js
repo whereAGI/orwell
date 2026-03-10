@@ -2,15 +2,8 @@ let allPrompts = [];
 let deleteTargetId = null;
 let editingId = null;
 
-// Override fetch to include auth header
-const originalFetch = window.fetch;
-window.fetch = async (url, options = {}) => {
-    if (!options.headers) options.headers = {};
-    if (pb.authStore.isValid) {
-        options.headers['Authorization'] = `Bearer ${pb.authStore.token}`;
-    }
-    return originalFetch(url, options);
-};
+// Removed fetch wrapper for pb auth token
+
 
 document.addEventListener('DOMContentLoaded', () => {
     loadPrompts();
@@ -39,9 +32,9 @@ function renderTable() {
 
     allPrompts.forEach(p => {
         const tr = document.createElement('tr');
-        
+
         const dateStr = new Date(p.created_at).toLocaleDateString();
-        
+
         tr.innerHTML = `
             <td><div style="font-weight:600">${escapeHtml(p.name)}</div></td>
             <td><div style="max-height:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">${escapeHtml(p.text)}</div></td>
@@ -160,7 +153,7 @@ async function deletePrompt(id) {
             method: 'DELETE'
         });
         if (!res.ok) throw new Error(await res.text());
-        
+
         closeDeleteModal();
         loadPrompts();
     } catch (e) {

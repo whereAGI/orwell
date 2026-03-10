@@ -11,12 +11,12 @@ function formatDuration(seconds) {
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  
+
   const parts = [];
   if (h > 0) parts.push(`${h}h`);
   if (m > 0) parts.push(`${m}m`);
   parts.push(`${s}s`);
-  
+
   return parts.length > 0 ? parts.join(' ') : '0s';
 }
 
@@ -26,12 +26,12 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     if (pollInterval) clearInterval(pollInterval);
     pollInterval = null;
     if (currentEventSource) {
-        currentEventSource.close();
-        currentEventSource = null;
+      currentEventSource.close();
+      currentEventSource = null;
     }
     if (logEventSource) {
-        logEventSource.close();
-        logEventSource = null;
+      logEventSource.close();
+      logEventSource = null;
     }
     if (currentJobId) {
       try {
@@ -55,7 +55,7 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
   }
   const endpoint = document.getElementById('endpoint').value.trim();
   const apiKey = document.getElementById('apiKey').value.trim();
-  const modelName = document.getElementById('modelName').value.trim();
+  const modelName = document.getElementById('customModelName').value.trim();
 
   const targetModelId = document.getElementById('targetModelSelect').value;
 
@@ -114,14 +114,14 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     document.getElementById('status').style.display = 'block';
     document.getElementById('report').style.display = 'none';
     document.getElementById('qaAccordion').innerHTML = '';
-    
+
     // Reset terminal for new job
     const termContent = document.getElementById('terminalContent');
     if (termContent) termContent.innerHTML = '';
-    
+
     // Connect Live Stream
     connectStream(currentJobId);
-    
+
     pollStatus();
     pollInterval = setInterval(pollStatus, 5000);
   } catch (err) {
@@ -160,9 +160,9 @@ function connectStream(jobId) {
   // Reset UI
   // liveFeedContainer.style.display = 'block'; // Removed
   reportContainer.style.display = 'none';
-  statusContainer.style.display = 'none'; 
+  statusContainer.style.display = 'none';
   qaContainer.innerHTML = ''; // Clear previous items
-  
+
   // Show percentage in terminal bar
   termPct.style.display = 'block';
   termPct.textContent = '0%';
@@ -178,7 +178,7 @@ function connectStream(jobId) {
   es.onmessage = (event) => {
     try {
       const log = JSON.parse(event.data);
-      
+
       if (typeof renderLogs === 'function') {
         renderLogs([log]);
       }
@@ -188,12 +188,12 @@ function connectStream(jobId) {
         // Create QA Item (Expanded)
         const d = log.details || {};
         const pid = d.prompt_id;
-        
+
         if (!document.getElementById(`qa-item-${pid}`)) {
-            const div = document.createElement('div');
-            div.id = `qa-item-${pid}`;
-            div.className = 'qa-item';
-            div.innerHTML = `
+          const div = document.createElement('div');
+          div.id = `qa-item-${pid}`;
+          div.className = 'qa-item';
+          div.innerHTML = `
               <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleAcc('${pid}')">
                 <div><strong>${d.dimension}</strong> • <span class="mono" style="color:#a0a0b8">${pid.slice(0, 8)}</span></div>
                 <div class="pill" id="score-pill-${pid}">Running...</div>
@@ -204,101 +204,124 @@ function connectStream(jobId) {
                     <span class="label">Response</span>
                     <div id="resp-${pid}" style="margin-top:6px;white-space:pre-wrap;line-height:1.5;color:#e5e7eb;"></div>
                 </div>
+                <div id="thought-wrap-${pid}" style="display:none;margin-top:10px">
+                    <span class="label">Thinking Process</span>
+                    <div id="thought-${pid}" class="thought" style="margin-top:6px; white-space:pre-wrap; color: #a0a0b8; font-style: italic;"></div>
+                </div>
                 <div id="reason-wrap-${pid}" style="display:none;margin-top:10px">
                     <span class="label">Judge Reason</span>
                     <div id="reason-${pid}" class="reason" style="margin-top:6px; white-space:pre-wrap;"></div>
                 </div>
               </div>
             `;
-            qaContainer.appendChild(div);
-            div.scrollIntoView({ behavior: 'smooth', block: 'end' });
-            
-            // Update Progress
-            const pct = Math.round(((d.index) / d.total) * 100);
-            termBar.style.width = `${pct}%`;
-            termPct.textContent = `${pct}%`;
-            termStatus.textContent = `Auditing: ${d.dimension} (Prompt ${d.index + 1}/${d.total})`;
+          qaContainer.appendChild(div);
+          div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+
+          // Update Progress
+          const pct = Math.round(((d.index) / d.total) * 100);
+          termBar.style.width = `${pct}%`;
+          termPct.textContent = `${pct}%`;
+          termStatus.textContent = `Auditing: ${d.dimension} (Prompt ${d.index + 1}/${d.total})`;
         }
       } else if (log.type === 'target_stream') {
         const pid = log.details && log.details.prompt_id;
         if (pid) {
-            const el = document.getElementById(`resp-${pid}`);
-            if (el) {
-                // If the log entry ID is the same as the last one we processed, it means content was appended
-                // So we should replace the content to avoid duplication (since log.content has the FULL accumulated text for that entry)
-                // Wait, log_store.py appends content to the same entry.
-                // So log.content grows: "T", "Th", "The"...
-                // BUT EventSource receives the *updated* entry object each time.
-                // So if we just append, we get "TThThe..."
-                
-                // We need to track the last handled log ID for this prompt
-                // Or simpler: The backend sends the WHOLE content of that log entry each time it updates.
-                // So we should replace the content of that specific log chunk.
-                
-                // However, we might have multiple log entries for one prompt if it gets interrupted or switches types.
-                // A robust way is:
-                // 1. Assign a unique ID to the span/div for this log entry
-                // 2. If it exists, update it. If not, create it.
-                
-                const logId = `log-${log.id}`;
-                let logSpan = document.getElementById(logId);
-                if (!logSpan) {
-                    logSpan = document.createElement('span');
-                    logSpan.id = logId;
-                    el.appendChild(logSpan);
-                }
-                logSpan.textContent = log.content;
+          const el = document.getElementById(`resp-${pid}`);
+          if (el) {
+            // If the log entry ID is the same as the last one we processed, it means content was appended
+            // So we should replace the content to avoid duplication (since log.content has the FULL accumulated text for that entry)
+            // Wait, log_store.py appends content to the same entry.
+            // So log.content grows: "T", "Th", "The"...
+            // BUT EventSource receives the *updated* entry object each time.
+            // So if we just append, we get "TThThe..."
+
+            // We need to track the last handled log ID for this prompt
+            // Or simpler: The backend sends the WHOLE content of that log entry each time it updates.
+            // So we should replace the content of that specific log chunk.
+
+            // However, we might have multiple log entries for one prompt if it gets interrupted or switches types.
+            // A robust way is:
+            // 1. Assign a unique ID to the span/div for this log entry
+            // 2. If it exists, update it. If not, create it.
+
+            const logId = `log-${log.id}`;
+            let logSpan = document.getElementById(logId);
+            if (!logSpan) {
+              logSpan = document.createElement('span');
+              logSpan.id = logId;
+              el.appendChild(logSpan);
             }
+            logSpan.textContent = log.content;
+          }
+        }
+      } else if (log.type === 'thought_stream') {
+        const pid = log.details && log.details.prompt_id;
+        if (pid) {
+          const thoughtWrap = document.getElementById(`thought-wrap-${pid}`);
+          const thoughtEl = document.getElementById(`thought-${pid}`);
+
+          if (thoughtWrap && thoughtEl) {
+            thoughtWrap.style.display = 'block';
+
+            const logId = `log-${log.id}`;
+            let logSpan = document.getElementById(logId);
+            if (!logSpan) {
+              logSpan = document.createElement('span');
+              logSpan.id = logId;
+              thoughtEl.appendChild(logSpan);
+            }
+            logSpan.textContent = log.content;
+          }
         }
       } else if (log.type === 'judge_stream') {
         const pid = log.details && log.details.prompt_id;
         if (pid) {
-            const reasonWrap = document.getElementById(`reason-wrap-${pid}`);
-            const reasonEl = document.getElementById(`reason-${pid}`);
-            
-            if (reasonWrap && reasonEl) {
-                reasonWrap.style.display = 'block';
-                
-                const logId = `log-${log.id}`;
-                let logSpan = document.getElementById(logId);
-                if (!logSpan) {
-                    logSpan = document.createElement('span');
-                    logSpan.id = logId;
-                    reasonEl.appendChild(logSpan);
-                }
-                logSpan.textContent = log.content;
+          const reasonWrap = document.getElementById(`reason-wrap-${pid}`);
+          const reasonEl = document.getElementById(`reason-${pid}`);
+
+          if (reasonWrap && reasonEl) {
+            reasonWrap.style.display = 'block';
+
+            const logId = `log-${log.id}`;
+            let logSpan = document.getElementById(logId);
+            if (!logSpan) {
+              logSpan = document.createElement('span');
+              logSpan.id = logId;
+              reasonEl.appendChild(logSpan);
             }
+            logSpan.textContent = log.content;
+          }
         }
       } else if (log.type === 'score_result') {
         const d = log.details || {};
         const pid = d.prompt_id;
         if (pid) {
-            const scorePill = document.getElementById(`score-pill-${pid}`);
-            const reasonWrap = document.getElementById(`reason-wrap-${pid}`);
-            const reasonEl = document.getElementById(`reason-${pid}`);
-            
-            if (scorePill) {
-                scorePill.textContent = `Score ${d.score.toFixed(1)}/7`;
-                // Color code the pill?
-                const score = d.score;
-                if (score <= 3) scorePill.style.borderColor = 'var(--danger)';
-                else if (score <= 5) scorePill.style.borderColor = 'var(--warning)';
-                else scorePill.style.borderColor = 'var(--success)';
-            }
-            if (reasonWrap && reasonEl) {
-                // Construct structured output for single judge or bench
-                let content = '';
-                
-                // If it's a bench, the reason string is already pre-formatted with HTML in engine.py
-                // If it's a single judge, we format it here
-                if (d.judge_count) {
-                    // Bench mode: reason already has HTML structure
-                    content = d.reason;
-                } else {
-                    // Single judge mode
-                    const judgeName = d.judge_model || 'Unknown Judge';
-                    const cleanReason = (d.reason || '').replace(/^(?:\\n|\n)?Reason:\s*/i, '');
-                    content = `
+          const scorePill = document.getElementById(`score-pill-${pid}`);
+          const reasonWrap = document.getElementById(`reason-wrap-${pid}`);
+          const reasonEl = document.getElementById(`reason-${pid}`);
+
+          if (scorePill) {
+            scorePill.textContent = `Score ${d.score.toFixed(1)}/7`;
+            // Color code the pill?
+            const score = d.score;
+            if (score <= 3) scorePill.style.borderColor = 'var(--danger)';
+            else if (score <= 5) scorePill.style.borderColor = 'var(--warning)';
+            else scorePill.style.borderColor = 'var(--success)';
+          }
+          if (reasonWrap && reasonEl) {
+            // Construct structured output for single judge or bench
+            let content = '';
+
+            // If it's a bench, the reason string is already pre-formatted with HTML in engine.py
+            // If it's a single judge, we format it here
+            if (d.judge_count) {
+              // Bench mode: reason already has HTML structure
+              content = d.reason;
+            } else {
+              // Single judge mode
+              const judgeName = d.judge_model || 'Unknown Judge';
+              const cleanReason = (d.reason || '').replace(/^(?:\\n|\n)?Reason:\s*/i, '');
+              content = `
                         <div style="margin-bottom:8px;font-family:monospace;font-size:12px;color:var(--muted);">
                             <strong>JUDGE:</strong> ${escapeHtml(judgeName)}<br>
                             <strong>SCORE:</strong> ${d.score.toFixed(1)}/7
@@ -306,35 +329,35 @@ function connectStream(jobId) {
                         <strong>REASON:</strong><br>
                         ${renderMarkdown(cleanReason)}
                     `;
-                }
-                
-                reasonEl.innerHTML = content;
-                reasonWrap.style.display = 'block';
-
-                // Also re-render the target model response with markdown now that it's complete
-                const respEl = document.getElementById(`resp-${pid}`);
-                if (respEl) {
-                    respEl.innerHTML = renderMarkdown(respEl.textContent);
-                    respEl.style.whiteSpace = 'normal'; // Allow markdown to wrap naturally
-                }
             }
+
+            reasonEl.innerHTML = content;
+            reasonWrap.style.display = 'block';
+
+            // Also re-render the target model response with markdown now that it's complete
+            const respEl = document.getElementById(`resp-${pid}`);
+            if (respEl) {
+              respEl.innerHTML = renderMarkdown(respEl.textContent);
+              respEl.style.whiteSpace = 'normal'; // Allow markdown to wrap naturally
+            }
+          }
         }
       } else if (log.type === 'success' && log.content.includes('Audit completed')) {
-         termBar.style.width = '100%';
-         termPct.textContent = '100%';
-         termStatus.textContent = 'Audit Completed';
-         // badge.textContent = 'DONE';
-         es.close();
-         currentEventSource = null;
-         
-         // Collapse all sections
-         const openSections = document.querySelectorAll('[id^="acc-"]');
-         openSections.forEach(el => el.style.display = 'none');
-         
-         // Trigger final report load (charts etc)
-         setTimeout(() => {
-             loadReport(); 
-         }, 500);
+        termBar.style.width = '100%';
+        termPct.textContent = '100%';
+        termStatus.textContent = 'Audit Completed';
+        // badge.textContent = 'DONE';
+        es.close();
+        currentEventSource = null;
+
+        // Collapse all sections
+        const openSections = document.querySelectorAll('[id^="acc-"]');
+        openSections.forEach(el => el.style.display = 'none');
+
+        // Trigger final report load (charts etc)
+        setTimeout(() => {
+          loadReport();
+        }, 500);
       }
 
     } catch (e) {
@@ -345,8 +368,8 @@ function connectStream(jobId) {
   es.onerror = (err) => {
     console.error('EventSource failed:', err);
     if (es.readyState === 2) {
-        // badge.textContent = 'DISCONNECTED';
-        // badge.style.color = 'var(--danger)';
+      // badge.textContent = 'DISCONNECTED';
+      // badge.style.color = 'var(--danger)';
     }
   };
 }
@@ -368,7 +391,7 @@ async function pollStatus() {
     const fill = document.getElementById('progressFill');
     fill.style.width = progress + '%';
     fill.textContent = progress + '%';
-    
+
     // Sync terminal loader
     const termBar = document.getElementById('terminalProgressBar');
     const termPct = document.getElementById('terminalPercentage');
@@ -450,7 +473,7 @@ async function loadReport() {
       // Show bench/judge info
       let judgeLabel = report.judge_model || '-';
       let judgeSource = rj.meta && rj.meta.judge_config && rj.meta.judge_config.source_url;
-      
+
       if (report.bench_name) {
         judgeLabel = `⚖ Bench: ${report.bench_name} (${report.bench_mode} mode)`;
       } else if (judgeSource) {
@@ -504,12 +527,12 @@ async function loadReport() {
 // Global variable to store chart data for modal
 let currentRadarData = null;
 
-window.openRadarModal = function() {
+window.openRadarModal = function () {
   const modal = document.getElementById('radarModal');
   if (!modal || !currentRadarData) return;
-  
+
   modal.style.display = 'flex';
-  
+
   // Initialize modal chart if not already done
   const canvas = document.getElementById('radarChartModal');
   if (canvas) {
@@ -517,7 +540,7 @@ window.openRadarModal = function() {
     if (window._radarModalChart) {
       window._radarModalChart.destroy();
     }
-    
+
     // Create new chart with same data but larger font
     window._radarModalChart = new Chart(canvas, {
       type: 'radar',
@@ -543,7 +566,7 @@ window.openRadarModal = function() {
   }
 };
 
-window.closeRadarModal = function() {
+window.closeRadarModal = function () {
   document.getElementById('radarModal').style.display = 'none';
 };
 
@@ -551,7 +574,7 @@ window.closeRadarModal = function() {
 
 function extractThinkingProcess(text) {
   if (!text) return { thinking: null, content: '' };
-  
+
   // 1. Try new robust format with explicit delimiter
   const robustMatch = text.match(/^Thinking Process:\n([\s\S]*?)\n===END_THINKING===\n\n/);
   if (robustMatch) {
@@ -722,7 +745,7 @@ function renderContextMethodology(section) {
     </div>`;
 }
 
-window._showCtxSysPrompt = function(text) {
+window._showCtxSysPrompt = function (text) {
   const el = document.getElementById('fullSystemPrompt');
   if (el) el.textContent = text;
   const modal = document.getElementById('systemPromptModal');
@@ -777,7 +800,7 @@ function renderDimensionAnalysis(section) {
 function renderScoreDistribution(section) {
   // Compute stats from histogram data
   const data = (section.histogram && section.histogram.datasets && section.histogram.datasets[0] && section.histogram.datasets[0].data) || [];
-  
+
   let total = 0;
   let weightedSum = 0;
   let lowRisk = 0; // Scores 6-7
@@ -788,7 +811,7 @@ function renderScoreDistribution(section) {
     const score = i + 1;
     total += count;
     weightedSum += (score * count);
-    
+
     if (score <= 3) highRisk += count;
     else if (score <= 5) medRisk += count;
     else lowRisk += count;
@@ -1024,7 +1047,7 @@ function initReportCharts(sections) {
           pointHoverRadius: 6,
         }))
       };
-      
+
       // Store data globally for modal
       currentRadarData = JSON.parse(JSON.stringify(chartData)); // Deep copy
 
@@ -1064,7 +1087,7 @@ function initReportCharts(sections) {
       const rawData = histSection.histogram.datasets[0].data;
       const histData = Array.isArray(rawData) ? rawData.map(v => Number(v) || 0) : [];
       const labels = histSection.histogram.labels;
-      
+
       const barColors = histData.map((_, i) => {
         const lVal = parseInt(labels[i]);
         const score = !isNaN(lVal) ? lVal : (i + 1);
@@ -1113,7 +1136,7 @@ async function loadPromptsAndResponses() {
     const job = await jobRes.json();
     let systemPrompt = job.system_prompt_snapshot || null;
     if (systemPrompt && typeof systemPrompt === 'string' && systemPrompt.includes('\\n')) {
-        systemPrompt = systemPrompt.replace(/\\n/g, '\n');
+      systemPrompt = systemPrompt.replace(/\\n/g, '\n');
     }
 
     const pRes = await fetch(`/api/audit/${currentJobId}/prompts`);
@@ -1121,11 +1144,21 @@ async function loadPromptsAndResponses() {
     const rRes = await fetch(`/api/audit/${currentJobId}/responses`);
     const responses = await rRes.json();
     const byPrompt = new Map();
-    prompts.forEach(p => byPrompt.set(p.prompt_id, { prompt: p, response: null }));
+
+    // Group by prompt text and dimension instead of ID to merge duplicates
+    prompts.forEach(p => {
+      const key = `${p.dimension}-${p.text}`;
+      byPrompt.set(key, { prompt: p, response: null, id: p.prompt_id });
+    });
+
     responses.forEach(r => {
-      const x = byPrompt.get(r.prompt_id) || { prompt: { dimension: r.dimension, text: r.prompt_text, prompt_id: r.prompt_id }, response: null };
-      x.response = r;
-      byPrompt.set(r.prompt_id, x);
+      const key = `${r.dimension}-${r.prompt_text}`;
+      const existing = byPrompt.get(key);
+      if (existing) {
+        existing.response = r;
+      } else {
+        byPrompt.set(key, { prompt: { dimension: r.dimension, text: r.prompt_text, prompt_id: r.prompt_id }, response: r, id: r.prompt_id });
+      }
     });
 
     let accHtml = '';
@@ -1156,9 +1189,10 @@ async function loadPromptsAndResponses() {
         `;
     }
 
-    for (const [pid, item] of byPrompt.entries()) {
+    for (const [key, item] of byPrompt.entries()) {
       const p = item.prompt;
       const r = item.response;
+      const pid = item.id || `temp-${Math.random().toString(36).substr(2, 9)}`;
       accHtml += `
         <div class="qa-item">
           <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="toggleAcc('${pid}')">
@@ -1169,9 +1203,9 @@ async function loadPromptsAndResponses() {
             <div><span class="label">Prompt</span><div style="margin-top:6px">${escapeHtml(p.text)}</div></div>
             <div style="margin-top:10px"><span class="label">Response</span><div style="margin-top:6px">${r ? renderMarkdown(r.raw_response) : '<em>No response</em>'}</div></div>
             ${r && r.reason ? (() => {
-                const cleanReason = (r.reason || '').replace(/^(?:\\n|\n)?Reason:\s*/i, '');
-                return `<div style="margin-top:10px"><span class="label">Judge Reason</span><div class="reason" style="margin-top:6px;">${renderMarkdown(cleanReason)}</div></div>`;
-            })() : ''}
+          const cleanReason = (r.reason || '').replace(/^(?:\\n|\n)?Reason:\s*/i, '');
+          return `<div style="margin-top:10px"><span class="label">Judge Reason</span><div class="reason" style="margin-top:6px;">${renderMarkdown(cleanReason)}</div></div>`;
+        })() : ''}
           </div>
         </div>`;
     }
@@ -1216,7 +1250,7 @@ function formatResponse(text) {
 
 function renderMarkdown(text) {
   let s = String(text || '');
-  
+
   // Handle literal newlines that might have been escaped
   if (s.includes('\\n')) {
     s = s.replace(/\\n/g, '\n');
@@ -1268,22 +1302,22 @@ async function loadAuditList() {
   try {
     const res = await fetch('/api/audits?t=' + Date.now());
     if (!res.ok) {
-        throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+      throw new Error(`Server returned ${res.status}: ${await res.text()}`);
     }
     const audits = await res.json();
-    
+
     if (!Array.isArray(audits)) {
-        throw new Error('Invalid response format: expected array');
+      throw new Error('Invalid response format: expected array');
     }
 
     const list = audits.map(a => {
       const date = new Date(a.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-      
+
       let riskColor = '#a0a0b8';
       if (a.overall_risk === 'low') riskColor = 'var(--success)';
       if (a.overall_risk === 'medium') riskColor = 'var(--warning)';
       if (a.overall_risk === 'high') riskColor = 'var(--danger)';
-      
+
       const riskLabel = a.overall_risk ? ` • <span style="color:${riskColor};font-weight:bold;">${a.overall_risk.toUpperCase()}</span>` : '';
       const dims = a.dimensions ? a.dimensions.length + ' dims' : '';
       const judge = a.judge_name || 'Unknown Judge';
@@ -1311,7 +1345,7 @@ async function loadAuditList() {
 
     const container = document.getElementById('auditList');
     container.innerHTML = list || '<div style="padding:16px;text-align:center;color:var(--muted);font-style:italic;">No audits found. Start a new audit to see reports here.</div>';
-    
+
     // Ensure delete bar is hidden after refresh if list is empty or selection is cleared
     updateSelectionUI();
 
@@ -1324,11 +1358,11 @@ async function loadAuditList() {
           updateSelectionUI();
           return;
         }
-        
+
         // Clear previous selections if clicking normally
         document.querySelectorAll('.audit-item[data-selected="1"]').forEach(el => {
-            el.setAttribute('data-selected', '0');
-            el.style.borderColor = 'var(--border)';
+          el.setAttribute('data-selected', '0');
+          el.style.borderColor = 'var(--border)';
         });
         updateSelectionUI();
 
@@ -1336,7 +1370,7 @@ async function loadAuditList() {
         // Update highlight manually to avoid full reload
         container.querySelectorAll('.audit-item').forEach(el => el.classList.remove('selected-audit'));
         item.classList.add('selected-audit');
-        
+
         document.getElementById('jobIdText').textContent = currentJobId;
         const statusEl = document.getElementById('status');
         if (statusEl) statusEl.style.display = 'block';
@@ -1350,7 +1384,7 @@ async function loadAuditList() {
     // Auto-select first audit if none selected (e.g. on page load) or if current was deleted
     // Check if currentJobId exists in the new list
     const currentExists = audits.some(a => a.job_id === currentJobId);
-    
+
     if ((!currentJobId || !currentExists) && audits.length > 0) {
       const first = container.querySelector('.audit-item');
       if (first) first.click();
@@ -1360,15 +1394,15 @@ async function loadAuditList() {
       document.getElementById('qaAccordion').innerHTML = '';
       document.getElementById('report').style.display = 'none';
       document.getElementById('status').style.display = 'none';
-      
+
       // Show placeholder in report area?
       // The status area is hidden, report is hidden. The user sees empty space.
       // We could show a placeholder div if needed, but for now clearing is what was asked (or "show message").
       // User said: "if there are no reports then we should show a message to start audititing to generate reports"
       const reportContainer = document.getElementById('report');
       if (reportContainer) {
-          reportContainer.style.display = 'block';
-          reportContainer.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:var(--muted);">
+        reportContainer.style.display = 'block';
+        reportContainer.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:300px;color:var(--muted);">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" style="margin-bottom:16px;opacity:0.5;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
             <h3>No Reports Available</h3>
             <p>Start an audit to generate a report.</p>
@@ -1388,53 +1422,53 @@ async function loadAuditList() {
   }
 }
 
-window.updateSelectionUI = function() {
+window.updateSelectionUI = function () {
   const selected = document.querySelectorAll('.audit-item[data-selected="1"]');
   const count = selected.length;
   const countEl = document.getElementById('selCount');
   if (countEl) countEl.textContent = count;
-  
+
   const bar = document.getElementById('stickyDeleteBar');
   if (bar) {
-      // Show only if multiple items selected
-      bar.style.display = count > 1 ? 'block' : 'none';
+    // Show only if multiple items selected
+    bar.style.display = count > 1 ? 'block' : 'none';
   }
 }
 
-window.deleteSingleAudit = async function(event, jobId) {
-    event.stopPropagation(); // Prevent item click
-    
-    // Show custom modal
-    const modal = document.getElementById('deleteModal');
-    const msg = document.getElementById('deleteMessage');
-    msg.textContent = 'Are you sure you want to delete this audit? This action cannot be undone.';
-    modal.style.display = 'flex';
-    
-    // Setup confirm button
-    const confirmBtn = document.getElementById('confirmDeleteBtn');
-    // Remove old listeners to avoid stacking
-    const newBtn = confirmBtn.cloneNode(true);
-    confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
-    
-    newBtn.addEventListener('click', async () => {
-        try {
-          const url = '/api/audits?job_ids=' + encodeURIComponent(jobId);
-          const res = await fetch(url, { method: 'DELETE' });
-          if (!res.ok) throw new Error(await res.text());
-          await loadAuditList();
-          
-          // If we deleted the current job, clear UI
-          if (currentJobId === jobId) {
-              currentJobId = null;
-              document.getElementById('qaAccordion').innerHTML = '';
-              document.getElementById('report').style.display = 'none';
-              document.getElementById('status').style.display = 'none';
-          }
-          closeDeleteModal();
-        } catch (err) {
-          alert('Delete failed: ' + err);
-        }
-    });
+window.deleteSingleAudit = async function (event, jobId) {
+  event.stopPropagation(); // Prevent item click
+
+  // Show custom modal
+  const modal = document.getElementById('deleteModal');
+  const msg = document.getElementById('deleteMessage');
+  msg.textContent = 'Are you sure you want to delete this audit? This action cannot be undone.';
+  modal.style.display = 'flex';
+
+  // Setup confirm button
+  const confirmBtn = document.getElementById('confirmDeleteBtn');
+  // Remove old listeners to avoid stacking
+  const newBtn = confirmBtn.cloneNode(true);
+  confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+
+  newBtn.addEventListener('click', async () => {
+    try {
+      const url = '/api/audits?job_ids=' + encodeURIComponent(jobId);
+      const res = await fetch(url, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      await loadAuditList();
+
+      // If we deleted the current job, clear UI
+      if (currentJobId === jobId) {
+        currentJobId = null;
+        document.getElementById('qaAccordion').innerHTML = '';
+        document.getElementById('report').style.display = 'none';
+        document.getElementById('status').style.display = 'none';
+      }
+      closeDeleteModal();
+    } catch (err) {
+      alert('Delete failed: ' + err);
+    }
+  });
 }
 
 document.getElementById('deleteBtn').addEventListener('click', async () => {
@@ -1481,20 +1515,20 @@ async function loadLogsForReport() {
   if (!currentJobId) return;
   const container = document.getElementById('fullLogContent');
   if (!container) return;
-  
+
   // Reset
   container.innerHTML = '<div style="color:#666;font-style:italic;padding:12px">Loading logs...</div>';
-  
+
   try {
     const res = await fetch(`/api/audit/${currentJobId}/logs`);
     if (!res.ok) throw new Error("Failed to fetch logs");
-    
+
     const logs = await res.json();
     if (!logs || logs.length === 0) {
       container.innerHTML = '<div style="color:#666;font-style:italic;padding:12px">No logs available.</div>';
       return;
     }
-    
+
     let html = '';
     logs.forEach(log => {
       // Reuse the same styling classes as terminal
@@ -1507,11 +1541,11 @@ async function loadLogsForReport() {
         <div class="log-content">${escapeHtml(log.content)}</div>
       </div>`;
     });
-    
+
     container.innerHTML = html;
     // Scroll to bottom? Maybe not for a report view, top is better.
     container.scrollTop = 0;
-    
+
   } catch (err) {
     console.error("Error loading logs:", err);
     container.innerHTML = `<div style="color:#ef4444;padding:12px">Error loading logs: ${escapeHtml(err.message)}</div>`;
@@ -1661,15 +1695,8 @@ if (saveDetailsBtn) {
 // Removed main view listeners for Select All/Clear as they are now in modal
 // Only kept if needed for backward compatibility or future features, but for now they are gone from DOM.
 
-// Let's wrap fetch to include token
-const originalFetch = window.fetch;
-window.fetch = async (url, options = {}) => {
-  if (!options.headers) options.headers = {};
-  if (pb.authStore.isValid) {
-    options.headers['Authorization'] = `Bearer ${pb.authStore.token}`;
-  }
-  return originalFetch(url, options);
-};
+// Removed fetch wrapper for pb auth token
+
 
 document.addEventListener('DOMContentLoaded', () => {
   loadAuditList();
@@ -1705,8 +1732,15 @@ async function loadModels() {
     const response = await fetch('/api/models');
     const models = await response.json();
 
+    // Populate global store for editor
+    window.currentModels = {};
+    models.forEach(m => window.currentModels[m.id] = m);
+
     const targetSelect = document.getElementById('targetModelSelect');
     const judgeSelect = document.getElementById('judgeModelSelect');
+
+    const currentTarget = targetSelect.value;
+    const currentJudge = judgeSelect.value;
 
     // Clear existing (except default options)
     targetSelect.innerHTML = '<option value="custom">Custom (Enter manually)</option>';
@@ -1724,17 +1758,25 @@ async function loadModels() {
       }
     });
 
-    // Handle empty states - ensure at least one option is selected or placeholder shown
-    if (judgeSelect.options.length === 0) {
-      const ph = document.createElement('option');
-      ph.value = "";
-      ph.textContent = "No judge models available";
-      ph.disabled = true;
-      ph.selected = true;
-      judgeSelect.appendChild(ph);
+    if (currentTarget && targetSelect.querySelector(`option[value="${currentTarget}"]`)) {
+        targetSelect.value = currentTarget;
+    }
+    
+    if (currentJudge && judgeSelect.querySelector(`option[value="${currentJudge}"]`)) {
+        judgeSelect.value = currentJudge;
     } else {
-      // Select first available judge by default
-      judgeSelect.selectedIndex = 0;
+        // Handle empty states - ensure at least one option is selected or placeholder shown
+        if (judgeSelect.options.length === 0) {
+        const ph = document.createElement('option');
+        ph.value = "";
+        ph.textContent = "No judge models available";
+        ph.disabled = true;
+        ph.selected = true;
+        judgeSelect.appendChild(ph);
+        } else {
+        // Select first available judge by default
+        judgeSelect.selectedIndex = 0;
+        }
     }
 
     // Setup change handler
@@ -1763,8 +1805,15 @@ async function loadDashboardBenches() {
   try {
     const res = await fetch('/api/benches');
     const benches = await res.json();
+
+    // Populate global store for editor
+    window.currentBenches = {};
+    benches.forEach(b => window.currentBenches[b.id] = b);
+
     const select = document.getElementById('benchSelect');
     if (!select) return;
+    
+    const currentBench = select.value;
 
     select.innerHTML = '<option value="" disabled selected>Select a Bench</option>';
     benches.forEach(b => {
@@ -1775,31 +1824,76 @@ async function loadDashboardBenches() {
       select.appendChild(opt);
     });
 
+    if (currentBench && select.querySelector(`option[value="${currentBench}"]`)) {
+        select.value = currentBench;
+    }
+
     // Show info on select
-    select.addEventListener('change', () => {
-      const selected = benches.find(b => b.id === select.value);
+    const updateInfo = () => {
+      const selected = window.currentBenches[select.value];
       const infoEl = document.getElementById('benchInfo');
       if (selected && infoEl) {
         infoEl.textContent = selected.mode === 'random'
           ? 'Random mode: A random judge scores each response. Low scores trigger re-scoring.'
-          : 'All mode: Every judge scores every response. Scores are averaged.';
+          : (selected.mode === 'all' ? 'All mode: Every judge scores every response. Scores are averaged.' : 'Jury mode: Judges evaluate, Foreman synthesizes.');
       }
-    });
+    };
+
+    select.addEventListener('change', updateInfo);
+    updateInfo(); // Update initial state
   } catch (err) {
     console.error('Failed to load benches:', err);
   }
 }
 
+// Editor Integration
+window.editSelectedModel = function(type) {
+    const selectId = type === 'target' ? 'targetModelSelect' : 'judgeModelSelect';
+    const select = document.getElementById(selectId);
+    if (!select || !select.value || select.value === 'custom') {
+        if (select.value === 'custom') alert('Custom models cannot be edited here.');
+        else alert('Please select a model to edit.');
+        return;
+    }
+    editModel(select.value);
+};
+
+window.editSelectedBench = function() {
+    const select = document.getElementById('benchSelect');
+    if (!select || !select.value) {
+        alert('Please select a bench to edit.');
+        return;
+    }
+    openBenchModal(select.value);
+};
+
+// Refresh hooks
+window.onModelSaved = function() {
+    loadModels();
+};
+window.onBenchSaved = function() {
+    loadDashboardBenches();
+};
+
 function toggleCustomFields() {
   const select = document.getElementById('targetModelSelect');
   const customFields = document.getElementById('customTargetFields');
+  const editBtn = document.getElementById('editTargetModelBtn');
 
   if (!select || !customFields) return;
 
   if (select.value === 'custom') {
     customFields.style.display = 'block';
+    if (editBtn) {
+      editBtn.disabled = true;
+      editBtn.title = 'Custom models cannot be edited';
+    }
   } else {
     customFields.style.display = 'none';
+    if (editBtn) {
+      editBtn.disabled = false;
+      editBtn.title = 'Edit Target Model';
+    }
   }
 }
 
@@ -1884,37 +1978,37 @@ style.textContent = `
 document.head.appendChild(style);
 
 function startLogStream(jobId) {
-    if (logEventSource) {
-        logEventSource.close();
-        logEventSource = null;
+  if (logEventSource) {
+    logEventSource.close();
+    logEventSource = null;
+  }
+
+  // Connect to SSE
+  logEventSource = new EventSource(`/api/audit/${jobId}/stream`);
+
+  logEventSource.onmessage = (event) => {
+    try {
+      const log = JSON.parse(event.data);
+      renderLogs([log]);
+      if (logStatus) logStatus.textContent = `Live: ${new Date().toLocaleTimeString()}`;
+    } catch (e) {
+      console.error("Failed to parse SSE log:", e);
     }
-    
-    // Connect to SSE
-    logEventSource = new EventSource(`/api/audit/${jobId}/stream`);
-    
-    logEventSource.onmessage = (event) => {
-        try {
-            const log = JSON.parse(event.data);
-            renderLogs([log]);
-            if (logStatus) logStatus.textContent = `Live: ${new Date().toLocaleTimeString()}`;
-        } catch (e) {
-            console.error("Failed to parse SSE log:", e);
-        }
-    };
-    
-    logEventSource.onerror = (err) => {
-        console.warn("SSE Error (stream might have ended or failed):", err);
-        // If connection fails, we might close it or let it retry.
-        // For completed jobs, the server closes the stream, which might trigger error in some browsers.
-        // We rely on polling status to close it cleanly.
-    };
+  };
+
+  logEventSource.onerror = (err) => {
+    console.warn("SSE Error (stream might have ended or failed):", err);
+    // If connection fails, we might close it or let it retry.
+    // For completed jobs, the server closes the stream, which might trigger error in some browsers.
+    // We rely on polling status to close it cleanly.
+  };
 }
 
 function stopLogStream() {
-    if (logEventSource) {
-        logEventSource.close();
-        logEventSource = null;
-    }
+  if (logEventSource) {
+    logEventSource.close();
+    logEventSource = null;
+  }
 }
 
 async function pollStatus() {
@@ -1922,7 +2016,7 @@ async function pollStatus() {
 
   // Start log stream if not active
   if (!currentEventSource && !logEventSource && currentJobId) {
-      startLogStream(currentJobId);
+    startLogStream(currentJobId);
   }
 
   try {
@@ -1944,7 +2038,7 @@ async function pollStatus() {
         currentEventSource.close();
         currentEventSource = null;
       }
-      
+
       const startBtn = document.getElementById('startBtn');
       if (startBtn) {
         startBtn.textContent = 'Start Audit';
@@ -1965,7 +2059,7 @@ async function pollStatus() {
         currentEventSource.close();
         currentEventSource = null;
       }
-      
+
       const startBtn = document.getElementById('startBtn');
       if (startBtn) {
         startBtn.textContent = 'Start Audit';
@@ -1983,7 +2077,7 @@ async function pollStatus() {
         currentEventSource.close();
         currentEventSource = null;
       }
-      
+
       const startBtn = document.getElementById('startBtn');
       if (startBtn) {
         startBtn.textContent = 'Start Audit';
@@ -2006,43 +2100,44 @@ function renderLogs(logs) {
   logs.forEach(log => {
     // Check if log already exists by ID
     let div = document.querySelector(`.log-entry[data-log-id="${log.id}"]`);
-    
+
     // Display names mapping
     let displayType = log.type;
     if (log.type === 'target_stream') displayType = 'Target Response';
     if (log.type === 'judge_stream') displayType = 'Judge Analysis';
-    
+    if (log.type === 'thought_stream') displayType = 'Thinking Process';
+
     // Determine if this type should have a cursor
-    const isStreamType = (log.type === 'target_stream' || log.type === 'judge_stream');
-    
+    const isStreamType = (log.type === 'target_stream' || log.type === 'judge_stream' || log.type === 'thought_stream');
+
     if (div) {
-        // Update existing log
-        const contentEl = div.querySelector('.log-content');
-        // Check for cursor
-        const cursorHtml = isStreamType ? '<span class="cursor"></span>' : '';
-        if (contentEl) contentEl.innerHTML = escapeHtml(log.content) + cursorHtml;
-        
-        // Update timestamp
-        const timeEl = div.querySelector('.log-time');
-        if (timeEl) timeEl.textContent = `[${new Date(log.timestamp).toLocaleTimeString()}]`;
-        
+      // Update existing log
+      const contentEl = div.querySelector('.log-content');
+      // Check for cursor
+      const cursorHtml = isStreamType ? '<span class="cursor"></span>' : '';
+      if (contentEl) contentEl.innerHTML = escapeHtml(log.content) + cursorHtml;
+
+      // Update timestamp
+      const timeEl = div.querySelector('.log-time');
+      if (timeEl) timeEl.textContent = `[${new Date(log.timestamp).toLocaleTimeString()}]`;
+
     } else {
-        // Create new log entry
-        div = document.createElement('div');
-        div.className = 'log-entry';
-        div.setAttribute('data-log-id', log.id);
+      // Create new log entry
+      div = document.createElement('div');
+      div.className = 'log-entry';
+      div.setAttribute('data-log-id', log.id);
 
-        const time = new Date(log.timestamp).toLocaleTimeString();
-        const typeClass = `type-${log.type}`;
+      const time = new Date(log.timestamp).toLocaleTimeString();
+      const typeClass = `type-${log.type}`;
 
-        let detailsHtml = '';
-        if (log.details && Object.keys(log.details).length > 0) {
-          detailsHtml = `<div class="json-block">${escapeHtml(JSON.stringify(log.details, null, 2))}</div>`;
-        }
+      let detailsHtml = '';
+      if (log.details && Object.keys(log.details).length > 0) {
+        detailsHtml = `<div class="json-block">${escapeHtml(JSON.stringify(log.details, null, 2))}</div>`;
+      }
 
-        const cursorHtml = isStreamType ? '<span class="cursor"></span>' : '';
+      const cursorHtml = isStreamType ? '<span class="cursor"></span>' : '';
 
-        div.innerHTML = `
+      div.innerHTML = `
             <div class="log-meta">
                 <span class="log-time">[${time}]</span>
                 <span class="log-type ${typeClass}">${escapeHtml(displayType)}</span>
@@ -2051,28 +2146,28 @@ function renderLogs(logs) {
             ${detailsHtml}
         `;
 
-        terminalContent.appendChild(div);
+      terminalContent.appendChild(div);
     }
   });
-  
+
   // Cleanup cursors
   const entries = terminalContent.querySelectorAll('.log-entry');
   entries.forEach((entry, index) => {
-      // Remove cursor from all entries except possibly the last one
-      if (index < entries.length - 1) {
-          const cursor = entry.querySelector('.cursor');
-          if (cursor) cursor.remove();
+    // Remove cursor from all entries except possibly the last one
+    if (index < entries.length - 1) {
+      const cursor = entry.querySelector('.cursor');
+      if (cursor) cursor.remove();
+    }
+    // If the last entry is NOT a stream type, remove cursor too
+    if (index === entries.length - 1) {
+      const typeLabel = entry.querySelector('.log-type').textContent;
+      // We check the display name
+      const isStream = (typeLabel === 'Target Response' || typeLabel === 'Judge Analysis' || typeLabel === 'Thinking Process');
+      if (!isStream) {
+        const cursor = entry.querySelector('.cursor');
+        if (cursor) cursor.remove();
       }
-      // If the last entry is NOT a stream type, remove cursor too
-      if (index === entries.length - 1) {
-           const typeLabel = entry.querySelector('.log-type').textContent;
-           // We check the display name
-           const isStream = (typeLabel === 'Target Response' || typeLabel === 'Judge Analysis');
-           if (!isStream) {
-               const cursor = entry.querySelector('.cursor');
-               if (cursor) cursor.remove();
-           }
-      }
+    }
   });
 
   if (wasAtBottom) {
@@ -2102,16 +2197,16 @@ document.addEventListener('click', (e) => {
   }
 });
 
-window.downloadReport = function(format) {
+window.downloadReport = function (format) {
   if (!currentReportData) {
     alert('Report data not loaded yet.');
     return;
   }
-  
+
   const report = currentReportData;
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const filename = `audit_report_${report.job_id || 'unknown'}_${timestamp}`;
-  
+
   if (format === 'md') {
     const md = generateMarkdown(report);
     showReportPreview('Markdown Report', md, 'md');
@@ -2125,11 +2220,11 @@ function downloadMarkdownFile() {
   const report = currentReportData;
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const filename = `audit_report_${report.job_id || 'unknown'}_${timestamp}.md`;
-  
+
   downloadFile(filename, content, 'text/markdown');
 }
 
-window.setMarkdownPreviewMode = function(mode) {
+window.setMarkdownPreviewMode = function (mode) {
   const renderedView = document.getElementById('markdownRenderedView');
   const rawView = document.getElementById('markdownRawView');
   const renderedTab = document.getElementById('mdRenderedTab');
@@ -2165,7 +2260,7 @@ function showReportPreview(title, content, type) {
   titleEl.textContent = title;
   contentEl.style.whiteSpace = 'normal';
   contentEl.style.fontFamily = '"Times New Roman", serif';
-  
+
   if (type === 'html') {
     currentMarkdownPreviewContent = '';
     contentEl.innerHTML = content;
@@ -2240,119 +2335,119 @@ function generatePDFReport(report) {
   const chartPromises = [];
 
   if (window._orwellCharts && window._orwellCharts.length > 0) {
-      window._orwellCharts.forEach((chart, index) => {
-          const p = new Promise((resolve) => {
-              // 1. Save original state
-              const originalAnimation = chart.options.animation;
-              const originalColors = {};
-              
-              // Helper to save/restore colors
-              if (chart.config.type === 'radar') {
-                  if (chart.options.scales.r) {
-                      originalColors.grid = chart.options.scales.r.grid.color;
-                      originalColors.angle = chart.options.scales.r.angleLines.color;
-                      originalColors.point = chart.options.scales.r.pointLabels.color;
-                      originalColors.backdrop = chart.options.scales.r.ticks.backdropColor;
-                      originalColors.font = JSON.parse(JSON.stringify(chart.options.scales.r.pointLabels.font || {}));
-                  }
-              } else if (chart.config.type === 'bar') {
-                  originalColors.xTicks = chart.options.scales.x?.ticks?.color;
-                  originalColors.yTicks = chart.options.scales.y?.ticks?.color;
-                  originalColors.yGrid = chart.options.scales.y?.grid?.color;
-              }
-              if (chart.options.plugins?.legend) {
-                  originalColors.legend = chart.options.plugins.legend.labels.color;
-              }
+    window._orwellCharts.forEach((chart, index) => {
+      const p = new Promise((resolve) => {
+        // 1. Save original state
+        const originalAnimation = chart.options.animation;
+        const originalColors = {};
 
-              // 2. Apply Light Mode Styles
-              const textColor = '#000000';
-              const gridColor = '#666666';
-              
-              chart.options.animation = false; // Disable animation for instant repaint
+        // Helper to save/restore colors
+        if (chart.config.type === 'radar') {
+          if (chart.options.scales.r) {
+            originalColors.grid = chart.options.scales.r.grid.color;
+            originalColors.angle = chart.options.scales.r.angleLines.color;
+            originalColors.point = chart.options.scales.r.pointLabels.color;
+            originalColors.backdrop = chart.options.scales.r.ticks.backdropColor;
+            originalColors.font = JSON.parse(JSON.stringify(chart.options.scales.r.pointLabels.font || {}));
+          }
+        } else if (chart.config.type === 'bar') {
+          originalColors.xTicks = chart.options.scales.x?.ticks?.color;
+          originalColors.yTicks = chart.options.scales.y?.ticks?.color;
+          originalColors.yGrid = chart.options.scales.y?.grid?.color;
+        }
+        if (chart.options.plugins?.legend) {
+          originalColors.legend = chart.options.plugins.legend.labels.color;
+        }
 
-              if (chart.config.type === 'radar') {
-                  if (chart.options.scales.r) {
-                      chart.options.scales.r.grid.color = gridColor;
-                      chart.options.scales.r.angleLines.color = gridColor;
-                      chart.options.scales.r.pointLabels.color = textColor;
-                      chart.options.scales.r.pointLabels.font = { size: 14, weight: 'bold' };
-                      chart.options.scales.r.ticks.backdropColor = 'rgba(255,255,255,0.5)';
-                  }
-              } else if (chart.config.type === 'bar') {
-                  if (chart.options.scales.x) {
-                      if (!chart.options.scales.x.ticks) chart.options.scales.x.ticks = {};
-                      chart.options.scales.x.ticks.color = textColor;
-                  }
-                  if (chart.options.scales.y) {
-                      if (!chart.options.scales.y.ticks) chart.options.scales.y.ticks = {};
-                      if (!chart.options.scales.y.grid) chart.options.scales.y.grid = {};
-                      chart.options.scales.y.ticks.color = textColor;
-                      chart.options.scales.y.grid.color = gridColor;
-                  }
-              }
-              if (chart.options.plugins?.legend) {
-                  chart.options.plugins.legend.labels.color = textColor;
-              }
+        // 2. Apply Light Mode Styles
+        const textColor = '#000000';
+        const gridColor = '#666666';
 
-              // 3. Update and Capture
-              chart.update();
+        chart.options.animation = false; // Disable animation for instant repaint
 
-              // Give it a tick to paint
-              setTimeout(() => {
-                  try {
-                      // Composite onto white background
-                      const composite = document.createElement('canvas');
-                      composite.width = chart.width;
-                      composite.height = chart.height;
-                      const ctx = composite.getContext('2d');
-                      
-                      // Fill white
-                      ctx.fillStyle = '#FFFFFF';
-                      ctx.fillRect(0, 0, composite.width, composite.height);
-                      
-                      // Draw chart
-                      ctx.drawImage(chart.canvas, 0, 0);
-                      
-                      chartImages[index] = composite.toDataURL('image/png');
-                  } catch (err) {
-                      console.error('Chart capture failed:', err);
-                  }
+        if (chart.config.type === 'radar') {
+          if (chart.options.scales.r) {
+            chart.options.scales.r.grid.color = gridColor;
+            chart.options.scales.r.angleLines.color = gridColor;
+            chart.options.scales.r.pointLabels.color = textColor;
+            chart.options.scales.r.pointLabels.font = { size: 14, weight: 'bold' };
+            chart.options.scales.r.ticks.backdropColor = 'rgba(255,255,255,0.5)';
+          }
+        } else if (chart.config.type === 'bar') {
+          if (chart.options.scales.x) {
+            if (!chart.options.scales.x.ticks) chart.options.scales.x.ticks = {};
+            chart.options.scales.x.ticks.color = textColor;
+          }
+          if (chart.options.scales.y) {
+            if (!chart.options.scales.y.ticks) chart.options.scales.y.ticks = {};
+            if (!chart.options.scales.y.grid) chart.options.scales.y.grid = {};
+            chart.options.scales.y.ticks.color = textColor;
+            chart.options.scales.y.grid.color = gridColor;
+          }
+        }
+        if (chart.options.plugins?.legend) {
+          chart.options.plugins.legend.labels.color = textColor;
+        }
 
-                  // 4. Revert Styles
-                  chart.options.animation = originalAnimation;
-                  
-                  if (chart.config.type === 'radar') {
-                      if (chart.options.scales.r) {
-                          chart.options.scales.r.grid.color = originalColors.grid;
-                          chart.options.scales.r.angleLines.color = originalColors.angle;
-                          chart.options.scales.r.pointLabels.color = originalColors.point;
-                          chart.options.scales.r.ticks.backdropColor = originalColors.backdrop;
-                          chart.options.scales.r.pointLabels.font = originalColors.font;
-                      }
-                  } else if (chart.config.type === 'bar') {
-                      if (chart.options.scales.x) chart.options.scales.x.ticks.color = originalColors.xTicks;
-                      if (chart.options.scales.y) {
-                          chart.options.scales.y.ticks.color = originalColors.yTicks;
-                          chart.options.scales.y.grid.color = originalColors.yGrid;
-                      }
-                  }
-                  if (chart.options.plugins?.legend) {
-                      chart.options.plugins.legend.labels.color = originalColors.legend;
-                  }
-                  
-                  chart.update(); // Restore dark mode
-                  resolve();
-              }, 300);
-          });
-          chartPromises.push(p);
+        // 3. Update and Capture
+        chart.update();
+
+        // Give it a tick to paint
+        setTimeout(() => {
+          try {
+            // Composite onto white background
+            const composite = document.createElement('canvas');
+            composite.width = chart.width;
+            composite.height = chart.height;
+            const ctx = composite.getContext('2d');
+
+            // Fill white
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, composite.width, composite.height);
+
+            // Draw chart
+            ctx.drawImage(chart.canvas, 0, 0);
+
+            chartImages[index] = composite.toDataURL('image/png');
+          } catch (err) {
+            console.error('Chart capture failed:', err);
+          }
+
+          // 4. Revert Styles
+          chart.options.animation = originalAnimation;
+
+          if (chart.config.type === 'radar') {
+            if (chart.options.scales.r) {
+              chart.options.scales.r.grid.color = originalColors.grid;
+              chart.options.scales.r.angleLines.color = originalColors.angle;
+              chart.options.scales.r.pointLabels.color = originalColors.point;
+              chart.options.scales.r.ticks.backdropColor = originalColors.backdrop;
+              chart.options.scales.r.pointLabels.font = originalColors.font;
+            }
+          } else if (chart.config.type === 'bar') {
+            if (chart.options.scales.x) chart.options.scales.x.ticks.color = originalColors.xTicks;
+            if (chart.options.scales.y) {
+              chart.options.scales.y.ticks.color = originalColors.yTicks;
+              chart.options.scales.y.grid.color = originalColors.yGrid;
+            }
+          }
+          if (chart.options.plugins?.legend) {
+            chart.options.plugins.legend.labels.color = originalColors.legend;
+          }
+
+          chart.update(); // Restore dark mode
+          resolve();
+        }, 300);
       });
+      chartPromises.push(p);
+    });
   }
 
   Promise.all(chartPromises).then(() => {
-      // 2. Build HTML Structure
-      const dateStr = new Date().toLocaleString();
-      
-      let html = `
+    // 2. Build HTML Structure
+    const dateStr = new Date().toLocaleString();
+
+    let html = `
         <div class="pdf-header">
             <div class="pdf-logo">ORWELL<span style="font-weight:300;font-size:0.8em;margin-left:8px;color:#666">AUDIT</span></div>
             <div class="pdf-meta">
@@ -2393,23 +2488,23 @@ function generatePDFReport(report) {
         </div>
       `;
 
-      const sections = (report.report_json && report.report_json.sections) ? report.report_json.sections : [];
-      const contextSection = sections.find((s) => s.type === 'context_methodology');
-      const dimensionSection = sections.find((s) => s.type === 'dimension_analysis');
-      const scoreSection = sections.find((s) => s.type === 'score_distribution');
-      const contextPrompt = contextSection?.system_prompt_card?.text || contextSection?.system_prompt_card?.note || window.currentSystemPrompt || report.system_prompt_snapshot || 'None (Base Model Behavior)';
+    const sections = (report.report_json && report.report_json.sections) ? report.report_json.sections : [];
+    const contextSection = sections.find((s) => s.type === 'context_methodology');
+    const dimensionSection = sections.find((s) => s.type === 'dimension_analysis');
+    const scoreSection = sections.find((s) => s.type === 'score_distribution');
+    const contextPrompt = contextSection?.system_prompt_card?.text || contextSection?.system_prompt_card?.note || window.currentSystemPrompt || report.system_prompt_snapshot || 'None (Base Model Behavior)';
 
-      if (contextSection) {
-        const jp = contextSection.judge_profile || {};
-        const tp = contextSection.test_parameters || {};
-        const judgeType = jp.type === 'bench' ? 'Bench' : 'Single Judge';
-        const judgeMode = jp.type === 'bench' ? (jp.bench_mode || report.bench_mode || 'N/A') : 'single';
-        const judgeModel = jp.type === 'bench'
-          ? ((jp.models && jp.models.length > 0) ? jp.models.join(', ') : (jp.model || report.judge_model || 'N/A'))
-          : (jp.model || report.judge_model || 'N/A');
-        const judgeName = jp.type === 'bench' ? (jp.bench_name || report.bench_name || 'N/A') : (jp.model || report.judge_model || 'N/A');
+    if (contextSection) {
+      const jp = contextSection.judge_profile || {};
+      const tp = contextSection.test_parameters || {};
+      const judgeType = jp.type === 'bench' ? 'Bench' : 'Single Judge';
+      const judgeMode = jp.type === 'bench' ? (jp.bench_mode || report.bench_mode || 'N/A') : 'single';
+      const judgeModel = jp.type === 'bench'
+        ? ((jp.models && jp.models.length > 0) ? jp.models.join(', ') : (jp.model || report.judge_model || 'N/A'))
+        : (jp.model || report.judge_model || 'N/A');
+      const judgeName = jp.type === 'bench' ? (jp.bench_name || report.bench_name || 'N/A') : (jp.model || report.judge_model || 'N/A');
 
-        html += `
+      html += `
         <div class="pdf-section" style="page-break-inside:avoid">
             <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(contextSection.title || 'Context & Methodology')}</h3>
             <table class="pdf-table">
@@ -2431,15 +2526,15 @@ function generatePDFReport(report) {
             ${contextSection.explanation ? `<div style="margin-top:12px;font-size:12px;color:#333;line-height:1.6;background:#f0f7ff;padding:12px;border-left:3px solid #0066cc"><strong>AI Context:</strong> ${escapeHtml(contextSection.explanation)}</div>` : ''}
         </div>
         `;
-      }
+    }
 
-      if (dimensionSection || chartImages[0]) {
-          let dimensionRows = '';
-          if (dimensionSection && dimensionSection.stats) {
-              Object.entries(dimensionSection.stats).forEach(([dim, data]) => {
-                  const risk = String(data.risk_level || '').toLowerCase();
-                  const riskColor = getRiskColor(risk);
-                  dimensionRows += `<tr>
+    if (dimensionSection || chartImages[0]) {
+      let dimensionRows = '';
+      if (dimensionSection && dimensionSection.stats) {
+        Object.entries(dimensionSection.stats).forEach(([dim, data]) => {
+          const risk = String(data.risk_level || '').toLowerCase();
+          const riskColor = getRiskColor(risk);
+          dimensionRows += `<tr>
                       <td>${escapeHtml(dim)}</td>
                       <td>${data.mean_score ?? 'N/A'}</td>
                       <td>${data.median_score ?? 'N/A'}</td>
@@ -2447,10 +2542,10 @@ function generatePDFReport(report) {
                       <td>${data.failures ?? 0}/${data.sample_size ?? 0}</td>
                       <td><strong style="color:${riskColor}">${escapeHtml(String(data.risk_level || 'N/A').toUpperCase())}</strong></td>
                   </tr>`;
-              });
-          }
+        });
+      }
 
-          html += `
+      html += `
             <div class="pdf-section" style="page-break-inside:avoid">
                 <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(dimensionSection?.title || 'Dimension Analysis')}</h3>
                 ${chartImages[0] ? `<div class="pdf-chart-container"><img src="${chartImages[0]}" class="pdf-chart-img" style="max-height:350px"></div>` : ''}
@@ -2458,29 +2553,29 @@ function generatePDFReport(report) {
                 ${dimensionSection?.explanation ? `<div style="margin-top:12px;font-size:12px;color:#333;line-height:1.6;background:#f0f7ff;padding:12px;border-left:3px solid #0066cc"><strong>AI Context:</strong> ${escapeHtml(dimensionSection.explanation)}</div>` : ''}
             </div>
           `;
+    }
+
+    if (scoreSection || chartImages[1]) {
+      const histLabels = scoreSection?.histogram?.labels || ['1', '2', '3', '4', '5', '6', '7'];
+      const histData = scoreSection?.histogram?.datasets?.[0]?.data || [];
+      let totalResponses = 0;
+      let weightedSum = 0;
+      const scoreRows = [];
+      for (let i = histLabels.length - 1; i >= 0; i--) {
+        const label = String(histLabels[i] || i + 1);
+        const score = Number(label.replace(/[^\d.-]/g, '')) || (i + 1);
+        const count = Number(histData[i] || 0);
+        totalResponses += count;
+        weightedSum += score * count;
+        scoreRows.push({ score: label, count });
       }
+      const meanScore = totalResponses > 0 ? (weightedSum / totalResponses).toFixed(2) : '0.00';
+      const rowsHtml = scoreRows.map((r) => {
+        const pct = totalResponses > 0 ? ((r.count / totalResponses) * 100).toFixed(1) : '0.0';
+        return `<tr><td>Score ${escapeHtml(r.score)}</td><td>${r.count}</td><td>${pct}%</td></tr>`;
+      }).join('');
 
-      if (scoreSection || chartImages[1]) {
-          const histLabels = scoreSection?.histogram?.labels || ['1', '2', '3', '4', '5', '6', '7'];
-          const histData = scoreSection?.histogram?.datasets?.[0]?.data || [];
-          let totalResponses = 0;
-          let weightedSum = 0;
-          const scoreRows = [];
-          for (let i = histLabels.length - 1; i >= 0; i--) {
-              const label = String(histLabels[i] || i + 1);
-              const score = Number(label.replace(/[^\d.-]/g, '')) || (i + 1);
-              const count = Number(histData[i] || 0);
-              totalResponses += count;
-              weightedSum += score * count;
-              scoreRows.push({ score: label, count });
-          }
-          const meanScore = totalResponses > 0 ? (weightedSum / totalResponses).toFixed(2) : '0.00';
-          const rowsHtml = scoreRows.map((r) => {
-              const pct = totalResponses > 0 ? ((r.count / totalResponses) * 100).toFixed(1) : '0.0';
-              return `<tr><td>Score ${escapeHtml(r.score)}</td><td>${r.count}</td><td>${pct}%</td></tr>`;
-          }).join('');
-
-          html += `
+      html += `
             <div class="pdf-section" style="page-break-inside:avoid">
                 <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(scoreSection?.title || 'Score Distribution')}</h3>
                 ${chartImages[1] ? `<div class="pdf-chart-container"><img src="${chartImages[1]}" class="pdf-chart-img" style="max-height:350px"></div>` : ''}
@@ -2493,77 +2588,77 @@ function generatePDFReport(report) {
                 ${scoreSection?.explanation ? `<div style="margin-top:12px;font-size:12px;color:#333;line-height:1.6;background:#f0f7ff;padding:12px;border-left:3px solid #0066cc"><strong>AI Context:</strong> ${escapeHtml(scoreSection.explanation)}</div>` : ''}
             </div>
           `;
-      }
+    }
 
-      if (sections.length > 0) {
-          sections.forEach((section) => {
-             if (section.type === 'context_methodology' || section.type === 'dimension_analysis' || section.type === 'score_distribution') return;
+    if (sections.length > 0) {
+      sections.forEach((section) => {
+        if (section.type === 'context_methodology' || section.type === 'dimension_analysis' || section.type === 'score_distribution') return;
 
-             if (section.type === 'bench_agreement') {
-                const matrix = section.matrix || {};
-                const rows = Object.entries(matrix).map(([dim, data]) => {
-                    const means = Object.entries(data.judge_means || {}).map(([j, s]) => `${j}: ${s}`).join(' | ');
-                    const level = String(data.agreement_level || '').toLowerCase();
-                    return `<tr>
+        if (section.type === 'bench_agreement') {
+          const matrix = section.matrix || {};
+          const rows = Object.entries(matrix).map(([dim, data]) => {
+            const means = Object.entries(data.judge_means || {}).map(([j, s]) => `${j}: ${s}`).join(' | ');
+            const level = String(data.agreement_level || '').toLowerCase();
+            return `<tr>
                         <td>${escapeHtml(dim)}</td>
                         <td>${escapeHtml(means)}</td>
                         <td>${data.variance ?? 'N/A'}</td>
                         <td><strong style="color:${getRiskColor(level)}">${escapeHtml(String(data.agreement_level || 'N/A').toUpperCase())}</strong></td>
                     </tr>`;
-                }).join('');
-                if (rows) {
-                    html += `<div class="pdf-section">
+          }).join('');
+          if (rows) {
+            html += `<div class="pdf-section">
                         <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(section.title || 'Judge Agreement Matrix')}</h3>
                         <table class="pdf-table"><tr><th>Dimension</th><th>Judge Means</th><th>Variance</th><th>Agreement</th></tr>${rows}</table>
                         ${section.explanation ? `<div style="margin-top:12px;font-size:12px;color:#333;line-height:1.6;background:#f0f7ff;padding:12px;border-left:3px solid #0066cc"><strong>AI Context:</strong> ${escapeHtml(section.explanation)}</div>` : ''}
                     </div>`;
-                }
-                return;
-             }
+          }
+          return;
+        }
 
-             if (section.type === 'failure_analysis') {
-                const tableRows = section.table?.rows || [];
-                const rows = tableRows.map((row) => `<tr>
+        if (section.type === 'failure_analysis') {
+          const tableRows = section.table?.rows || [];
+          const rows = tableRows.map((row) => `<tr>
                     <td>${escapeHtml(row.dimension || '')}</td>
                     <td>${escapeHtml(row.prompt || '')}</td>
                     <td>${escapeHtml(row.response || '')}</td>
                     <td>${row.score ?? ''}</td>
                 </tr>`).join('');
-                html += `<div class="pdf-section">
+          html += `<div class="pdf-section">
                     <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(section.title || 'Flagged Responses')}</h3>
                     ${rows ? `<table class="pdf-table"><tr><th>Dimension</th><th>Prompt</th><th>Response</th><th>Score</th></tr>${rows}</table>` : `<div class="pdf-content-text">No flagged responses were detected.</div>`}
                 </div>`;
-                return;
-             }
+          return;
+        }
 
-             if (!section.content || section.content.trim() === '') return;
+        if (!section.content || section.content.trim() === '') return;
 
-             html += `<div class="pdf-section">
+        html += `<div class="pdf-section">
                 <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(section.title)}</h3>
                 <div class="pdf-content-text">${renderMarkdown(section.content || '')}</div>
              </div>`;
-          });
-      }
+      });
+    }
 
-      html += `
+    html += `
         <div class="pdf-section">
             <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">System Prompt Snapshot</h3>
             <div style="font-family:monospace;font-size:11px;background:#f9f9f9;padding:10px;border:1px solid #eee;white-space:pre-wrap;color:#111;line-height:1.5;">${escapeHtml(contextPrompt)}</div>
         </div>
       `;
 
-      // Add Footer
-      html += `
+    // Add Footer
+    html += `
         <div class="pdf-footer">
             CONFIDENTIAL - ASM Labs
         </div>
       `;
 
-      // Show Preview Modal
-      showReportPreview('PDF Report Preview', html, 'html');
-      
-      document.body.style.cursor = 'default';
-      if (btn) btn.innerHTML = originalText;
+    // Show Preview Modal
+    showReportPreview('PDF Report Preview', html, 'html');
+
+    document.body.style.cursor = 'default';
+    if (btn) btn.innerHTML = originalText;
   });
 }
 

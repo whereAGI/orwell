@@ -382,6 +382,31 @@
       color: #d1d5db;
       overflow-x: auto;
     }
+
+    /* Bench List Styles */
+    .bench-judge-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 4px;
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #0e0e14;
+    }
+
+    .bench-judge-item {
+      display: grid;
+      grid-template-columns: 16px 1fr auto;
+      align-items: center;
+      column-gap: 8px;
+      cursor: pointer;
+      padding: 4px 0;
+      font-size: 14px;
+      color: var(--text);
+    }
   </style>
 </head>
 
@@ -487,10 +512,18 @@
         </div>
         <div style="margin-top:16px">
           <label>Target Model</label>
-          <select id="targetModelSelect"
-            style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
-            <option value="custom">Custom (Enter manually)</option>
-          </select>
+          <div style="display:flex; gap:8px;">
+            <select id="targetModelSelect"
+              style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
+              <option value="custom">Custom (Enter manually)</option>
+            </select>
+            <button id="editTargetModelBtn" onclick="editSelectedModel('target')" class="secondary" style="width:auto;padding:8px;" title="Edit Target Model">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+            </button>
+          </div>
         </div>
 
         <div id="customTargetFields"
@@ -505,7 +538,7 @@
           </div>
           <div style="margin-top:12px">
             <label>Model Name</label>
-            <input id="modelName" type="text" placeholder="e.g. gpt-4o-mini" />
+            <input id="customModelName" type="text" placeholder="e.g. gpt-4o-mini" />
           </div>
         </div>
 
@@ -525,16 +558,32 @@
             </label>
           </div>
           <div id="singleJudgeWrap">
-            <select id="judgeModelSelect"
-              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
-              <option value="" disabled selected>Select a Judge Model</option>
-            </select>
+            <div style="display:flex; gap:8px;">
+              <select id="judgeModelSelect"
+                style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
+                <option value="" disabled selected>Select a Judge Model</option>
+              </select>
+              <button onclick="editSelectedModel('judge')" class="secondary" style="width:auto;padding:8px;" title="Edit Judge Model">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+              </button>
+            </div>
           </div>
           <div id="benchJudgeWrap" style="display:none;">
-            <select id="benchSelect"
-              style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
-              <option value="" disabled selected>Select a Bench</option>
-            </select>
+            <div style="display:flex; gap:8px;">
+              <select id="benchSelect"
+                style="flex:1;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
+                <option value="" disabled selected>Select a Bench</option>
+              </select>
+              <button onclick="editSelectedBench()" class="secondary" style="width:auto;padding:8px;" title="Edit Bench">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+              </button>
+            </div>
             <div id="benchInfo" style="font-size:12px; color:var(--muted); margin-top:4px;"></div>
           </div>
         </div>
@@ -683,8 +732,6 @@
     </div>
   </div>
 
-  <script src="https://unpkg.com/pocketbase@0.21.5/dist/pocketbase.umd.js"></script>
-  <script src="/config.js"></script>
   <script src="/static/auth.js"></script>
   <script>
     // Protect route - Disabled for local mode
@@ -729,6 +776,177 @@
       </div>
     </div>
   </div>
+  <!-- Add/Edit Model Modal -->
+  <div id="modelModal" class="modal">
+    <div class="modal-content">
+      <h2 id="modalTitle" style="margin-top:0">Add New Model</h2>
+      <input type="hidden" id="modelId"> <!-- Hidden ID for edits -->
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="modelName" style="width:100%" placeholder="e.g. Production Model">
+      </div>
+      <!-- Category is hidden and set programmatically -->
+      <input type="hidden" id="modelCategory">
+
+      <div class="form-group">
+        <label>Provider</label>
+        <select id="modelProvider" style="width:100%" onchange="updateProviderDefaults()">
+          <option value="openai">OpenAI</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="ollama">Ollama</option>
+          <option value="custom">Custom</option>
+        </select>
+        <div id="providerLink" style="font-size:12px; margin-top:4px;"></div>
+        <div id="providerKeyStatus" style="font-size:12px; margin-top:6px;"></div>
+      </div>
+      <div class="form-group">
+        <label>Base URL</label>
+        <input type="text" id="modelBaseUrl" style="width:100%" value="https://api.openai.com/v1">
+      </div>
+      <div class="form-group">
+        <label>Source URL (Optional)</label>
+        <input type="text" id="modelSourceUrl" style="width:100%"
+          placeholder="e.g. https://huggingface.co/meta-llama/Llama-3-70b">
+      </div>
+      <div class="form-group">
+        <label>Model Key</label>
+        <!-- Default input -->
+        <input type="text" id="modelKeyInput" style="width:100%; display:block;" placeholder="e.g. gpt-4o-mini">
+        <!-- Select for Ollama -->
+        <select id="modelKeySelect" style="width:100%; display:none;">
+          <option value="" disabled selected>Select a local model...</option>
+        </select>
+        <div id="modelKeyHelp" style="font-size:12px; color:var(--muted); margin-top:4px; display:none;">
+          Fetching local models...</div>
+      </div>
+
+      <div id="judgeSystemPromptContainer" class="form-group" style="display:none;">
+        <label>Scoring Instructions (Optional)</label>
+        <textarea id="modelSystemPrompt"
+          style="width:100%; height:100px; resize:vertical; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px;"
+          placeholder="Override the default LLM-GLOBE scoring rubric..."></textarea>
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">Customise how the judge scores
+          responses (1-7 scale). Leave blank to use the default LLM-GLOBE prompt.</div>
+      </div>
+
+      <div id="judgeAnalysisPersonaContainer" class="form-group" style="display:none;">
+        <label>Analysis Persona (Optional)</label>
+        <textarea id="modelAnalysisPersona"
+          style="width:100%; height:70px; resize:vertical; background:#0e0e14; border:1px solid var(--border); color:var(--text); border-radius:8px; padding:10px;"
+          placeholder="e.g. You are a compliance officer specialising in financial services..."></textarea>
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">Sets the voice and expertise of the AI
+          when writing report sections. Leave blank to use the default auditor persona.</div>
+      </div>
+
+      <div class="form-group">
+        <label>Reasoning</label>
+        <select id="modelReasoning" style="width:100%">
+          <option value="">Default (Provider Setting)</option>
+          <option value="enabled">Enabled (think: true)</option>
+          <option value="disabled">Disabled (think: false)</option>
+          <option value="low">Low Effort (OpenRouter)</option>
+          <option value="medium">Medium Effort (OpenRouter)</option>
+          <option value="high">High Effort (OpenRouter)</option>
+        </select>
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+          Controls reasoning tokens for models that support it (e.g., DeepSeek-R1, O1).
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Thinking Max Tokens (Optional)</label>
+        <input type="number" id="modelMaxReasoningTokens" style="width:100%" placeholder="e.g. 1000">
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+          Limits the number of tokens used for reasoning/thinking. Leave blank for default.
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Temperature (0.0 - 2.0)</label>
+        <input type="number" id="modelTemperature" style="width:100%" step="0.1" min="0" max="2" value="0.7">
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">Controls randomness. Lower values are
+          more deterministic.</div>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
+        <button class="secondary" onclick="testConnection()" style="margin-right:auto;">Test Model</button>
+        <button class="secondary" onclick="closeModal()">Cancel</button>
+        <button id="saveModelBtn" onclick="saveModel()">Save Model</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="testResultModal" class="modal">
+    <div class="card"
+      style="width: 600px; margin: 0; max-height: 80vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--border);">
+      <h3 id="testResultTitle" style="margin-top:0; color: var(--text);">Test Result</h3>
+      <div id="testResultContent" style="overflow-y: auto; flex: 1; color: var(--text);">
+      </div>
+      <div style="display:flex; justify-content:flex-end; margin-top:16px;">
+        <button onclick="closeTestResultModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bench Create/Edit Modal -->
+  <div id="benchModal" class="modal">
+    <div class="modal-content" style="max-width:500px;">
+      <h2 id="benchModalTitle" style="margin-top:0">Create Judge Bench</h2>
+      <input type="hidden" id="benchId">
+      <div class="form-group">
+        <label>Bench Name</label>
+        <input type="text" id="benchName" style="width:100%" placeholder="e.g. Balanced Bias Panel">
+      </div>
+      <div class="form-group">
+        <label>Mode</label>
+        <div style="display:flex; gap:16px; margin-top:4px;">
+          <label
+            style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:14px; color:var(--text);">
+            <input type="radio" name="benchMode" value="random" checked onchange="updateBenchModeDesc()">
+            Random
+          </label>
+          <label
+            style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:14px; color:var(--text);">
+            <input type="radio" name="benchMode" value="all" onchange="updateBenchModeDesc()">
+            All
+          </label>
+          <label
+            style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:14px; color:var(--text);">
+            <input type="radio" name="benchMode" value="jury" onchange="updateBenchModeDesc()">
+            Jury
+          </label>
+        </div>
+        <div id="benchModeDesc" style="font-size:12px; color:var(--muted); margin-top:6px;">
+          Random: A random judge scores each response. Low scores (&lt;4) trigger a re-score by another judge.
+        </div>
+
+        <div id="foremanSelectContainer"
+          style="display:none; margin-top:12px; padding: 10px; background: #0e0e14; border: 1px solid var(--border); border-radius: 6px;">
+          <label style="font-size:14px; font-weight:600;">Jury Foreman</label>
+          <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">
+            The Foreman synthesizes the final verdict based on the jury's arguments. It can be one of the
+            jurors or an external model.
+          </div>
+          <select id="benchForeman"
+            style="width:100%; padding:6px; background:#0e0e14; color:var(--text); border:1px solid var(--border); border-radius:4px;">
+            <option value="">Select a foreman...</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Select Judge Models (max 5)</label>
+        <div id="benchJudgeList" class="bench-judge-list">
+          <!-- Checkboxes populated dynamically -->
+        </div>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
+        <button class="secondary" onclick="closeBenchModal()">Cancel</button>
+        <button onclick="saveBench()">Save Bench</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/model-editor.js"></script>
 </body>
 
 </html>
