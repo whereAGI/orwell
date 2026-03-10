@@ -50,11 +50,11 @@ Societies that score lower on {dimension_name} tend to:
 
 class PromptGenerator:
     """
-    Generates GLOBE-style evaluation prompts using an OpenAI-compatible LLM.
+    Generates GLOBE-style evaluation prompts using a chat-completions compatible LLM.
 
     Mirrors JudgeClient for LLM interaction and thinking-process handling:
       - For OpenRouter: uses delta.reasoning (native reasoning field)
-      - For Ollama / OpenAI and others: uses delta.reasoning_content
+      - For Ollama / other providers: uses delta.reasoning_content
       - Thinking tokens are streamed to logs but excluded from parsed output.
     """
 
@@ -99,7 +99,7 @@ class PromptGenerator:
         Make a single LLM call with streaming, handling thinking tokens by provider.
 
         - OpenRouter: passes include_reasoning, reads delta.reasoning
-        - Ollama / OpenAI / others: passes include_reasoning, reads delta.reasoning_content
+        - Ollama / other providers: passes include_reasoning, reads delta.reasoning_content
         - Thinking tokens are logged as 'thought' type but excluded from returned content.
         """
         # Log the full request for debugging

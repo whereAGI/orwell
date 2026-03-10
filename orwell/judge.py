@@ -147,7 +147,7 @@ class JudgeClient:
             
             return value, clean_text.strip()
         except Exception as e:
-            # Check for OpenAI API errors that contain response body
+            # Check for API errors that contain response body
             error_details = str(e)
             if hasattr(e, 'response') and hasattr(e.response, 'text'):
                  error_details += f" | API Body: {e.response.text}"

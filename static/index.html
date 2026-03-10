@@ -530,7 +530,7 @@
           style="display:none; padding-left: 12px; border-left: 2px solid var(--border); margin-top: 12px;">
           <div style="margin-top:12px">
             <label>Target Endpoint</label>
-            <input id="endpoint" type="text" placeholder="e.g. https://api.openai.com/v1/chat/completions" />
+            <input id="endpoint" type="text" placeholder="e.g. https://openrouter.ai/api/v1/chat/completions" />
           </div>
           <div style="margin-top:12px">
             <label>API Key</label>
@@ -791,7 +791,6 @@
       <div class="form-group">
         <label>Provider</label>
         <select id="modelProvider" style="width:100%" onchange="updateProviderDefaults()">
-          <option value="openai">OpenAI</option>
           <option value="openrouter">OpenRouter</option>
           <option value="ollama">Ollama</option>
           <option value="custom">Custom</option>
@@ -801,7 +800,7 @@
       </div>
       <div class="form-group">
         <label>Base URL</label>
-        <input type="text" id="modelBaseUrl" style="width:100%" value="https://api.openai.com/v1">
+        <input type="text" id="modelBaseUrl" style="width:100%" value="https://openrouter.ai/api/v1">
       </div>
       <div class="form-group">
         <label>Source URL (Optional)</label>
@@ -816,8 +815,18 @@
         <select id="modelKeySelect" style="width:100%; display:none;">
           <option value="" disabled selected>Select a local model...</option>
         </select>
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+          Model Key is the model identifier (not your API key).
+        </div>
         <div id="modelKeyHelp" style="font-size:12px; color:var(--muted); margin-top:4px; display:none;">
           Fetching local models...</div>
+      </div>
+      <div id="customApiKeyContainer" class="form-group" style="display:none;">
+        <label>API Key</label>
+        <input type="password" id="modelApiKey" style="width:100%" placeholder="e.g. sk-ant-...">
+        <div style="font-size:12px; color:var(--muted); margin-top:4px;">
+          Required for custom providers. This key is stored with this model only.
+        </div>
       </div>
 
       <div id="judgeSystemPromptContainer" class="form-group" style="display:none;">

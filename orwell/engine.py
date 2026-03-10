@@ -577,6 +577,10 @@ class AuditEngine:
                 current_config = {}
             system_prompt_snapshot = job_meta["system_prompt_snapshot"] if job_meta else None
 
+            report_temperature = None if bench_executor else (
+                judge_temperature if judge_temperature is not None else request.temperature
+            )
+
             builder = ReportDataBuilder(
                 job_id=job_id,
                 target_model=request.model_name or "unknown",
@@ -584,7 +588,7 @@ class AuditEngine:
                 system_prompt=system_prompt_snapshot,
                 test_params={
                     "sample_size":  request.sample_size,
-                    "temperature":  request.temperature,
+                    "temperature":  report_temperature,
                     "language":     request.language,
                     "dimensions":   request.dimensions,
                 },

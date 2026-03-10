@@ -12,7 +12,7 @@ window.currentBenches = window.currentBenches || {};
 window.onModelSaved = window.onModelSaved || function() {};
 window.onBenchSaved = window.onBenchSaved || function() {};
 
-function editModel(modelId) {
+async function editModel(modelId) {
     const model = window.currentModels[modelId];
     if (!model) {
         console.error("Model not found:", modelId);
@@ -30,9 +30,12 @@ function editModel(modelId) {
     if (title) title.textContent = 'Edit Model';
 
     setValue('modelName', model.name);
-    setValue('modelProvider', model.provider);
+    const allowedProviders = ['openrouter', 'ollama', 'custom'];
+    const provider = allowedProviders.includes(model.provider) ? model.provider : 'custom';
+    setValue('modelProvider', provider);
     setValue('modelBaseUrl', model.base_url);
     setValue('modelSourceUrl', model.source_url || '');
+    setValue('modelApiKey', model.api_key || '');
 
     // Set existing prompt first
     setValue('modelSystemPrompt', model.system_prompt || '');
@@ -69,26 +72,46 @@ function editModel(modelId) {
     const keySelect = document.getElementById('modelKeySelect');
     const keyHelp = document.getElementById('modelKeyHelp');
     
-    if (model.provider === 'ollama') {
-        keyInput.style.display = 'none';
-        keySelect.style.display = 'block';
-        keyHelp.style.display = 'block';
-        fetchOllamaModels(model.model_key); // Pre-select
-    } else {
-        keyInput.style.display = 'block';
-        keySelect.style.display = 'none';
-        keyHelp.style.display = 'none';
-        keyInput.value = model.model_key || ''; // Key might be masked or hidden in real app, but here we show it if available
-        // Note: The API might mask the key. If so, we might not want to overwrite it with **** on save unless changed.
-        // Assuming the API returns the key or we handle it.
-    }
-
     toggleJudgeFields();
+    await updateProviderDefaults();
+    setValue('modelBaseUrl', model.base_url);
+    if (provider === 'ollama') {
+        if (keySelect.style.display !== 'none') keySelect.value = model.model_key || '';
+        keyInput.value = model.model_key || '';
+    } else {
+        keyInput.value = model.model_key || '';
+    }
 }
 
 function setValue(id, val) {
     const el = document.getElementById(id);
     if (el) el.value = val;
+}
+
+function escapeHtml(text) {
+    if (text === null || text === undefined) return '';
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+async function parseErrorResponse(res) {
+    const text = await res.text();
+    if (!text) return `Status ${res.status}`;
+    try {
+        const json = JSON.parse(text);
+        if (json.detail) {
+            if (typeof json.detail === 'string') return json.detail;
+            return JSON.stringify(json.detail);
+        }
+        if (json.error) return json.error;
+        return JSON.stringify(json);
+    } catch {
+        return text;
+    }
 }
 
 function closeModal() {
@@ -111,13 +134,15 @@ function toggleJudgeFields() {
     });
 }
 
-function updateProviderDefaults() {
+async function updateProviderDefaults() {
     const provider = document.getElementById('modelProvider').value;
     const baseUrlInput = document.getElementById('modelBaseUrl');
     const keyInput = document.getElementById('modelKeyInput');
     const keySelect = document.getElementById('modelKeySelect');
     const keyHelp = document.getElementById('modelKeyHelp');
     const linkDiv = document.getElementById('providerLink');
+    const apiKeyContainer = document.getElementById('customApiKeyContainer');
+    const apiKeyInput = document.getElementById('modelApiKey');
 
     let defaultUrl = '';
     let linkHtml = '';
@@ -125,12 +150,10 @@ function updateProviderDefaults() {
     keyInput.style.display = 'block';
     keySelect.style.display = 'none';
     keyHelp.style.display = 'none';
+    if (apiKeyContainer) apiKeyContainer.style.display = 'none';
+    if (apiKeyInput && provider !== 'custom') apiKeyInput.value = '';
 
     switch (provider) {
-        case 'openai':
-            defaultUrl = 'https://api.openai.com/v1';
-            linkHtml = '<a href="https://platform.openai.com/api-keys" target="_blank">Get API Key</a>';
-            break;
         case 'openrouter':
             defaultUrl = 'https://openrouter.ai/api/v1';
             linkHtml = '<a href="https://openrouter.ai/keys" target="_blank">Get API Key</a>';
@@ -141,10 +164,12 @@ function updateProviderDefaults() {
             keyInput.style.display = 'none';
             keySelect.style.display = 'block';
             keyHelp.style.display = 'block';
-            fetchOllamaModels();
+            await fetchOllamaModels();
             break;
         case 'custom':
             defaultUrl = '';
+            linkHtml = '<span style="color:var(--muted)">Use an OpenAI-compatible API base URL (must support <code>/chat/completions</code>).</span>';
+            if (apiKeyContainer) apiKeyContainer.style.display = 'block';
             break;
     }
 
@@ -203,6 +228,7 @@ async function saveModel() {
     const baseUrl = document.getElementById('modelBaseUrl').value.trim();
     const sourceUrl = document.getElementById('modelSourceUrl').value.trim();
     const category = document.getElementById('modelCategory').value;
+    const apiKeyInput = document.getElementById('modelApiKey');
     
     let modelKey;
     if (provider === 'ollama') {
@@ -216,9 +242,14 @@ async function saveModel() {
     const temperature = parseFloat(document.getElementById('modelTemperature').value);
     const reasoning = document.getElementById('modelReasoning').value;
     const maxReasoningTokens = document.getElementById('modelMaxReasoningTokens').value ? parseInt(document.getElementById('modelMaxReasoningTokens').value) : null;
+    const customApiKey = provider === 'custom' ? (apiKeyInput?.value || '').trim() : '';
 
     if (!name || !provider || !baseUrl || !modelKey) {
         alert('Please fill in all required fields (Name, Provider, Base URL, Key)');
+        return;
+    }
+    if (provider === 'custom' && !customApiKey) {
+        alert('Please enter an API key for the custom provider.');
         return;
     }
 
@@ -228,6 +259,7 @@ async function saveModel() {
         base_url: baseUrl,
         source_url: sourceUrl,
         model_key: modelKey,
+        api_key: customApiKey || null,
         category,
         system_prompt: systemPrompt || null,
         analysis_persona: analysisPersona || null,
@@ -253,8 +285,7 @@ async function saveModel() {
         }
 
         if (!res.ok) {
-            const errorText = await res.text();
-            throw new Error(errorText);
+            throw new Error(await parseErrorResponse(res));
         }
 
         closeModal();
@@ -277,7 +308,12 @@ async function runTest(payload, btn) {
             body: JSON.stringify(payload)
         });
 
-        const data = await res.json();
+        let data;
+        try {
+            data = await res.json();
+        } catch {
+            data = { success: false, error: `Invalid response from server (status ${res.status})` };
+        }
         showTestResult(data);
     } catch (err) {
         showTestResult({
@@ -295,6 +331,7 @@ async function testConnection() {
     const provider = document.getElementById('modelProvider').value;
     const baseUrl = document.getElementById('modelBaseUrl').value.trim();
     let modelKey = document.getElementById('modelKeyInput').value.trim();
+    const customApiKey = provider === 'custom' ? (document.getElementById('modelApiKey')?.value || '').trim() : '';
 
     if (provider === 'ollama' && document.getElementById('modelKeySelect').style.display !== 'none') {
         modelKey = document.getElementById('modelKeySelect').value;
@@ -304,12 +341,16 @@ async function testConnection() {
         alert('Please enter Base URL and Model Key to test connection.');
         return;
     }
+    if (provider === 'custom' && !customApiKey) {
+        alert('Please enter an API key to test this custom provider.');
+        return;
+    }
 
     const payload = {
         provider,
         base_url: baseUrl,
         model_key: modelKey,
-        api_key: null
+        api_key: customApiKey || null
     };
 
     const btn = document.querySelector('#modelModal button[onclick="testConnection()"]');
@@ -334,11 +375,40 @@ function showTestResult(result) {
     } else {
         title.textContent = '❌ Connection Failed';
         title.style.color = '#f56565';
-        html += `<div style="margin-bottom:16px; padding:12px; background:rgba(245, 101, 101, 0.1); border:1px solid #f56565; border-radius:6px; color:#f56565;">${result.error || 'Unknown error occurred.'}</div>`;
+        html += `<div style="margin-bottom:16px; padding:12px; background:rgba(245, 101, 101, 0.1); border:1px solid #f56565; border-radius:6px; color:#f56565;"><strong>Error:</strong> ${escapeHtml(result.error || 'Unknown error occurred.')}</div>`;
     }
 
-    if (result.raw_text) {
-        html += `<div style="margin-top:12px;"><h4 style="margin:0 0 8px 0; color:var(--text);">Raw Response</h4><pre style="margin:0; padding:12px; background:#0e0e14; border:1px solid var(--border); border-radius:6px; white-space:pre-wrap; word-break:break-word; color:var(--muted); font-size:12px; max-height:260px; overflow:auto;">${String(result.raw_text)}</pre></div>`;
+    const responseObj = getTestResponseObject(result);
+    const firstChoice = responseObj?.choices?.[0];
+    const assistantOutput = firstChoice?.message?.content;
+    const usage = responseObj?.usage || {};
+    const completionTokens = usage.completion_tokens;
+    const promptTokens = usage.prompt_tokens;
+    const totalTokens = usage.total_tokens;
+    const queueTime = usage.queue_time;
+    const promptTime = usage.prompt_time;
+    const completionTime = usage.completion_time;
+    const totalTime = usage.total_time;
+    const modelName = responseObj?.model;
+    const finishReason = firstChoice?.finish_reason;
+
+    if (assistantOutput || completionTokens !== undefined || promptTokens !== undefined || totalTokens !== undefined || modelName || finishReason || queueTime !== undefined || totalTime !== undefined) {
+        html += `<div style="margin-top:12px;"><h4 style="margin:0 0 8px 0; color:var(--text);">Parsed Result</h4><div style="margin:0; padding:12px; background:#0e0e14; border:1px solid var(--border); border-radius:6px; color:#e2e8f0; font-size:12px; line-height:1.6;">
+            ${modelName ? `<div><strong>Model:</strong> ${escapeHtml(modelName)}</div>` : ''}
+            ${finishReason ? `<div><strong>Finish Reason:</strong> ${escapeHtml(finishReason)}</div>` : ''}
+            ${assistantOutput ? `<div style="margin-top:6px;"><strong>Assistant Output:</strong><div style="margin-top:4px; white-space:pre-wrap; word-break:break-word;">${escapeHtml(assistantOutput)}</div></div>` : ''}
+            ${(completionTokens !== undefined || promptTokens !== undefined || totalTokens !== undefined) ? `<div style="margin-top:8px;"><strong>Token Usage:</strong> prompt=${promptTokens ?? '-'}, completion=${completionTokens ?? '-'}, total=${totalTokens ?? '-'}</div>` : ''}
+            ${(queueTime !== undefined || promptTime !== undefined || completionTime !== undefined || totalTime !== undefined) ? `<div style="margin-top:4px;"><strong>Timing (s):</strong> queue=${queueTime ?? '-'}, prompt=${promptTime ?? '-'}, completion=${completionTime ?? '-'}, total=${totalTime ?? '-'}</div>` : ''}
+        </div></div>`;
+    }
+
+    if (result.debug) {
+        html += `<div style="margin-top:12px;"><h4 style="margin:0 0 8px 0; color:var(--text);">Debug Context</h4><pre style="margin:0; padding:12px; background:#0e0e14; border:1px solid var(--border); border-radius:6px; white-space:pre-wrap; word-break:break-word; color:#e2e8f0; font-size:12px; max-height:200px; overflow:auto;">${escapeHtml(JSON.stringify(result.debug, null, 2))}</pre></div>`;
+    }
+
+    if (responseObj || result.raw_text) {
+        const rawResponse = responseObj ? JSON.stringify(responseObj, null, 2) : String(result.raw_text);
+        html += `<div style="margin-top:12px;"><h4 style="margin:0 0 8px 0; color:var(--text);">Full Response</h4><pre style="margin:0; padding:12px; background:#0e0e14; border:1px solid var(--border); border-radius:6px; white-space:pre-wrap; word-break:break-word; color:var(--muted); font-size:12px; max-height:260px; overflow:auto;">${escapeHtml(rawResponse)}</pre></div>`;
     }
 
     content.innerHTML = html;
@@ -347,6 +417,17 @@ function showTestResult(result) {
 function closeTestResultModal() {
     const modal = document.getElementById('testResultModal');
     if (modal) modal.style.display = 'none';
+}
+
+function getTestResponseObject(result) {
+    if (result && result.response && typeof result.response === 'object') return result.response;
+    if (!result || !result.raw_text || typeof result.raw_text !== 'string') return null;
+    try {
+        const parsed = JSON.parse(result.raw_text);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+        return null;
+    }
 }
 
 // Bench Logic

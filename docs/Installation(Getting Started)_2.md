@@ -64,12 +64,11 @@ Create a `.env` file from the example template.
 cp .env.example .env
 ```
 
-Open `.env` and configure your API keys (e.g., OpenAI, Anthropic, or local Ollama URL).
+Open `.env` and configure your API keys (e.g., OpenRouter or local Ollama URL).
 
 ```bash
 # .env
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-...
+OPENROUTER_API_KEY=sk-or-...
 POCKETBASE_URL=http://127.0.0.1:8090
 ```
 

@@ -7,7 +7,7 @@ import json
 import csv
 import io
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import os
 import re
 
@@ -34,6 +34,54 @@ from .database import get_db, init_db, new_id
 # Helpers
 # ──────────────────────────────────────────────────
 
+def _build_target_url(base_url: str) -> str:
+    target_url = base_url.strip()
+    if not target_url.endswith("/chat/completions"):
+        target_url += ("" if target_url.endswith("/") else "/") + "chat/completions"
+    return target_url
+
+
+def _extract_raw_text(resp: httpx.Response) -> str:
+    text = (resp.text or "").strip()
+    return text[:4000]
+
+
+def _build_debug_context(
+    provider: str,
+    base_url: str,
+    target_url: str,
+    model_key: str,
+    resolved_key: Optional[str],
+    key_source: str,
+) -> Dict[str, Any]:
+    return {
+        "provider": provider,
+        "base_url": base_url,
+        "target_url": target_url,
+        "model_key": model_key,
+        "has_api_key": bool(resolved_key),
+        "api_key_source": key_source,
+        "request_payload": {"model": model_key, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 50},
+    }
+
+
+def _build_debug_hints(provider: str, status_code: Optional[int], has_api_key: bool) -> List[str]:
+    hints = []
+    if not has_api_key and provider != "ollama":
+        hints.append("No API key is set. Add a key in this model or provider settings before retrying.")
+    if provider == "custom":
+        hints.append("Custom provider base URL must expose an OpenAI-compatible /chat/completions endpoint.")
+    if status_code == 401:
+        hints.append("Authentication failed. Verify your API key and key permissions.")
+    if status_code == 403:
+        hints.append("Access forbidden. Verify organization/project permissions for this key.")
+    if status_code == 404:
+        hints.append("Endpoint or model was not found. Verify base URL and model key.")
+    if status_code == 429:
+        hints.append("Rate limit reached. Retry later or use a different key.")
+    return hints
+
+
 async def verify_model_connection(provider: str, base_url: str, model_key: str, api_key: Optional[str]):
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -45,9 +93,7 @@ async def verify_model_connection(provider: str, base_url: str, model_key: str, 
         "max_tokens": 1,
     }
 
-    target_url = base_url
-    if not target_url.endswith("/chat/completions"):
-        target_url += ("" if target_url.endswith("/") else "/") + "chat/completions"
+    target_url = _build_target_url(base_url)
 
     print(f"Verifying connection to {target_url} for model {model_key}...")
 
@@ -55,7 +101,9 @@ async def verify_model_connection(provider: str, base_url: str, model_key: str, 
         try:
             resp = await client.post(target_url, headers=headers, json=payload)
             if resp.status_code != 200:
-                raise ValueError(f"Status {resp.status_code}: {resp.text[:200]}")
+                hints = _build_debug_hints(provider, resp.status_code, bool(api_key))
+                hint_text = f" Hints: {' | '.join(hints)}" if hints else ""
+                raise ValueError(f"Status {resp.status_code}: {_extract_raw_text(resp)}.{hint_text}")
             data = resp.json()
             if "choices" not in data and "error" in data:
                 raise ValueError(f"API Error: {data['error']}")
@@ -224,6 +272,7 @@ async def list_models(category: Optional[str] = None):
 async def test_model_connection(req: TestConnectionRequest):
     headers = {"Content-Type": "application/json"}
     resolved_key = req.api_key or get_provider_key(req.provider)
+    key_source = "request" if req.api_key else "provider_settings"
     if resolved_key:
         headers["Authorization"] = f"Bearer {resolved_key}"
 
@@ -233,9 +282,15 @@ async def test_model_connection(req: TestConnectionRequest):
         "max_tokens": 50,
     }
 
-    target_url = req.base_url
-    if not target_url.endswith("/chat/completions"):
-        target_url += ("" if target_url.endswith("/") else "/") + "chat/completions"
+    target_url = _build_target_url(req.base_url)
+    debug = _build_debug_context(
+        provider=req.provider,
+        base_url=req.base_url,
+        target_url=target_url,
+        model_key=req.model_key,
+        resolved_key=resolved_key,
+        key_source=key_source,
+    )
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -247,23 +302,27 @@ async def test_model_connection(req: TestConnectionRequest):
 
             if resp.status_code != 200:
                 return {"success": False, "status_code": resp.status_code,
-                        "error": f"Status {resp.status_code}", "response": data, "raw_text": resp.text}
+                        "error": f"Status {resp.status_code}",
+                        "response": data,
+                        "raw_text": _extract_raw_text(resp),
+                        "debug": {**debug, "hints": _build_debug_hints(req.provider, resp.status_code, bool(resolved_key))}}
             if data is None:
                 return {"success": False, "status_code": resp.status_code,
-                        "error": "Invalid JSON response", "raw_text": resp.text}
+                        "error": "Invalid JSON response", "raw_text": _extract_raw_text(resp), "debug": debug}
             if not isinstance(data, dict):
                 return {"success": False, "status_code": resp.status_code,
-                        "error": "Unexpected response type", "response": data, "raw_text": resp.text}
+                        "error": "Unexpected response type", "response": data, "raw_text": _extract_raw_text(resp), "debug": debug}
             if "choices" not in data:
                 error_msg = "No 'choices' in response"
                 if "error" in data:   error_msg = f"API Error: {data['error']}"
                 elif "message" in data: error_msg = f"API Message: {data['message']}"
                 return {"success": False, "status_code": resp.status_code,
-                        "error": error_msg, "response": data, "raw_text": resp.text}
+                        "error": error_msg, "response": data, "raw_text": _extract_raw_text(resp), "debug": debug}
             return {"success": True, "status_code": resp.status_code,
-                    "response": data, "raw_text": resp.text}
+                    "response": data, "raw_text": _extract_raw_text(resp), "debug": debug}
     except Exception as e:
-        return {"success": False, "error": str(e), "raw_text": str(e)}
+        hints = _build_debug_hints(req.provider, None, bool(resolved_key))
+        return {"success": False, "error": str(e), "raw_text": str(e), "debug": {**debug, "hints": hints, "exception_type": type(e).__name__}}
 
 
 @app.post("/api/models", response_model=ModelConfig)

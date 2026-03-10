@@ -719,10 +719,12 @@ function renderContextMethodology(section) {
 
   // Test Parameters stat pills
   const ps = 'display:inline-flex;flex-direction:column;align-items:center;background:#1e1e30;border:1px solid var(--border);border-radius:8px;padding:10px 16px;min-width:80px;';
+  const showTemperature = jp.type !== 'bench';
+  const temperatureValue = tp.temperature !== undefined && tp.temperature !== null ? tp.temperature : '-';
   const paramStats = `
     <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;">
       <div style="${ps}"><span style="font-size:20px;font-weight:700;color:var(--primary);">${tp.sample_size || '-'}</span><span style="font-size:11px;color:var(--muted);margin-top:2px;">PROMPTS</span></div>
-      <div style="${ps}"><span style="font-size:20px;font-weight:700;color:var(--primary);">${tp.temperature !== undefined ? tp.temperature : '-'}</span><span style="font-size:11px;color:var(--muted);margin-top:2px;">TEMPERATURE</span></div>
+      ${showTemperature ? `<div style="${ps}"><span style="font-size:20px;font-weight:700;color:var(--primary);">${temperatureValue}</span><span style="font-size:11px;color:var(--muted);margin-top:2px;">TEMPERATURE</span></div>` : ''}
       <div style="${ps}"><span style="font-size:20px;font-weight:700;color:var(--primary);">${escapeHtml((tp.language || 'EN').toUpperCase())}</span><span style="font-size:11px;color:var(--muted);margin-top:2px;">LANGUAGE</span></div>
     </div>`;
 
@@ -2504,6 +2506,10 @@ function generatePDFReport(report) {
         : (jp.model || report.judge_model || 'N/A');
       const judgeName = jp.type === 'bench' ? (jp.bench_name || report.bench_name || 'N/A') : (jp.model || report.judge_model || 'N/A');
 
+      const temperatureRow = jp.type === 'bench'
+        ? ''
+        : `<tr><td>Temperature</td><td>${tp.temperature !== undefined && tp.temperature !== null ? tp.temperature : 'N/A'}</td></tr>`;
+
       html += `
         <div class="pdf-section" style="page-break-inside:avoid">
             <h3 style="font-family:'Helvetica Neue',sans-serif;border-bottom:1px solid #ddd;padding-bottom:6px;margin-bottom:15px;font-size:16px;">${escapeHtml(contextSection.title || 'Context & Methodology')}</h3>
@@ -2514,7 +2520,7 @@ function generatePDFReport(report) {
                 <tr><td>Judge Mode</td><td>${escapeHtml(String(judgeMode).toUpperCase())}</td></tr>
                 <tr><td>Judge Model(s)</td><td>${escapeHtml(judgeModel)}</td></tr>
                 <tr><td>Sample Size</td><td>${tp.sample_size || report.total_prompts || 0}</td></tr>
-                <tr><td>Temperature</td><td>${tp.temperature !== undefined ? tp.temperature : 'N/A'}</td></tr>
+                ${temperatureRow}
                 <tr><td>Language</td><td>${escapeHtml(String(tp.language || report.language || 'EN').toUpperCase())}</td></tr>
             </table>
             <div style="margin-top:12px;">
@@ -2702,7 +2708,9 @@ function generateMarkdown(report) {
       md += `| Judge Mode | ${String(judgeMode).toUpperCase()} |\n`;
       md += `| Judge Model(s) | ${judgeModels} |\n`;
       md += `| Sample Size | ${tp.sample_size ?? report.total_prompts ?? 'N/A'} |\n`;
-      md += `| Temperature | ${tp.temperature ?? 'N/A'} |\n`;
+      if (jp.type !== 'bench') {
+        md += `| Temperature | ${tp.temperature ?? 'N/A'} |\n`;
+      }
       md += `| Language | ${String(tp.language || report.language || 'EN').toUpperCase()} |\n\n`;
       md += `### System Prompt\n\n`;
       md += '```\n';

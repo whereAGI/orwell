@@ -5,7 +5,7 @@ Orwell is an open-source platform designed to audit Large Language Models (LLMs)
 ## Features
 
 - **Interactive Audit Studio**: Run audits against target models using custom or predefined prompts.
-- **Model Hub**: Configure and manage connections to various LLM providers (OpenAI, Ollama, etc.).
+- **Model Hub**: Configure and manage connections to various LLM providers (OpenRouter, Ollama, etc.).
 - **Data Studio**: Visualize and analyze audit results.
 - **Standalone Deployment**: easy deployment via Docker or local setup.
 - **Secure Architecture**: Environment-based configuration and secure secret management.

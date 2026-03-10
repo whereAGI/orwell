@@ -140,12 +140,6 @@ function renderLayout() {
 // ──────────────────────────────────────────────────
 
 const PROVIDER_META = {
-    openai: {
-        label: 'OpenAI',
-        docsUrl: 'https://platform.openai.com/api-keys',
-        docsLabel: 'Get API key →',
-        placeholder: 'sk-...',
-    },
     openrouter: {
         label: 'OpenRouter',
         docsUrl: 'https://openrouter.ai/settings/keys',

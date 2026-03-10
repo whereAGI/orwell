@@ -107,7 +107,7 @@ class ReportDataBuilder:
             "judge_profile": judge_profile,
             "test_parameters": {
                 "sample_size": self.test_params.get("sample_size"),
-                "temperature": self.test_params.get("temperature", 0.7),
+                "temperature": self.test_params.get("temperature"),
                 "language": self.test_params.get("language", "en"),
                 "dimensions": self.test_params.get("dimensions"),
             },

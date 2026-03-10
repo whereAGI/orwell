@@ -7,7 +7,7 @@ Keys are stored in a dedicated SQLite database at data/provider_keys.db.
 This file is git-ignored (covered by the *.db rule in .gitignore), so keys
 are never committed to the repository.
 
-Supported providers that require API keys: openai, openrouter
+Supported providers that require API keys: openrouter
 (Ollama and custom providers do not need managed keys.)
 """
 
@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 # Keys that need API key management
-MANAGED_PROVIDERS = ["openai", "openrouter"]
+MANAGED_PROVIDERS = ["openrouter"]
 
 _DB_PATH = Path("data/provider_keys.db")
 
