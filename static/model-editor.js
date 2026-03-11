@@ -7,10 +7,63 @@
 // We'll attach them to window to be safe if this is a separate file.
 window.currentModels = window.currentModels || {};
 window.currentBenches = window.currentBenches || {};
+window.modelProviders = window.modelProviders || [];
 
 // Callback hooks for refreshing data after edits
 window.onModelSaved = window.onModelSaved || function() {};
 window.onBenchSaved = window.onBenchSaved || function() {};
+
+async function loadModelProviders() {
+    try {
+        const res = await fetch('/api/model-providers');
+        if (!res.ok) throw new Error(`Status ${res.status}`);
+        const providers = await res.json();
+        window.modelProviders = Array.isArray(providers) ? providers : [];
+    } catch (err) {
+        console.warn('Failed to load model providers for editor', err);
+        window.modelProviders = [
+            { slug: 'openrouter', name: 'OpenRouter', base_url: 'https://openrouter.ai/api/v1', website: 'https://openrouter.ai' },
+            { slug: 'ollama', name: 'Ollama', base_url: 'http://localhost:11434/v1', website: 'https://ollama.com' }
+        ];
+    }
+    return window.modelProviders;
+}
+
+function populateProviderSelect(selectedProvider = '') {
+    const providerSelect = document.getElementById('modelProvider');
+    if (!providerSelect) return;
+
+    const providers = Array.isArray(window.modelProviders) ? window.modelProviders : [];
+    const previousValue = selectedProvider || providerSelect.value || '';
+    providerSelect.innerHTML = '';
+
+    providers.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.slug;
+        opt.textContent = p.name;
+        providerSelect.appendChild(opt);
+    });
+
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Custom (Manual)';
+    providerSelect.appendChild(customOpt);
+
+    const hasPreviousValue = Array.from(providerSelect.options).some(opt => opt.value === previousValue);
+    if (previousValue && !hasPreviousValue) {
+        const fallbackOpt = document.createElement('option');
+        fallbackOpt.value = previousValue;
+        fallbackOpt.textContent = previousValue;
+        providerSelect.insertBefore(fallbackOpt, customOpt);
+    }
+
+    const canSelectPrevious = Array.from(providerSelect.options).some(opt => opt.value === previousValue);
+    if (previousValue && canSelectPrevious) {
+        providerSelect.value = previousValue;
+    } else {
+        providerSelect.value = providers.length > 0 ? providers[0].slug : 'custom';
+    }
+}
 
 async function editModel(modelId) {
     const model = window.currentModels[modelId];
@@ -29,10 +82,10 @@ async function editModel(modelId) {
     const title = document.getElementById('modalTitle');
     if (title) title.textContent = 'Edit Model';
 
+    await loadModelProviders();
     setValue('modelName', model.name);
-    const allowedProviders = ['openrouter', 'ollama', 'custom'];
-    const provider = allowedProviders.includes(model.provider) ? model.provider : 'custom';
-    setValue('modelProvider', provider);
+    populateProviderSelect(model.provider);
+    const provider = document.getElementById('modelProvider').value;
     setValue('modelBaseUrl', model.base_url);
     setValue('modelSourceUrl', model.source_url || '');
     setValue('modelApiKey', model.api_key || '');
@@ -229,24 +282,29 @@ async function updateProviderDefaults() {
     if (apiKeyContainer) apiKeyContainer.style.display = 'none';
     if (apiKeyInput && provider !== 'custom') apiKeyInput.value = '';
 
-    switch (provider) {
-        case 'openrouter':
-            defaultUrl = 'https://openrouter.ai/api/v1';
-            linkHtml = '<a href="https://openrouter.ai/keys" target="_blank">Get API Key</a>';
-            break;
-        case 'ollama':
-            defaultUrl = 'http://localhost:11434/v1';
-            linkHtml = 'Ensure Ollama is running (<code>ollama serve</code>)';
-            keyInput.style.display = 'none';
-            keySelect.style.display = 'block';
-            keyHelp.style.display = 'block';
-            await fetchOllamaModels();
-            break;
-        case 'custom':
-            defaultUrl = '';
-            linkHtml = '<span style="color:var(--muted)">Use an OpenAI-compatible API base URL (must support <code>/chat/completions</code>).</span>';
-            if (apiKeyContainer) apiKeyContainer.style.display = 'block';
-            break;
+    const providerMeta = (window.modelProviders || []).find(p => p.slug === provider);
+    if (provider === 'openrouter') {
+        defaultUrl = (providerMeta && providerMeta.base_url) || 'https://openrouter.ai/api/v1';
+        linkHtml = '<a href="https://openrouter.ai/keys" target="_blank">Get API Key</a>';
+    } else if (provider === 'ollama') {
+        defaultUrl = (providerMeta && providerMeta.base_url) || 'http://localhost:11434/v1';
+        linkHtml = 'Ensure Ollama is running (<code>ollama serve</code>)';
+        keyInput.style.display = 'none';
+        keySelect.style.display = 'block';
+        keyHelp.style.display = 'block';
+        await fetchOllamaModels();
+    } else if (provider === 'custom') {
+        defaultUrl = '';
+        linkHtml = '<span style="color:var(--muted)">Use an OpenAI-compatible API base URL (must support <code>/chat/completions</code>).</span>';
+        if (apiKeyContainer) apiKeyContainer.style.display = 'block';
+    } else if (providerMeta) {
+        defaultUrl = providerMeta.base_url || '';
+        if (providerMeta.website) {
+            const cleanWebsite = providerMeta.website.replace('https://', '').replace(/\/$/, '');
+            linkHtml = `<a href="${providerMeta.website}" target="_blank">${cleanWebsite} ↗</a>`;
+        } else {
+            linkHtml = '<span style="color:var(--muted)">Uses provider settings from Config.</span>';
+        }
     }
 
     if (baseUrlInput && !baseUrlInput.value) {

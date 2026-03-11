@@ -134,9 +134,21 @@ CREATE TABLE IF NOT EXISTS app_configurations (
     description TEXT,
     type        TEXT DEFAULT 'string'
 );
+
+CREATE TABLE IF NOT EXISTS model_providers (
+    id          TEXT PRIMARY KEY,
+    slug        TEXT UNIQUE NOT NULL,
+    name        TEXT NOT NULL,
+    base_url    TEXT,
+    api_key     TEXT,
+    website     TEXT,
+    is_builtin  INTEGER DEFAULT 0,
+    created_at  TEXT DEFAULT (datetime('now'))
+);
 """
 
 _DEFAULT_CONFIGS = [
+    # General Judge Settings
     ("judge_global_limits_enabled", "1", "Judge Settings", "Enable global token limits for judge models", "int"),
     ("judge_default_max_tokens", "4000", "Judge Settings", "Default max output tokens for judge models", "int"),
     ("judge_default_max_reasoning_tokens", "3000", "Judge Settings", "Default max reasoning tokens for judge models", "int"),
@@ -213,6 +225,13 @@ async def init_db() -> None:
             await db.execute("ALTER TABLE models ADD COLUMN token_limits_enabled INTEGER DEFAULT 0")
         if "judge_override_global_settings" not in model_columns:
             await db.execute("ALTER TABLE models ADD COLUMN judge_override_global_settings INTEGER DEFAULT 0")
+        if "created_at" not in model_columns:
+            await db.execute("ALTER TABLE models ADD COLUMN created_at TEXT DEFAULT (datetime('now'))")
+
+        cursor = await db.execute("PRAGMA table_info(judge_benches)")
+        bench_columns = {row[1] for row in await cursor.fetchall()}
+        if "created_at" not in bench_columns:
+            await db.execute("ALTER TABLE judge_benches ADD COLUMN created_at TEXT DEFAULT (datetime('now'))")
 
         cursor = await db.execute(
             "SELECT value, group_name, description, type FROM app_configurations WHERE key='judge_temperature'"
@@ -238,6 +257,32 @@ async def init_db() -> None:
             "INSERT OR IGNORE INTO app_configurations (key, value, group_name, description, type) "
             "VALUES (?, ?, ?, ?, ?)",
             _DEFAULT_CONFIGS,
+        )
+
+        # Seed Builtin Providers
+        await db.execute(
+            """INSERT OR IGNORE INTO model_providers (id, slug, name, base_url, website, is_builtin)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                str(uuid.uuid4()),
+                "openrouter",
+                "OpenRouter",
+                "https://openrouter.ai/api/v1",
+                "https://openrouter.ai",
+                1
+            )
+        )
+        await db.execute(
+            """INSERT OR IGNORE INTO model_providers (id, slug, name, base_url, website, is_builtin)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (
+                str(uuid.uuid4()),
+                "ollama",
+                "Ollama",
+                "http://localhost:11434/v1",
+                "https://ollama.com",
+                1
+            )
         )
 
         await db.commit()

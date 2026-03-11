@@ -27,6 +27,7 @@ class ModelConfig(BaseModel):
     max_reasoning_tokens: Optional[int] = None # Max tokens for reasoning/thinking process
     token_limits_enabled: Optional[bool] = None
     judge_override_global_settings: Optional[bool] = None
+    created_at: Optional[datetime] = None
 
 class JudgeBench(BaseModel):
     id: Optional[str] = None
@@ -34,6 +35,7 @@ class JudgeBench(BaseModel):
     mode: str  # "random", "all", or "jury"
     judge_model_ids: List[str]  # max 5 judge model record IDs
     foreman_model_id: Optional[str] = None  # Required if mode="jury"
+    created_at: Optional[datetime] = None
 
 class AuditRequest(BaseModel):
     # Support selecting stored models

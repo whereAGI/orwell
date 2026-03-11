@@ -103,6 +103,24 @@
                 <div style="border-bottom:1px solid var(--border); margin:16px 0;"></div>
             </div>
 
+            <!-- Toolbar -->
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <div style="display:flex; gap:12px; flex:1; align-items:center;">
+                    <div style="position:relative; width:100%; max-width:300px;">
+                        <input type="text" id="modelSearch" placeholder="Search models..." 
+                            style="width:100%; padding:8px 12px 8px 32px; border-radius:6px; border:1px solid var(--border); background:#0e0e14; color:var(--text); font-size:13px;" 
+                            oninput="onSearchInput(this.value)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </div>
+                    <select id="providerFilter" 
+                        style="width:170px; min-width:170px; padding:8px 12px; border-radius:6px; border:1px solid var(--border); background:#0e0e14; color:var(--text); font-size:13px; outline:none; cursor:pointer;" 
+                        onchange="onFilterChange(this.value)">
+                        <option value="all">All Providers</option>
+                    </select>
+                </div>
+                <div style="font-size:12px; color:var(--muted);" id="modelCountBadge"></div>
+            </div>
+
             <div id="modelList">
                 <!-- Table will be populated here -->
             </div>

@@ -1,9 +1,17 @@
 let currentTab = 'target';
 let currentModels = {}; // Store models by ID to avoid escaping issues
 let providerKeyCache = {}; // { provider: {has_key, masked_key} }
+let modelProviders = [];
+
+// Filtering & Sorting State
+let allLoadedModels = [];
+let searchQuery = '';
+let activeProviderFilter = 'all';
+let currentSort = { column: 'created_at', direction: 'desc' }; // Default sort by date desc
 
 document.addEventListener('DOMContentLoaded', () => {
     loadModels();
+    loadProviders();
 
     // Setup modal close handlers
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
@@ -11,10 +19,50 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+async function loadProviders() {
+    try {
+        const res = await fetch('/api/model-providers');
+        if (res.ok) {
+            modelProviders = await res.json();
+            
+            // Populate Filter Dropdown
+            const filter = document.getElementById('providerFilter');
+            if (filter) {
+                const currentVal = filter.value;
+                filter.innerHTML = '<option value="all">All Providers</option>';
+                
+                modelProviders.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.slug;
+                    opt.textContent = p.name;
+                    filter.appendChild(opt);
+                });
+
+                // Add Custom option
+                const customOpt = document.createElement('option');
+                customOpt.value = 'custom';
+                customOpt.textContent = 'Custom';
+                filter.appendChild(customOpt);
+
+                if (currentVal) filter.value = currentVal;
+            }
+        }
+    } catch (e) {
+        console.error('Failed to load providers:', e);
+    }
+}
+
 async function switchTab(tab) {
     currentTab = tab;
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelector(`.tab[onclick="switchTab('${tab}')"]`).classList.add('active');
+
+    // Reset filters
+    searchQuery = '';
+    activeProviderFilter = 'all';
+    document.getElementById('modelSearch').value = '';
+    const pf = document.getElementById('providerFilter');
+    if (pf) pf.value = 'all';
 
     // Show/hide bench UI elements
     const benchBtn = document.getElementById('createBenchBtn');
@@ -38,13 +86,92 @@ async function loadModels() {
         const response = await fetch(`/api/models?category=${currentTab}`);
         const models = await response.json();
 
+        // Store raw list for filtering
+        allLoadedModels = models;
+
         // Store models in global map
         currentModels = {};
         models.forEach(m => currentModels[m.id] = m);
 
-        renderModels(models);
+        applyFiltersAndRender();
     } catch (err) {
         console.error('Failed to load models:', err);
+    }
+}
+
+function onSearchInput(val) {
+    searchQuery = val.toLowerCase().trim();
+    applyFiltersAndRender();
+}
+
+function onFilterChange(val) {
+    activeProviderFilter = val;
+    applyFiltersAndRender();
+}
+
+function handleSort(column) {
+    if (currentSort.column === column) {
+        currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSort.column = column;
+        // Default sort direction for Date should be desc (newest first), others asc
+        currentSort.direction = column === 'created_at' ? 'desc' : 'asc';
+    }
+    applyFiltersAndRender();
+}
+
+function applyFiltersAndRender() {
+    let filtered = [...allLoadedModels];
+
+    // Filter by Provider
+    if (activeProviderFilter !== 'all') {
+        filtered = filtered.filter(m => m.provider === activeProviderFilter);
+    }
+
+    // Search
+    if (searchQuery) {
+        filtered = filtered.filter(m => 
+            (m.name || '').toLowerCase().includes(searchQuery) || 
+            (m.model_key || '').toLowerCase().includes(searchQuery) ||
+            (m.provider || '').toLowerCase().includes(searchQuery)
+        );
+    }
+
+    // Sort
+    filtered.sort((a, b) => {
+        let valA = a[currentSort.column];
+        let valB = b[currentSort.column];
+
+        // Handle undefined/null
+        if (valA === undefined || valA === null) valA = '';
+        if (valB === undefined || valB === null) valB = '';
+
+        // Date handling
+        if (currentSort.column === 'created_at') {
+             valA = new Date(valA || 0).getTime();
+             valB = new Date(valB || 0).getTime();
+        } else if (typeof valA === 'string') {
+             valA = valA.toLowerCase();
+             valB = valB.toLowerCase();
+        }
+
+        if (valA < valB) return currentSort.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return currentSort.direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    renderModels(filtered);
+    updateCountBadge(filtered.length, allLoadedModels.length);
+}
+
+function updateCountBadge(visible, total) {
+    const el = document.getElementById('modelCountBadge');
+    if (el) {
+        if (visible !== total) {
+            el.textContent = `Showing ${visible} of ${total} models`;
+        } else {
+            el.textContent = `${total} models`;
+        }
     }
 }
 
@@ -52,25 +179,40 @@ function renderModels(models) {
     const container = document.getElementById('modelList');
 
     if (models.length === 0) {
-        container.innerHTML = '<div style="color:var(--muted); text-align:center; padding:24px;">No models found. Add one to get started.</div>';
+        container.innerHTML = '<div style="color:var(--muted); text-align:center; padding:24px;">No models found matching your criteria.</div>';
         return;
     }
+
+    const thStyle = "padding:12px; cursor:pointer; user-select:none; white-space:nowrap; text-align:left; color:var(--muted); border-bottom:1px solid var(--border);";
+
+    // Helper to get sort arrow
+    const getArrow = (col) => {
+        if (currentSort.column !== col) return '<span style="opacity:0.2; margin-left:4px;">↕</span>';
+        return `<span style="color:var(--primary); margin-left:4px;">${currentSort.direction === 'asc' ? '▲' : '▼'}</span>`;
+    };
 
     let html = `
         <table style="width:100%; border-collapse:collapse;">
             <thead>
-                <tr style="border-bottom:1px solid var(--border); color:var(--muted); text-align:left;">
-                    <th style="padding:12px;">Name</th>
-                    <th style="padding:12px;">Provider</th>
-                    <th style="padding:12px;">Model Key</th>
-                    <th style="padding:12px;">Base URL</th>
-                    <th style="padding:12px; text-align:right;">Actions</th>
+                <tr>
+                    <th style="${thStyle}" onclick="handleSort('name')">Name ${getArrow('name')}</th>
+                    <th style="${thStyle}" onclick="handleSort('provider')">Provider ${getArrow('provider')}</th>
+                    <th style="${thStyle}" onclick="handleSort('model_key')">Model Key ${getArrow('model_key')}</th>
+                    <th style="${thStyle}" onclick="handleSort('created_at')">Date Added ${getArrow('created_at')}</th>
+                    <th style="padding:12px; text-align:right; border-bottom:1px solid var(--border); color:var(--muted);">Actions</th>
                 </tr>
             </thead>
             <tbody>
     `;
 
     models.forEach(m => {
+        let dateStr = '-';
+        if (m.created_at) {
+            const d = new Date(m.created_at);
+            // Format: YYYY-MM-DD
+            dateStr = d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
         html += `
             <tr style="border-bottom:1px solid var(--border);">
                 <td style="padding:12px;">
@@ -78,7 +220,7 @@ function renderModels(models) {
                 </td>
                 <td style="padding:12px;"><span class="pill" style="background:#2d3748; color:#a0aec0; padding:2px 8px; border-radius:12px; font-size:12px;">${m.provider}</span></td>
                 <td style="padding:12px; font-family:monospace; color:var(--primary);">${m.model_key}</td>
-                <td style="padding:12px; font-size:12px; color:var(--muted);">${m.base_url}</td>
+                <td style="padding:12px; font-size:12px; color:var(--muted);">${dateStr}</td>
                 <td style="padding:12px; text-align:right; white-space:nowrap;">
                     <div style="display:flex; gap:8px; justify-content:flex-end;">
                         <button class="secondary" style="padding:4px 8px; font-size:12px; width:auto;" onclick="testModelFromList('${m.id}', this)">Test</button>
@@ -103,10 +245,36 @@ async function openModal() {
     const title = currentTab === 'target' ? 'Add New Target Model' : 'Add New Judge Model';
     document.getElementById('modalTitle').textContent = title;
 
+    // Populate Providers Dropdown
+    const providerSelect = document.getElementById('modelProvider');
+    providerSelect.innerHTML = '';
+    
+    // Add dynamically loaded providers
+    modelProviders.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.slug;
+        opt.textContent = p.name;
+        providerSelect.appendChild(opt);
+    });
+    
+    // Add Custom fallback
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Custom (Manual)';
+    providerSelect.appendChild(customOpt);
+
     // Reset fields to defaults
     document.getElementById('modelName').value = '';
-    document.getElementById('modelProvider').value = 'openrouter';
-    document.getElementById('modelBaseUrl').value = 'https://openrouter.ai/api/v1';
+    // Select first provider by default (OpenRouter usually) or Custom
+    if (modelProviders.length > 0) {
+        providerSelect.value = modelProviders[0].slug;
+    } else {
+        providerSelect.value = 'custom';
+    }
+    
+    // Trigger defaults update
+    await updateProviderDefaults();
+
     document.getElementById('modelSourceUrl').value = '';
     document.getElementById('modelKeyInput').value = '';
     document.getElementById('modelApiKey').value = '';
@@ -157,10 +325,30 @@ async function editModel(modelId) {
 
     document.getElementById('modalTitle').textContent = 'Edit Model';
 
-    document.getElementById('modelName').value = model.name;
-    const allowedProviders = ['openrouter', 'ollama', 'custom'];
-    const provider = allowedProviders.includes(model.provider) ? model.provider : 'custom';
-    document.getElementById('modelProvider').value = provider;
+    // Populate Providers Dropdown
+    const providerSelect = document.getElementById('modelProvider');
+    providerSelect.innerHTML = '';
+    modelProviders.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.slug;
+        opt.textContent = p.name;
+        providerSelect.appendChild(opt);
+    });
+    // Add custom
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Custom (Manual)';
+    providerSelect.appendChild(customOpt);
+
+    // Select provider
+    // Check if model.provider matches one of our slugs
+    const found = modelProviders.find(p => p.slug === model.provider);
+    if (found) {
+        providerSelect.value = model.provider;
+    } else {
+        providerSelect.value = 'custom';
+    }
+
     document.getElementById('modelBaseUrl').value = model.base_url;
     document.getElementById('modelSourceUrl').value = model.source_url || '';
     document.getElementById('modelApiKey').value = model.api_key || '';
@@ -314,7 +502,7 @@ function renderProviderKeyStatus(el, provider, status) {
 }
 
 async function updateProviderDefaults() {
-    const provider = document.getElementById('modelProvider').value;
+    const providerSlug = document.getElementById('modelProvider').value;
     const baseUrlInput = document.getElementById('modelBaseUrl');
     const linkContainer = document.getElementById('providerLink');
     const keyStatusEl = document.getElementById('providerKeyStatus');
@@ -330,88 +518,54 @@ async function updateProviderDefaults() {
     keySelect.style.display = 'none';
     keyHelp.style.display = 'none';
     if (apiKeyContainer) apiKeyContainer.style.display = 'none';
-    if (apiKeyInput && provider !== 'custom') apiKeyInput.value = '';
-
-    // Fetch & update provider key status (only for managed providers)
-    const managedProviders = ['openrouter'];
-    if (keyStatusEl) {
-        if (managedProviders.includes(provider)) {
-            // Use cache if available, otherwise fetch
-            if (providerKeyCache[provider] !== undefined) {
-                renderProviderKeyStatus(keyStatusEl, provider, providerKeyCache[provider]);
-            } else {
-                keyStatusEl.innerHTML = '<span style="color:var(--muted);">Checking key...</span>';
-                try {
-                    const res = await fetch('/api/provider-keys');
-                    if (res.ok) {
-                        const list = await res.json();
-                        list.forEach(p => { providerKeyCache[p.provider] = p; });
-                    }
-                } catch (e) { /* silent */ }
-                renderProviderKeyStatus(keyStatusEl, provider, providerKeyCache[provider]);
-            }
+    if (apiKeyInput && providerSlug !== 'custom') apiKeyInput.value = '';
+    
+    // Find provider metadata
+    const provider = modelProviders.find(p => p.slug === providerSlug);
+    
+    if (provider) {
+        // Known provider
+        baseUrlInput.value = provider.base_url || '';
+        
+        // Website Link
+        if (provider.website) {
+             linkContainer.innerHTML = `<a href="${provider.website}" target="_blank" style="color:var(--primary)">View Models</a>`;
         } else {
-            keyStatusEl.innerHTML = ''; // No status for ollama/custom
+             linkContainer.innerHTML = '';
         }
-    }
+        
+        // Key Status
+        if (provider.api_key) {
+             keyStatusEl.innerHTML = `<span style="color:#48bb78; font-weight:600;">✅ API key configured</span>`;
+        } else {
+             // For Ollama (and maybe others), key might not be needed
+             if (provider.slug === 'ollama') {
+                 keyStatusEl.innerHTML = '';
+             } else {
+                 keyStatusEl.innerHTML = `
+                    <span style="color:#f6ad55; font-weight:600;">⚠ No API key configured.</span>
+                    <a href="/config#group-model-providers" target="_blank"
+                       style="color:var(--primary); margin-left:6px; font-size:12px; text-decoration:underline;">
+                       Configure in Settings →
+                    </a>`;
+             }
+        }
+        
+        // Special case: Ollama local discovery
+        if (provider.slug === 'ollama') {
+             keyInput.style.display = 'none';
+             keySelect.style.display = 'block';
+             keyHelp.style.display = 'block';
+             keyHelp.textContent = 'Fetching local models...';
+             await fetchOllamaModels(); // Reuse existing logic if possible or copy it
+        }
 
-    switch (provider) {
-        case 'openrouter':
-            baseUrlInput.value = 'https://openrouter.ai/api/v1';
-            linkContainer.innerHTML = '<a href="https://openrouter.ai/models" target="_blank" style="color:var(--primary)">View OpenRouter Models</a>';
-            break;
-        case 'ollama':
-            baseUrlInput.value = 'http://localhost:11434/v1/chat/completions';
-            linkContainer.innerHTML = '<a href="https://ollama.com/library" target="_blank" style="color:var(--primary)">View Ollama Library</a>';
-
-            // Try to fetch local models
-            keyInput.style.display = 'none';
-            keySelect.style.display = 'block';
-            keyHelp.style.display = 'block';
-            keyHelp.textContent = 'Fetching local models...';
-
-            try {
-                // Try fetching from localhost directly first (if CORS allows)
-                // Note: Standard Ollama setup might block this unless OLLAMA_ORIGINS is set
-                // If it fails, we fall back to manual input
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-                const res = await fetch('http://localhost:11434/api/tags', { signal: controller.signal });
-                clearTimeout(timeoutId);
-
-                if (res.ok) {
-                    const data = await res.json();
-                    const models = data.models || [];
-
-                    keySelect.innerHTML = '<option value="" disabled selected>Select a local model...</option>';
-                    if (models.length > 0) {
-                        models.forEach(m => {
-                            const opt = document.createElement('option');
-                            opt.value = m.name;
-                            opt.textContent = m.name;
-                            keySelect.appendChild(opt);
-                        });
-                        keyHelp.textContent = `${models.length} local models found.`;
-                    } else {
-                        keyHelp.textContent = 'No models found in Ollama.';
-                    }
-                } else {
-                    throw new Error('Failed to fetch');
-                }
-            } catch (e) {
-                console.warn('Ollama fetch failed, falling back to manual input', e);
-                keyInput.style.display = 'block';
-                keySelect.style.display = 'none';
-                keyHelp.style.color = 'var(--danger)';
-                keyHelp.textContent = 'Could not connect to Ollama (http://localhost:11434). Enter model name manually.';
-            }
-            break;
-        case 'custom':
-            baseUrlInput.value = '';
-            linkContainer.innerHTML = '<span style="color:var(--muted)">Use an OpenAI-compatible API base URL (must support <code>/chat/completions</code>).</span>';
-            if (apiKeyContainer) apiKeyContainer.style.display = 'block';
-            break;
+    } else {
+        // Custom
+        baseUrlInput.value = '';
+        linkContainer.innerHTML = '<span style="color:var(--muted)">Use an OpenAI-compatible API base URL (must support <code>/chat/completions</code>).</span>';
+        keyStatusEl.innerHTML = '';
+        if (apiKeyContainer) apiKeyContainer.style.display = 'block';
     }
 }
 

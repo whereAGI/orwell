@@ -134,6 +134,7 @@ def _row_to_model_config(row) -> ModelConfig:
         max_reasoning_tokens=r.get("max_reasoning_tokens"),
         token_limits_enabled=bool(r.get("token_limits_enabled")) if r.get("token_limits_enabled") is not None else None,
         judge_override_global_settings=bool(r.get("judge_override_global_settings")) if r.get("judge_override_global_settings") is not None else None,
+        created_at=r.get("created_at"),
     )
 
 
@@ -260,10 +261,10 @@ async def list_models(category: Optional[str] = None):
         async with get_db() as db:
             if category:
                 cursor = await db.execute(
-                    "SELECT * FROM models WHERE category=? ORDER BY name", (category,)
+                    "SELECT * FROM models WHERE category=? ORDER BY created_at DESC", (category,)
                 )
             else:
-                cursor = await db.execute("SELECT * FROM models ORDER BY name")
+                cursor = await db.execute("SELECT * FROM models ORDER BY created_at DESC")
             rows = await cursor.fetchall()
         return [_row_to_model_config(r) for r in rows]
     except Exception as e:
@@ -274,7 +275,21 @@ async def list_models(category: Optional[str] = None):
 @app.post("/api/models/test")
 async def test_model_connection(req: TestConnectionRequest):
     headers = {"Content-Type": "application/json"}
-    resolved_key = req.api_key or get_provider_key(req.provider)
+    
+    # Resolve key: Check model-specific key first, then provider registry
+    resolved_key = req.api_key
+    if not resolved_key:
+        # Check provider registry
+        async with get_db() as db:
+            row = await db.execute("SELECT api_key FROM model_providers WHERE slug=?", (req.provider,))
+            res = await row.fetchone()
+            if res and res[0]:
+                resolved_key = res[0]
+    
+    # Fallback to legacy managed providers (provider_keys.db) for backward compat
+    if not resolved_key and req.provider in MANAGED_PROVIDERS:
+        resolved_key = get_provider_key(req.provider)
+
     key_source = "request" if req.api_key else "provider_settings"
     if resolved_key:
         headers["Authorization"] = f"Bearer {resolved_key}"
@@ -330,7 +345,18 @@ async def test_model_connection(req: TestConnectionRequest):
 
 @app.post("/api/models", response_model=ModelConfig)
 async def create_model(config: ModelConfig):
-    resolved_key = config.api_key or get_provider_key(config.provider)
+    # Resolve key for validation
+    resolved_key = config.api_key
+    if not resolved_key:
+        async with get_db() as db:
+            row = await db.execute("SELECT api_key FROM model_providers WHERE slug=?", (config.provider,))
+            res = await row.fetchone()
+            if res and res[0]:
+                resolved_key = res[0]
+    
+    if not resolved_key and config.provider in MANAGED_PROVIDERS:
+        resolved_key = get_provider_key(config.provider)
+
     await verify_model_connection(config.provider, config.base_url, config.model_key, resolved_key)
     mid = new_id()
     try:
@@ -359,7 +385,18 @@ async def create_model(config: ModelConfig):
 
 @app.put("/api/models/{model_id}", response_model=ModelConfig)
 async def update_model(model_id: str, config: ModelConfig):
-    resolved_key = config.api_key or get_provider_key(config.provider)
+    # Resolve key for validation
+    resolved_key = config.api_key
+    if not resolved_key:
+        async with get_db() as db:
+            row = await db.execute("SELECT api_key FROM model_providers WHERE slug=?", (config.provider,))
+            res = await row.fetchone()
+            if res and res[0]:
+                resolved_key = res[0]
+    
+    if not resolved_key and config.provider in MANAGED_PROVIDERS:
+        resolved_key = get_provider_key(config.provider)
+
     await verify_model_connection(config.provider, config.base_url, config.model_key, resolved_key)
     try:
         async with get_db() as db:
@@ -451,6 +488,135 @@ async def remove_provider_key(provider: str):
 
 
 # ──────────────────────────────────────────────────
+# Model Providers CRUD
+# ──────────────────────────────────────────────────
+
+from .providers import ProviderModel, _row_to_provider, slugify
+
+@app.get("/api/model-providers", response_model=List[ProviderModel])
+async def list_model_providers():
+    try:
+        async with get_db() as db:
+            cursor = await db.execute("SELECT * FROM model_providers ORDER BY name")
+            rows = await cursor.fetchall()
+        
+        providers = []
+        for r in rows:
+            p = _row_to_provider(r)
+            # Mask API key for list view
+            if p.api_key:
+                if len(p.api_key) > 10:
+                    p.api_key = f"{p.api_key[:6]}...{p.api_key[-4:]}"
+                else:
+                    p.api_key = "***"
+            providers.append(p)
+        return providers
+    except Exception as e:
+        print(f"Error fetching providers: {e}")
+        return []
+
+@app.post("/api/model-providers", response_model=ProviderModel)
+async def create_model_provider(provider: ProviderModel):
+    pid = new_id()
+    slug = slugify(provider.name)
+    
+    # Ensure slug uniqueness
+    async with get_db() as db:
+        cursor = await db.execute("SELECT id FROM model_providers WHERE slug=?", (slug,))
+        if await cursor.fetchone():
+            slug = f"{slug}-{str(uuid.uuid4())[:4]}"
+    
+    try:
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO model_providers (id, slug, name, base_url, api_key, website, is_builtin)
+                   VALUES (?, ?, ?, ?, ?, ?, 0)""",
+                (pid, slug, provider.name, provider.base_url, provider.api_key, provider.website)
+            )
+            await db.commit()
+        
+        provider.id = pid
+        provider.slug = slug
+        provider.is_builtin = False
+        return provider
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create provider: {str(e)}")
+
+@app.put("/api/model-providers/{slug}", response_model=ProviderModel)
+async def update_model_provider(slug: str, provider: ProviderModel):
+    try:
+        async with get_db() as db:
+            cursor = await db.execute("SELECT * FROM model_providers WHERE slug=?", (slug,))
+            existing = await cursor.fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Provider not found")
+            
+            # Prevent renaming built-ins slug, but allow other edits? 
+            # Actually, we shouldn't change slugs as models reference them.
+            
+            # Update fields
+            # If api_key is empty string/null, do we clear it or keep existing?
+            # Standard practice: if not provided (None), keep existing. If empty string, clear.
+            # But here pydantic might send None if omitted. 
+            # Let's assume the UI sends the current value or new value.
+            
+            # Special handling for masking: if the UI sends the masked key back, ignore it.
+            new_key = provider.api_key
+            if new_key and ("..." in new_key or new_key == "***"):
+                new_key = existing["api_key"]
+            
+            await db.execute(
+                """UPDATE model_providers 
+                   SET name=?, base_url=?, api_key=?, website=?
+                   WHERE slug=?""",
+                (provider.name, provider.base_url, new_key, provider.website, slug)
+            )
+            await db.commit()
+            
+            # Refetch to return
+            cursor = await db.execute("SELECT * FROM model_providers WHERE slug=?", (slug,))
+            updated = await cursor.fetchone()
+            return _row_to_provider(updated)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update provider: {str(e)}")
+
+@app.delete("/api/model-providers/{slug}")
+async def delete_model_provider(slug: str, force: bool = False):
+    try:
+        async with get_db() as db:
+            cursor = await db.execute("SELECT is_builtin FROM model_providers WHERE slug=?", (slug,))
+            row = await cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Provider not found")
+            
+            if row["is_builtin"]:
+                raise HTTPException(status_code=400, detail="Cannot delete built-in providers")
+            
+            # Check if used by models
+            cursor = await db.execute("SELECT count(*) as count FROM models WHERE provider=?", (slug,))
+            usage = await cursor.fetchone()
+            count = usage["count"]
+            
+            if count > 0:
+                 if not force:
+                     raise HTTPException(status_code=409, detail=f"Provider is used by {count} models. Delete them first.")
+                 else:
+                     # Force delete models first
+                     await db.execute("DELETE FROM models WHERE provider=?", (slug,))
+
+            await db.execute("DELETE FROM model_providers WHERE slug=?", (slug,))
+            await db.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete provider: {str(e)}")
+
+
+# ──────────────────────────────────────────────────
 # Judge Bench CRUD
 # ──────────────────────────────────────────────────
 
@@ -462,6 +628,7 @@ def _row_to_bench(row) -> JudgeBench:
         mode=r["mode"],
         judge_model_ids=json.loads(r["judge_model_ids"]) if isinstance(r["judge_model_ids"], str) else r["judge_model_ids"],
         foreman_model_id=r.get("foreman_model_id") or None,
+        created_at=r.get("created_at"),
     )
 
 

@@ -234,6 +234,60 @@
         </main>
     </div>
 
+    <!-- Add Provider Modal -->
+    <div id="providerModal" class="modal">
+        <div class="modal-content">
+            <h2 id="providerModalTitle" style="margin-top:0; margin-bottom:24px;">Add New Provider</h2>
+            <div class="form-group" style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; font-weight:500;">Provider Name</label>
+                <input type="text" id="provName" class="config-input" placeholder="e.g. Anthropic">
+            </div>
+            <div class="form-group" style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; font-weight:500;">Base URL (Endpoint)</label>
+                <input type="text" id="provBaseUrl" class="config-input" placeholder="e.g. https://api.anthropic.com/v1">
+            </div>
+            <div class="form-group" style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; font-weight:500;">API Key (Optional)</label>
+                <input type="password" id="provApiKey" class="config-input" placeholder="sk-...">
+            </div>
+            <div class="form-group" style="margin-bottom:20px;">
+                <label style="display:block; margin-bottom:8px; font-weight:500;">Website (Optional)</label>
+                <input type="text" id="provWebsite" class="config-input" placeholder="e.g. https://anthropic.com">
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:12px; margin-top:32px;">
+                <button class="secondary" onclick="closeProviderModal()" style="padding:8px 16px;">Cancel</button>
+                <button id="saveProviderBtn" onclick="saveProvider()" style="padding:8px 16px;">Save Provider</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="card" style="width: 400px; margin: 0; padding: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 8px;">
+            <h3 style="color:var(--danger); margin-top:0;">Confirm Deletion</h3>
+            <p id="deleteMessage" style="color: var(--text); margin: 16px 0;">Are you sure you want to delete this provider? This action cannot be undone.</p>
+            <div style="display:flex; justify-content:flex-end; gap:12px;">
+                <button class="secondary" onclick="closeDeleteModal()" style="padding:8px 16px;">Cancel</button>
+                <button class="danger" id="confirmDeleteBtn" style="padding:8px 16px;">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dependency Warning Modal -->
+    <div id="dependencyModal" class="modal">
+        <div class="card" style="width: 450px; margin: 0; padding: 24px; background: var(--card); border: 1px solid var(--border); border-radius: 8px;">
+            <h3 style="color:var(--warning); margin-top:0;">⚠️ Provider In Use</h3>
+            <p id="dependencyMessage" style="color: var(--text); margin: 16px 0;">
+                This provider is currently used by <strong id="depCount">X</strong> models. 
+                Deleting it will also delete all associated models.
+            </p>
+            <div style="display:flex; justify-content:flex-end; gap:12px;">
+                <button class="secondary" onclick="closeDependencyModal()" style="padding:8px 16px;">Cancel</button>
+                <button class="danger" id="forceDeleteBtn" style="padding:8px 16px;">Delete All & Provider</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/auth.js"></script>
     <script src="/static/nav.js"></script>
     <script src="/static/config.js"></script>

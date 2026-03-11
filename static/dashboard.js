@@ -1741,11 +1741,13 @@ async function loadModels() {
     const targetSelect = document.getElementById('targetModelSelect');
     const judgeSelect = document.getElementById('judgeModelSelect');
 
+    // Check if this is the initial load (only default custom option exists)
+    const isInitialTargetLoad = targetSelect.options.length === 1 && targetSelect.value === 'custom';
     const currentTarget = targetSelect.value;
     const currentJudge = judgeSelect.value;
 
     // Clear existing (except default options)
-    targetSelect.innerHTML = '<option value="custom">Custom (Enter manually)</option>';
+    targetSelect.innerHTML = '';
     judgeSelect.innerHTML = '';
 
     models.forEach(m => {
@@ -1759,9 +1761,25 @@ async function loadModels() {
         judgeSelect.appendChild(option);
       }
     });
+    
+    // Add Custom option at the end
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = 'Custom (Enter manually)';
+    targetSelect.appendChild(customOpt);
 
-    if (currentTarget && targetSelect.querySelector(`option[value="${currentTarget}"]`)) {
+    // Restore selection logic:
+    // 1. If it's NOT initial load, try to restore previous selection (whether custom or specific model)
+    // 2. If it IS initial load, only restore if it wasn't 'custom' (unlikely) or if we have no other models
+    // Effectively: If initial load, we want to default to the first model (latest), not Custom.
+    
+    if (!isInitialTargetLoad && currentTarget && targetSelect.querySelector(`option[value="${currentTarget}"]`)) {
         targetSelect.value = currentTarget;
+    } else {
+        // Default to first option (latest model) if available, otherwise it falls back to Custom
+        if (targetSelect.options.length > 0) {
+            targetSelect.selectedIndex = 0;
+        }
     }
     
     if (currentJudge && judgeSelect.querySelector(`option[value="${currentJudge}"]`)) {
