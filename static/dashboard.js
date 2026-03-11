@@ -180,7 +180,7 @@ function connectStream(jobId) {
       const log = JSON.parse(event.data);
 
       if (typeof renderLogs === 'function') {
-        renderLogs([log]);
+        enqueueTerminalLog(log);
       }
 
       // Handle Structured Events
@@ -215,10 +215,11 @@ function connectStream(jobId) {
               </div>
             `;
           qaContainer.appendChild(div);
-          div.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          div.scrollIntoView({ block: 'end' });
 
           // Update Progress
-          const pct = Math.round(((d.index) / d.total) * 100);
+          const totalPrompts = Number(d.total) || 1;
+          const pct = Math.round((((d.index || 0) + 1) / totalPrompts) * 100);
           termBar.style.width = `${pct}%`;
           termPct.textContent = `${pct}%`;
           termStatus.textContent = `Auditing: ${d.dimension} (Prompt ${d.index + 1}/${d.total})`;
@@ -1926,6 +1927,9 @@ const logStatus = document.getElementById('logStatus');
 
 let isTerminalCollapsed = true;
 let lastLogTimestamp = null;
+let terminalRenderQueue = [];
+let terminalRenderFrame = null;
+let activeTerminalCursorEntry = null;
 
 if (toggleBtn) {
   toggleBtn.addEventListener('click', () => {
@@ -1972,6 +1976,8 @@ if (header) {
 if (clearBtn) {
   clearBtn.addEventListener('click', () => {
     terminalContent.innerHTML = '';
+    activeTerminalCursorEntry = null;
+    terminalRenderQueue = [];
   });
 }
 
@@ -1997,6 +2003,33 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
+function enqueueTerminalLog(log) {
+  if (!log || typeof log !== 'object') return;
+  terminalRenderQueue.push(log);
+  if (terminalRenderFrame) return;
+  terminalRenderFrame = requestAnimationFrame(() => {
+    terminalRenderFrame = null;
+    if (!terminalRenderQueue.length) return;
+
+    const latestById = new Map();
+    const orderedIds = [];
+    const passthroughLogs = [];
+    terminalRenderQueue.forEach(item => {
+      if (item && item.id) {
+        const had = latestById.has(item.id);
+        latestById.set(item.id, item);
+        if (!had) orderedIds.push(item.id);
+      } else {
+        passthroughLogs.push(item);
+      }
+    });
+    terminalRenderQueue = [];
+
+    const batch = orderedIds.map(id => latestById.get(id)).concat(passthroughLogs).filter(Boolean);
+    if (batch.length) renderLogs(batch);
+  });
+}
+
 function startLogStream(jobId) {
   if (logEventSource) {
     logEventSource.close();
@@ -2009,7 +2042,7 @@ function startLogStream(jobId) {
   logEventSource.onmessage = (event) => {
     try {
       const log = JSON.parse(event.data);
-      renderLogs([log]);
+      enqueueTerminalLog(log);
       if (logStatus) logStatus.textContent = `Live: ${new Date().toLocaleTimeString()}`;
     } catch (e) {
       console.error("Failed to parse SSE log:", e);
@@ -2029,6 +2062,12 @@ function stopLogStream() {
     logEventSource.close();
     logEventSource = null;
   }
+  if (terminalRenderFrame) {
+    cancelAnimationFrame(terminalRenderFrame);
+    terminalRenderFrame = null;
+  }
+  terminalRenderQueue = [];
+  activeTerminalCursorEntry = null;
 }
 
 async function pollStatus() {
@@ -2050,6 +2089,11 @@ async function pollStatus() {
     const fill = document.getElementById('progressFill');
     fill.style.width = progress + '%';
     fill.textContent = progress + '%';
+    const termBar = document.getElementById('terminalProgressBar');
+    const termPct = document.getElementById('terminalPercentage');
+    if (termBar) termBar.style.width = progress + '%';
+    if (termPct) termPct.textContent = progress + '%';
+    if (status.status === 'completed' && logStatus) logStatus.textContent = 'Audit Completed';
     document.getElementById('statusMessage').textContent = status.message || '';
     if (status.status === 'completed') {
       clearInterval(pollInterval);
@@ -2118,8 +2162,11 @@ function renderLogs(logs) {
   const wasAtBottom = terminalContent.scrollTop + terminalContent.clientHeight >= terminalContent.scrollHeight - 50;
 
   logs.forEach(log => {
-    // Check if log already exists by ID
-    let div = document.querySelector(`.log-entry[data-log-id="${log.id}"]`);
+    if (!log || typeof log !== 'object') return;
+    let div = null;
+    if (log.id) {
+      div = terminalContent.querySelector(`.log-entry[data-log-id="${log.id}"]`);
+    }
 
     // Display names mapping
     let displayType = log.type;
@@ -2131,62 +2178,60 @@ function renderLogs(logs) {
     const isStreamType = (log.type === 'target_stream' || log.type === 'judge_stream' || log.type === 'thought_stream');
 
     if (div) {
-      // Update existing log
       const contentEl = div.querySelector('.log-content');
-      // Check for cursor
-      const cursorHtml = isStreamType ? '<span class="cursor"></span>' : '';
-      if (contentEl) contentEl.innerHTML = escapeHtml(log.content) + cursorHtml;
-
-      // Update timestamp
+      if (contentEl) {
+        contentEl.textContent = log.content || '';
+      }
       const timeEl = div.querySelector('.log-time');
       if (timeEl) timeEl.textContent = `[${new Date(log.timestamp).toLocaleTimeString()}]`;
 
     } else {
-      // Create new log entry
       div = document.createElement('div');
       div.className = 'log-entry';
-      div.setAttribute('data-log-id', log.id);
-
+      if (log.id) div.setAttribute('data-log-id', log.id);
       const time = new Date(log.timestamp).toLocaleTimeString();
       const typeClass = `type-${log.type}`;
-
-      let detailsHtml = '';
+      const metaEl = document.createElement('div');
+      metaEl.className = 'log-meta';
+      const timeEl = document.createElement('span');
+      timeEl.className = 'log-time';
+      timeEl.textContent = `[${time}]`;
+      const typeEl = document.createElement('span');
+      typeEl.className = `log-type ${typeClass}`;
+      typeEl.textContent = displayType;
+      metaEl.appendChild(timeEl);
+      metaEl.appendChild(typeEl);
+      const contentEl = document.createElement('div');
+      contentEl.className = 'log-content';
+      contentEl.textContent = log.content || '';
+      div.appendChild(metaEl);
+      div.appendChild(contentEl);
       if (log.details && Object.keys(log.details).length > 0) {
-        detailsHtml = `<div class="json-block">${escapeHtml(JSON.stringify(log.details, null, 2))}</div>`;
+        const detailsEl = document.createElement('div');
+        detailsEl.className = 'json-block';
+        detailsEl.textContent = JSON.stringify(log.details, null, 2);
+        div.appendChild(detailsEl);
       }
-
-      const cursorHtml = isStreamType ? '<span class="cursor"></span>' : '';
-
-      div.innerHTML = `
-            <div class="log-meta">
-                <span class="log-time">[${time}]</span>
-                <span class="log-type ${typeClass}">${escapeHtml(displayType)}</span>
-            </div>
-            <div class="log-content">${escapeHtml(log.content)}${cursorHtml}</div>
-            ${detailsHtml}
-        `;
-
       terminalContent.appendChild(div);
     }
-  });
 
-  // Cleanup cursors
-  const entries = terminalContent.querySelectorAll('.log-entry');
-  entries.forEach((entry, index) => {
-    // Remove cursor from all entries except possibly the last one
-    if (index < entries.length - 1) {
-      const cursor = entry.querySelector('.cursor');
-      if (cursor) cursor.remove();
+    const contentEl = div.querySelector('.log-content');
+    if (activeTerminalCursorEntry && activeTerminalCursorEntry !== div) {
+      const oldCursor = activeTerminalCursorEntry.querySelector('.cursor');
+      if (oldCursor) oldCursor.remove();
+      activeTerminalCursorEntry = null;
     }
-    // If the last entry is NOT a stream type, remove cursor too
-    if (index === entries.length - 1) {
-      const typeLabel = entry.querySelector('.log-type').textContent;
-      // We check the display name
-      const isStream = (typeLabel === 'Target Response' || typeLabel === 'Judge Analysis' || typeLabel === 'Thinking Process');
-      if (!isStream) {
-        const cursor = entry.querySelector('.cursor');
-        if (cursor) cursor.remove();
+    if (isStreamType && contentEl) {
+      let cursor = contentEl.querySelector('.cursor');
+      if (!cursor) {
+        cursor = document.createElement('span');
+        cursor.className = 'cursor';
+        contentEl.appendChild(cursor);
       }
+      activeTerminalCursorEntry = div;
+    } else if (contentEl) {
+      const cursor = contentEl.querySelector('.cursor');
+      if (cursor) cursor.remove();
     }
   });
 

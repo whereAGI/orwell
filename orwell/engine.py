@@ -23,6 +23,20 @@ class AuditEngine:
     def __init__(self):
         self.mock_mode = os.getenv("ORWELL_TEST_MODE") == "1"
 
+    async def _resolve_provider_key(self, provider: Optional[str]) -> Optional[str]:
+        slug = (provider or "").strip()
+        if not slug:
+            return None
+        try:
+            async with get_db() as db:
+                cursor = await db.execute("SELECT api_key FROM model_providers WHERE slug=?", (slug,))
+                row = await cursor.fetchone()
+            if row and row["api_key"]:
+                return row["api_key"]
+        except Exception:
+            pass
+        return get_provider_key(slug)
+
     async def execute_audit(self, job_id: str, request: AuditRequest):
         start_time = time.time()
         add_log(job_id, "info", "Starting audit execution", {"job_id": job_id})
@@ -135,9 +149,14 @@ class AuditEngine:
                             raise RuntimeError(f"Foreman model {foreman_id} not found")
                         fm = dict(fm_row)
                         foreman_runtime = self._resolve_judge_runtime_params(fm)
+                        foreman_api_key = (
+                            fm.get("api_key")
+                            or await self._resolve_provider_key(fm.get("provider"))
+                            or request.api_key
+                        )
                         foreman_client = JudgeClient(
                             model=fm["model_key"],
-                            api_key=fm["api_key"] or get_provider_key(fm.get("provider", "")) or request.api_key,
+                            api_key=foreman_api_key,
                             base_url=fm["base_url"],
                             system_prompt=fm.get("system_prompt"),
                             analysis_persona=fm.get("analysis_persona"),
@@ -159,9 +178,14 @@ class AuditEngine:
                             continue
                         jm = dict(jm_row)
                         judge_runtime = self._resolve_judge_runtime_params(jm)
+                        judge_api_key = (
+                            jm.get("api_key")
+                            or await self._resolve_provider_key(jm.get("provider"))
+                            or request.api_key
+                        )
                         jc = JudgeClient(
                             model=jm["model_key"],
-                            api_key=jm["api_key"] or get_provider_key(jm.get("provider", "")) or request.api_key,
+                            api_key=judge_api_key,
                             base_url=jm["base_url"],
                             system_prompt=jm.get("system_prompt"),
                             analysis_persona=jm.get("analysis_persona"),
@@ -231,7 +255,7 @@ class AuditEngine:
                         if jm.get("api_key"):
                             judge_api_key = jm["api_key"]
                         elif jm.get("provider"):
-                            pk = get_provider_key(jm["provider"])
+                            pk = await self._resolve_provider_key(jm["provider"])
                             if pk:
                                 judge_api_key = pk
                         judge_base_url = jm.get("base_url")
@@ -759,7 +783,7 @@ class AuditEngine:
         # Resolve API key: per-request key → provider-level key
         resolved_api_key = request.api_key
         if not resolved_api_key and hasattr(request, 'provider'):
-            resolved_api_key = get_provider_key(request.provider or '')
+            resolved_api_key = await self._resolve_provider_key(request.provider)
 
         masked_key = None
         if resolved_api_key and resolved_api_key.strip():
