@@ -43,6 +43,10 @@ async function editModel(modelId) {
     setValue('modelTemperature', (model.temperature !== undefined && model.temperature !== null) ? model.temperature : 0.7);
     setValue('modelReasoning', model.reasoning_effort || '');
     setValue('modelMaxReasoningTokens', model.max_reasoning_tokens || '');
+    setValue('modelMaxTokens', model.max_tokens || '');
+    // Removed tokenLimitsToggle logic
+    const judgeOverrideToggle = document.getElementById('modelJudgeOverrideGlobalSettings');
+    if (judgeOverrideToggle) judgeOverrideToggle.checked = !!model.judge_override_global_settings;
 
     // If it's a judge model and has no scoring prompt, fetch the default as a starting point
     if (model.category === 'judge' && !model.system_prompt) {
@@ -73,6 +77,16 @@ async function editModel(modelId) {
     const keyHelp = document.getElementById('modelKeyHelp');
     
     toggleJudgeFields();
+
+    // Judge Global Settings Logic
+    const judgeOverrideCheckbox = document.getElementById('modelJudgeOverrideGlobalSettings');
+    if (judgeOverrideCheckbox) {
+        // Remove old listeners to avoid duplicates if any (though typically we replace the element or it's static)
+        // Better to assign onclick directly or use a named function if possible.
+        judgeOverrideCheckbox.onclick = updateJudgeTokenFields;
+    }
+    await updateJudgeTokenFields();
+
     await updateProviderDefaults();
     setValue('modelBaseUrl', model.base_url);
     if (provider === 'ollama') {
@@ -127,11 +141,73 @@ function closeBenchModal() {
 function toggleJudgeFields() {
     const category = document.getElementById('modelCategory').value;
     const isJudge = category === 'judge';
-    const containers = ['judgeSystemPromptContainer', 'judgeAnalysisPersonaContainer'];
+    const containers = ['judgeSystemPromptContainer', 'judgeAnalysisPersonaContainer', 'judgeOverrideGlobalContainer'];
     containers.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = isJudge ? 'block' : 'none';
     });
+}
+
+async function fetchGlobalJudgeConfig() {
+    try {
+        const res = await fetch('/api/config');
+        if (!res.ok) return {};
+        const groups = await res.json();
+        const settings = groups['Judge Settings'] || [];
+        const config = {};
+        settings.forEach(item => {
+            config[item.key] = item.value;
+        });
+        return config;
+    } catch (e) {
+        console.error("Failed to fetch global config", e);
+        return {};
+    }
+}
+
+async function updateJudgeTokenFields() {
+    const category = document.getElementById('modelCategory').value;
+    const isJudge = category === 'judge';
+    const overrideCheckbox = document.getElementById('modelJudgeOverrideGlobalSettings');
+    const maxTokensInput = document.getElementById('modelMaxTokens');
+    const maxReasoningInput = document.getElementById('modelMaxReasoningTokens');
+    
+    if (!maxTokensInput || !maxReasoningInput) return;
+
+    if (!isJudge) {
+        maxTokensInput.disabled = false;
+        maxReasoningInput.disabled = false;
+        maxTokensInput.title = "";
+        maxReasoningInput.title = "";
+        return;
+    }
+
+    if (overrideCheckbox && overrideCheckbox.checked) {
+        maxTokensInput.disabled = false;
+        maxReasoningInput.disabled = false;
+        maxTokensInput.title = "";
+        maxReasoningInput.title = "";
+        
+        // If fields are empty (e.g. just switched from read-only), populate with current model values if available
+        const modelId = document.getElementById('modelId').value;
+        if (modelId && window.currentModels[modelId]) {
+             const m = window.currentModels[modelId];
+             // Only overwrite if they match the global default we just cleared? 
+             // Actually, simplest is to just leave them as is (user can edit).
+             // But if they were read-only, they held the global value.
+             // If user checks override, they likely want to edit.
+             // We can leave the global value there as a starting point.
+        }
+    } else {
+        maxTokensInput.disabled = true;
+        maxReasoningInput.disabled = true;
+        maxTokensInput.title = "Global default (Read-only)";
+        maxReasoningInput.title = "Global default (Read-only)";
+        
+        const config = await fetchGlobalJudgeConfig();
+        maxTokensInput.value = config['judge_default_max_tokens'] || '';
+        maxReasoningInput.value = config['judge_default_max_reasoning_tokens'] || '';
+    }
 }
 
 async function updateProviderDefaults() {
@@ -241,7 +317,9 @@ async function saveModel() {
     const analysisPersona = document.getElementById('modelAnalysisPersona').value;
     const temperature = parseFloat(document.getElementById('modelTemperature').value);
     const reasoning = document.getElementById('modelReasoning').value;
+    const maxTokens = document.getElementById('modelMaxTokens')?.value ? parseInt(document.getElementById('modelMaxTokens').value) : null;
     const maxReasoningTokens = document.getElementById('modelMaxReasoningTokens').value ? parseInt(document.getElementById('modelMaxReasoningTokens').value) : null;
+    const judgeOverrideGlobalSettings = category === 'judge' ? !!document.getElementById('modelJudgeOverrideGlobalSettings')?.checked : false;
     const customApiKey = provider === 'custom' ? (apiKeyInput?.value || '').trim() : '';
 
     if (!name || !provider || !baseUrl || !modelKey) {
@@ -265,7 +343,10 @@ async function saveModel() {
         analysis_persona: analysisPersona || null,
         temperature: isNaN(temperature) ? 0.7 : temperature,
         reasoning_effort: reasoning || null,
-        max_reasoning_tokens: maxReasoningTokens
+        max_tokens: maxTokens,
+        max_reasoning_tokens: maxReasoningTokens,
+        token_limits_enabled: null, // Deprecated field
+        judge_override_global_settings: judgeOverrideGlobalSettings
     };
 
     try {

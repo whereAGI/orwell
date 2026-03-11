@@ -70,6 +70,17 @@ def get_int_config(key: str, default: int = 0) -> int:
         return default
 
 
+def get_bool_config(key: str, default: bool = False) -> bool:
+    val = get_config(key)
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    return str(val).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def update_config(key: str, value: str) -> bool:
     global _CONFIG_CACHE
     try:

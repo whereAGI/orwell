@@ -23,7 +23,10 @@ class ModelConfig(BaseModel):
     temperature: Optional[float] = None
     source_url: Optional[str] = None
     reasoning_effort: Optional[str] = None # "enabled", "disabled", "high", "medium", "low"
+    max_tokens: Optional[int] = None
     max_reasoning_tokens: Optional[int] = None # Max tokens for reasoning/thinking process
+    token_limits_enabled: Optional[bool] = None
+    judge_override_global_settings: Optional[bool] = None
 
 class JudgeBench(BaseModel):
     id: Optional[str] = None
@@ -50,7 +53,9 @@ class AuditRequest(BaseModel):
     system_prompt: Optional[str] = None
     judge_model: Optional[str] = None
     reasoning_effort: Optional[str] = None
+    max_tokens: Optional[int] = None
     max_reasoning_tokens: Optional[int] = None
+    token_limits_enabled: Optional[bool] = None
 
 class GeneratePromptsRequest(BaseModel):
     dimension_name: str

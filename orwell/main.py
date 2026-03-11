@@ -130,7 +130,10 @@ def _row_to_model_config(row) -> ModelConfig:
         temperature=r.get("temperature", 0.7),
         source_url=r.get("source_url"),
         reasoning_effort=r.get("reasoning_effort"),
+        max_tokens=r.get("max_tokens"),
         max_reasoning_tokens=r.get("max_reasoning_tokens"),
+        token_limits_enabled=bool(r.get("token_limits_enabled")) if r.get("token_limits_enabled") is not None else None,
+        judge_override_global_settings=bool(r.get("judge_override_global_settings")) if r.get("judge_override_global_settings") is not None else None,
     )
 
 
@@ -335,12 +338,15 @@ async def create_model(config: ModelConfig):
             await db.execute(
                 """INSERT INTO models
                    (id,name,category,provider,base_url,model_key,api_key,system_prompt,
-                    analysis_persona,temperature,source_url,reasoning_effort,max_reasoning_tokens)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    analysis_persona,temperature,source_url,reasoning_effort,max_tokens,
+                    max_reasoning_tokens,token_limits_enabled,judge_override_global_settings)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (mid, config.name, config.category, config.provider, config.base_url,
                  config.model_key, config.api_key, config.system_prompt, config.analysis_persona,
                  config.temperature if config.temperature is not None else 0.7,
-                 config.source_url, config.reasoning_effort, config.max_reasoning_tokens),
+                 config.source_url, config.reasoning_effort, config.max_tokens,
+                 config.max_reasoning_tokens, 1 if config.token_limits_enabled else 0,
+                 1 if config.judge_override_global_settings else 0),
             )
             await db.commit()
         config.id = mid
@@ -357,16 +363,37 @@ async def update_model(model_id: str, config: ModelConfig):
     await verify_model_connection(config.provider, config.base_url, config.model_key, resolved_key)
     try:
         async with get_db() as db:
+            cursor = await db.execute("SELECT * FROM models WHERE id=?", (model_id,))
+            existing = await cursor.fetchone()
+            if not existing:
+                raise HTTPException(status_code=404, detail="Model not found")
+            existing = dict(existing)
+
+            max_tokens = config.max_tokens if config.max_tokens is not None else existing.get("max_tokens")
+            max_reasoning_tokens = config.max_reasoning_tokens if config.max_reasoning_tokens is not None else existing.get("max_reasoning_tokens")
+            token_limits_enabled = (
+                config.token_limits_enabled
+                if config.token_limits_enabled is not None
+                else bool(existing.get("token_limits_enabled"))
+            )
+            judge_override_global_settings = (
+                config.judge_override_global_settings
+                if config.judge_override_global_settings is not None
+                else bool(existing.get("judge_override_global_settings"))
+            )
+
             await db.execute(
                 """UPDATE models SET
                    name=?,category=?,provider=?,base_url=?,model_key=?,api_key=?,
                    system_prompt=?,analysis_persona=?,source_url=?,reasoning_effort=?,
-                   max_reasoning_tokens=?,temperature=?
+                   max_tokens=?,max_reasoning_tokens=?,token_limits_enabled=?,
+                   judge_override_global_settings=?,temperature=?
                    WHERE id=?""",
                 (config.name, config.category, config.provider, config.base_url,
                  config.model_key, config.api_key, config.system_prompt, config.analysis_persona,
-                 config.source_url, config.reasoning_effort, config.max_reasoning_tokens,
-                 config.temperature, model_id),
+                 config.source_url, config.reasoning_effort, max_tokens,
+                 max_reasoning_tokens, 1 if token_limits_enabled else 0,
+                 1 if judge_override_global_settings else 0, config.temperature, model_id),
             )
             await db.commit()
         config.id = model_id
@@ -545,8 +572,10 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
                         request.api_key = tm["api_key"]
                     if tm.get("reasoning_effort"):
                         request.reasoning_effort = tm["reasoning_effort"]
-                    if tm.get("max_reasoning_tokens"):
-                        request.max_reasoning_tokens = tm["max_reasoning_tokens"]
+                    request.max_tokens = tm.get("max_tokens")
+                    request.max_reasoning_tokens = tm.get("max_reasoning_tokens")
+                    if tm.get("token_limits_enabled") is not None:
+                        request.token_limits_enabled = bool(tm.get("token_limits_enabled"))
             except Exception as e:
                 print(f"Error resolving target model {request.target_model_id}: {e}")
 

@@ -94,7 +94,7 @@ function renderModels(models) {
     container.innerHTML = html;
 }
 
-function openModal() {
+async function openModal() {
     document.getElementById('modelModal').style.display = 'flex';
     document.getElementById('modelId').value = ''; // Clear ID for new
     document.getElementById('modelCategory').value = currentTab;
@@ -114,7 +114,16 @@ function openModal() {
     document.getElementById('modelAnalysisPersona').value = '';
     document.getElementById('modelReasoning').value = '';
     document.getElementById('modelMaxReasoningTokens').value = '';
+    // Removed tokenLimitsEnabled check
+    document.getElementById('modelMaxTokens').value = '';
+    document.getElementById('modelJudgeOverrideGlobalSettings').checked = false;
 
+    // Add listener for judge override
+    const judgeOverrideCheckbox = document.getElementById('modelJudgeOverrideGlobalSettings');
+    if (judgeOverrideCheckbox) {
+        judgeOverrideCheckbox.onclick = updateJudgeTokenFields;
+    }
+    
     // For judge models, prefill both prompts with current defaults as a starting point
     if (currentTab === 'judge') {
         fetch('/api/models/judge/default-prompt')
@@ -131,10 +140,11 @@ function openModal() {
     }
 
     toggleJudgeFields();
-    updateProviderDefaults();
+    await updateJudgeTokenFields();
+    await updateProviderDefaults();
 }
 
-function editModel(modelId) {
+async function editModel(modelId) {
     const model = currentModels[modelId];
     if (!model) {
         console.error("Model not found:", modelId);
@@ -161,6 +171,9 @@ function editModel(modelId) {
     document.getElementById('modelTemperature').value = (model.temperature !== undefined && model.temperature !== null) ? model.temperature : 0.7;
     document.getElementById('modelReasoning').value = model.reasoning_effort || '';
     document.getElementById('modelMaxReasoningTokens').value = model.max_reasoning_tokens || '';
+    // Removed tokenLimitsEnabled
+    document.getElementById('modelMaxTokens').value = model.max_tokens || '';
+    document.getElementById('modelJudgeOverrideGlobalSettings').checked = !!model.judge_override_global_settings;
 
     // If it's a judge model and has no scoring prompt, fetch the default as a starting point
     if (model.category === 'judge' && !model.system_prompt) {
@@ -176,6 +189,13 @@ function editModel(modelId) {
     }
 
     toggleJudgeFields();
+
+    // Judge Global Settings Logic
+    const judgeOverrideCheckbox = document.getElementById('modelJudgeOverrideGlobalSettings');
+    if (judgeOverrideCheckbox) {
+        judgeOverrideCheckbox.onclick = updateJudgeTokenFields;
+    }
+    await updateJudgeTokenFields();
 
     // Trigger provider update to show correct key input
     updateProviderDefaults().then(() => {
@@ -208,16 +228,70 @@ function closeModal() {
     document.getElementById('modelTemperature').value = '0.7';
     document.getElementById('modelReasoning').value = '';
     document.getElementById('modelMaxReasoningTokens').value = '';
+    // Removed tokenLimitsEnabled reset
+    document.getElementById('modelMaxTokens').value = '';
+    document.getElementById('modelJudgeOverrideGlobalSettings').checked = false;
 }
 
 function toggleJudgeFields() {
     const category = document.getElementById('modelCategory').value;
     const isJudge = category === 'judge';
-    const containers = ['judgeSystemPromptContainer', 'judgeAnalysisPersonaContainer'];
+    const containers = ['judgeSystemPromptContainer', 'judgeAnalysisPersonaContainer', 'judgeOverrideGlobalContainer'];
     containers.forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = isJudge ? 'block' : 'none';
     });
+}
+
+async function fetchGlobalJudgeConfig() {
+    try {
+        const res = await fetch('/api/config');
+        if (!res.ok) return {};
+        const groups = await res.json();
+        const settings = groups['Judge Settings'] || [];
+        const config = {};
+        settings.forEach(item => {
+            config[item.key] = item.value;
+        });
+        return config;
+    } catch (e) {
+        console.error("Failed to fetch global config", e);
+        return {};
+    }
+}
+
+async function updateJudgeTokenFields() {
+    const category = document.getElementById('modelCategory').value;
+    const isJudge = category === 'judge';
+    const overrideCheckbox = document.getElementById('modelJudgeOverrideGlobalSettings');
+    const maxTokensInput = document.getElementById('modelMaxTokens');
+    const maxReasoningInput = document.getElementById('modelMaxReasoningTokens');
+    
+    if (!maxTokensInput || !maxReasoningInput) return;
+
+    if (!isJudge) {
+        maxTokensInput.disabled = false;
+        maxReasoningInput.disabled = false;
+        maxTokensInput.title = "";
+        maxReasoningInput.title = "";
+        return;
+    }
+
+    if (overrideCheckbox && overrideCheckbox.checked) {
+        maxTokensInput.disabled = false;
+        maxReasoningInput.disabled = false;
+        maxTokensInput.title = "";
+        maxReasoningInput.title = "";
+    } else {
+        maxTokensInput.disabled = true;
+        maxReasoningInput.disabled = true;
+        maxTokensInput.title = "Global default (Read-only)";
+        maxReasoningInput.title = "Global default (Read-only)";
+        
+        const config = await fetchGlobalJudgeConfig();
+        maxTokensInput.value = config['judge_default_max_tokens'] || '';
+        maxReasoningInput.value = config['judge_default_max_reasoning_tokens'] || '';
+    }
 }
 
 /**
@@ -378,7 +452,10 @@ async function saveModel() {
         system_prompt: document.getElementById('modelSystemPrompt').value || null,
         analysis_persona: document.getElementById('modelAnalysisPersona').value || null,
         reasoning_effort: document.getElementById('modelReasoning').value || null,
+        max_tokens: document.getElementById('modelMaxTokens').value ? parseInt(document.getElementById('modelMaxTokens').value) : null,
         max_reasoning_tokens: document.getElementById('modelMaxReasoningTokens').value ? parseInt(document.getElementById('modelMaxReasoningTokens').value) : null,
+        token_limits_enabled: null, // Deprecated
+        judge_override_global_settings: currentTab === 'judge' ? document.getElementById('modelJudgeOverrideGlobalSettings').checked : false,
     };
 
     if (!model.name || !model.base_url || !model.model_key) {

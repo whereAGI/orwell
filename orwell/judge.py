@@ -40,7 +40,7 @@ DEFAULT_ANALYSIS_PERSONA = (
 )
 
 class JudgeClient:
-    def __init__(self, model: str, api_key: str | None, base_url: str | None = None, system_prompt: str | None = None, analysis_persona: str | None = None, temperature: float | None = None, log_callback = None, max_reasoning_tokens: int | None = None):
+    def __init__(self, model: str, api_key: str | None, base_url: str | None = None, system_prompt: str | None = None, analysis_persona: str | None = None, temperature: float | None = None, log_callback = None, max_tokens: int | None = None, max_reasoning_tokens: int | None = None):
         self.model = model
         self.api_key = api_key
         self.base_url = base_url
@@ -48,6 +48,7 @@ class JudgeClient:
         self.analysis_persona = analysis_persona    # Report analysis persona
         self.temperature = temperature
         self.log_callback = log_callback
+        self.max_tokens = max_tokens
         self.max_reasoning_tokens = max_reasoning_tokens
         
         # If base_url is provided (e.g. local Ollama), ensure we have a key (dummy is fine)
@@ -97,8 +98,8 @@ class JudgeClient:
                 resp = await self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                    temperature=self.temperature if self.temperature is not None else get_float_config("judge_temperature", 0.0),
-                    max_tokens=None,
+                    temperature=self.temperature if self.temperature is not None else get_float_config("judge_default_temperature", 0.0),
+                    max_tokens=self.max_tokens,
                     stream=True,
                     extra_body=extra_body if extra_body else None
                 )
@@ -218,8 +219,8 @@ class JudgeClient:
                 resp = await self.client.chat.completions.create(
                     model=self.model,
                     messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                    temperature=0.0,
-                    max_tokens=None,
+                    temperature=self.temperature if self.temperature is not None else get_float_config("judge_default_temperature", 0.0),
+                    max_tokens=self.max_tokens,
                     stream=True,
                     extra_body=extra_body if extra_body else None
                 )
@@ -781,7 +782,7 @@ class JudgeClient:
                         {"role": "user", "content": user},
                     ],
                     temperature=get_float_config("report_temperature", 0.7),
-                    max_tokens=max_tokens,
+                    max_tokens=max_tokens if max_tokens is not None else self.max_tokens,
                     stream=True,
                     extra_body=extra_body if extra_body else None
                 )

@@ -14,7 +14,7 @@ from .bench import BenchExecutor
 from .database import get_db, new_id
 from .log_store import add_log
 from .report_builder import ReportDataBuilder
-from .app_config import get_float_config, get_int_config
+from .app_config import get_bool_config, get_float_config, get_int_config
 from .provider_keys import get_provider_key
 from .stream_parser import ThinkingStreamParser
 
@@ -89,15 +89,17 @@ class AuditEngine:
                 return
 
             # 2. Execute & Score
+            default_judge_runtime = self._resolve_judge_runtime_params({})
             judge_model_name = request.judge_model
             judge_api_key = request.api_key
             judge_base_url = None
             judge_system_prompt = None
-            judge_temperature = 0.0
+            judge_temperature = default_judge_runtime["temperature"]
             bench_executor = None
             bench_record = None
             judge_analysis_persona = None
-            judge_max_reasoning_tokens = None
+            judge_max_tokens = default_judge_runtime["max_tokens"]
+            judge_max_reasoning_tokens = default_judge_runtime["max_reasoning_tokens"]
 
             # ── Branch: Bench mode ──
             if request.bench_id:
@@ -132,15 +134,17 @@ class AuditEngine:
                         if not fm_row:
                             raise RuntimeError(f"Foreman model {foreman_id} not found")
                         fm = dict(fm_row)
+                        foreman_runtime = self._resolve_judge_runtime_params(fm)
                         foreman_client = JudgeClient(
                             model=fm["model_key"],
                             api_key=fm["api_key"] or get_provider_key(fm.get("provider", "")) or request.api_key,
                             base_url=fm["base_url"],
                             system_prompt=fm.get("system_prompt"),
                             analysis_persona=fm.get("analysis_persona"),
-                            temperature=0.0,
+                            temperature=foreman_runtime["temperature"],
                             log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
-                            max_reasoning_tokens=fm.get("max_reasoning_tokens"),
+                            max_tokens=foreman_runtime["max_tokens"],
+                            max_reasoning_tokens=foreman_runtime["max_reasoning_tokens"],
                         )
                         add_log(job_id, "info", f"  Bench foreman resolved: {fm['name']} ({fm['model_key']})")
 
@@ -154,15 +158,17 @@ class AuditEngine:
                             add_log(job_id, "error", f"  Bench judge {jid} not found")
                             continue
                         jm = dict(jm_row)
+                        judge_runtime = self._resolve_judge_runtime_params(jm)
                         jc = JudgeClient(
                             model=jm["model_key"],
                             api_key=jm["api_key"] or get_provider_key(jm.get("provider", "")) or request.api_key,
                             base_url=jm["base_url"],
                             system_prompt=jm.get("system_prompt"),
                             analysis_persona=jm.get("analysis_persona"),
-                            temperature=jm.get("temperature") or 0.0,
+                            temperature=judge_runtime["temperature"],
                             log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
-                            max_reasoning_tokens=jm.get("max_reasoning_tokens"),
+                            max_tokens=judge_runtime["max_tokens"],
+                            max_reasoning_tokens=judge_runtime["max_reasoning_tokens"],
                         )
                         judge_clients.append(jc)
                         add_log(job_id, "info", f"  Bench judge resolved: {jm['name']} ({jm['model_key']})")
@@ -230,9 +236,11 @@ class AuditEngine:
                                 judge_api_key = pk
                         judge_base_url = jm.get("base_url")
                         judge_system_prompt = jm.get("system_prompt")
-                        judge_temperature = jm.get("temperature") or 0.0
+                        judge_runtime = self._resolve_judge_runtime_params(jm)
+                        judge_temperature = judge_runtime["temperature"]
                         judge_analysis_persona = jm.get("analysis_persona")
-                        judge_max_reasoning_tokens = jm.get("max_reasoning_tokens")
+                        judge_max_tokens = judge_runtime["max_tokens"]
+                        judge_max_reasoning_tokens = judge_runtime["max_reasoning_tokens"]
                         add_log(job_id, "info", f"Resolved Judge Model: {jm['name']}",
                                 {"provider": jm.get("provider"), "model": judge_model_name})
                     except Exception as e:
@@ -280,6 +288,7 @@ class AuditEngine:
                     analysis_persona=judge_analysis_persona,
                     temperature=judge_temperature,
                     log_callback=judge_log_callback,
+                    max_tokens=judge_max_tokens,
                     max_reasoning_tokens=judge_max_reasoning_tokens,
                 )
 
@@ -763,17 +772,19 @@ class AuditEngine:
             messages.append({"role": "system", "content": request.system_prompt})
         messages.append({"role": "user", "content": prompt_text})
 
+        target_params = self._resolve_target_runtime_params(request)
+
         payload = {
             "model":       request.model_name,
             "messages":    messages,
-            "temperature": request.temperature if request.temperature is not None
-                           else get_float_config("target_default_temperature", 0.7),
-            "max_tokens":  get_int_config("target_default_max_tokens", 300),
+            "temperature": target_params["temperature"],
         }
+        if target_params["max_tokens"] is not None:
+            payload["max_tokens"] = target_params["max_tokens"]
 
         # Inject Reasoning Parameters
         effort = request.reasoning_effort
-        max_reasoning = request.max_reasoning_tokens
+        max_reasoning = target_params["max_reasoning_tokens"]
 
         reasoning_config = {}
 
@@ -979,3 +990,61 @@ class AuditEngine:
                 print(f"Target LLM call failed: {err_msg}")
                 if job_id: add_log(job_id, "error", f"Target LLM call failed: {err_msg}")
                 return f"Error: {err_msg}"
+
+    def _resolve_target_runtime_params(self, request: AuditRequest) -> Dict[str, Optional[float]]:
+        # Target models: If user provides a value (>0), use it. Otherwise, use None (provider default).
+        # We no longer use token_limits_enabled or target_default_max_tokens.
+        
+        temperature = request.temperature if request.temperature is not None else 0.7
+        
+        max_tokens = int(request.max_tokens) if (request.max_tokens and int(request.max_tokens) > 0) else None
+        max_reasoning_tokens = int(request.max_reasoning_tokens) if (request.max_reasoning_tokens and int(request.max_reasoning_tokens) > 0) else None
+        
+        return {
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "max_reasoning_tokens": max_reasoning_tokens,
+        }
+
+    def _resolve_judge_runtime_params(self, model_row: Dict) -> Dict[str, Optional[float]]:
+        use_override = bool(model_row.get("judge_override_global_settings"))
+
+        if use_override:
+            # Use model-specific settings
+            temperature = model_row.get("temperature")
+            if temperature is None:
+                # Fallback to global default if even the override doesn't specify it (though UI usually forces it)
+                temperature = get_float_config("judge_default_temperature", 0.0)
+            
+            # For tokens: if value > 0, use it. Else None.
+            mt = model_row.get("max_tokens")
+            max_tokens = int(mt) if (mt and int(mt) > 0) else None
+            
+            mrt = model_row.get("max_reasoning_tokens")
+            max_reasoning_tokens = int(mrt) if (mrt and int(mrt) > 0) else None
+            
+            return {
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "max_reasoning_tokens": max_reasoning_tokens,
+            }
+
+        # Use global settings
+        temperature = get_float_config("judge_default_temperature", 0.0)
+        limits_enabled = get_bool_config("judge_global_limits_enabled", True)
+        
+        if limits_enabled:
+            g_mt = get_int_config("judge_default_max_tokens", 0)
+            max_tokens = int(g_mt) if g_mt > 0 else None
+            
+            g_mrt = get_int_config("judge_default_max_reasoning_tokens", 0)
+            max_reasoning_tokens = int(g_mrt) if g_mrt > 0 else None
+        else:
+            max_tokens = None
+            max_reasoning_tokens = None
+            
+        return {
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "max_reasoning_tokens": max_reasoning_tokens,
+        }

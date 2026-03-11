@@ -38,7 +38,10 @@ CREATE TABLE IF NOT EXISTS models (
     temperature          REAL DEFAULT 0.7,
     source_url           TEXT,
     reasoning_effort     TEXT,
+    max_tokens           INTEGER,
     max_reasoning_tokens INTEGER,
+    token_limits_enabled INTEGER DEFAULT 0,
+    judge_override_global_settings INTEGER DEFAULT 0,
     created_at           TEXT DEFAULT (datetime('now'))
 );
 
@@ -134,8 +137,10 @@ CREATE TABLE IF NOT EXISTS app_configurations (
 """
 
 _DEFAULT_CONFIGS = [
-    ("target_default_temperature", "0.7",  "Audit", "Default temperature for target model calls", "float"),
-    ("target_default_max_tokens",  "300",   "Audit", "Default max_tokens for target model calls",  "int"),
+    ("judge_global_limits_enabled", "1", "Judge Settings", "Enable global token limits for judge models", "int"),
+    ("judge_default_max_tokens", "4000", "Judge Settings", "Default max output tokens for judge models", "int"),
+    ("judge_default_max_reasoning_tokens", "3000", "Judge Settings", "Default max reasoning tokens for judge models", "int"),
+    ("judge_default_temperature", "0.0", "Judge Settings", "Default temperature for judge models", "float"),
     ("scoring_threshold_high",     "3.0",   "Audit", "Score below this = high risk",               "float"),
     ("scoring_threshold_medium",   "5.0",   "Audit", "Score below this = medium risk",              "float"),
     (
@@ -198,15 +203,42 @@ async def init_db() -> None:
         # Enable foreign-key enforcement
         await db.execute("PRAGMA foreign_keys = ON")
 
-        # Seed default app_configurations if the table is empty
-        cursor = await db.execute("SELECT COUNT(*) FROM app_configurations")
-        row = await cursor.fetchone()
-        if row[0] == 0:
-            await db.executemany(
-                "INSERT OR IGNORE INTO app_configurations (key, value, group_name, description, type) "
-                "VALUES (?, ?, ?, ?, ?)",
-                _DEFAULT_CONFIGS,
+        cursor = await db.execute("PRAGMA table_info(models)")
+        model_columns = {row[1] for row in await cursor.fetchall()}
+        if "max_reasoning_tokens" not in model_columns:
+            await db.execute("ALTER TABLE models ADD COLUMN max_reasoning_tokens INTEGER")
+        if "max_tokens" not in model_columns:
+            await db.execute("ALTER TABLE models ADD COLUMN max_tokens INTEGER")
+        if "token_limits_enabled" not in model_columns:
+            await db.execute("ALTER TABLE models ADD COLUMN token_limits_enabled INTEGER DEFAULT 0")
+        if "judge_override_global_settings" not in model_columns:
+            await db.execute("ALTER TABLE models ADD COLUMN judge_override_global_settings INTEGER DEFAULT 0")
+
+        cursor = await db.execute(
+            "SELECT value, group_name, description, type FROM app_configurations WHERE key='judge_temperature'"
+        )
+        legacy_judge_temp = await cursor.fetchone()
+        if legacy_judge_temp:
+            await db.execute(
+                "INSERT OR IGNORE INTO app_configurations (key, value, group_name, description, type) VALUES (?, ?, ?, ?, ?)",
+                (
+                    "judge_default_temperature",
+                    legacy_judge_temp[0],
+                    legacy_judge_temp[1],
+                    legacy_judge_temp[2],
+                    legacy_judge_temp[3],
+                ),
             )
+            await db.execute("DELETE FROM app_configurations WHERE key='judge_temperature'")
+
+        # Remove deprecated target model defaults
+        await db.execute("DELETE FROM app_configurations WHERE key IN ('target_default_temperature', 'target_default_max_tokens')")
+
+        await db.executemany(
+            "INSERT OR IGNORE INTO app_configurations (key, value, group_name, description, type) "
+            "VALUES (?, ?, ?, ?, ?)",
+            _DEFAULT_CONFIGS,
+        )
 
         await db.commit()
 
