@@ -16,6 +16,7 @@ from .log_store import add_log
 from .report_builder import ReportDataBuilder
 from .app_config import get_float_config, get_int_config
 from .provider_keys import get_provider_key
+from .stream_parser import ThinkingStreamParser
 
 
 class AuditEngine:
@@ -822,6 +823,7 @@ class AuditEngine:
 
                 full_content = ""
                 thinking_buffer = ""
+                parser = ThinkingStreamParser()
 
                 async with client.stream("POST", url, json=payload, headers=headers) as response:
                     if response.status_code != 200:
@@ -840,32 +842,42 @@ class AuditEngine:
                             if not chunk_data.get("choices"):
                                 continue
                             delta = chunk_data["choices"][0].get("delta", {})
-                            token = delta.get("content", "")
-                            if token:
-                                full_content += token
-                                if job_id:
-                                    add_log(job_id, "target_stream", token,
-                                            {"prompt_id": prompt_id} if prompt_id else None)
+                            c_token = delta.get("content", "")
                             r_token = delta.get("reasoning_content", "") or delta.get("reasoning", "")
-                            if r_token:
-                                thinking_buffer += r_token
-                                if job_id:
-                                    add_log(job_id, "thought_stream", r_token,
-                                            {"prompt_id": prompt_id} if prompt_id else None)
+                            extra = delta
+                            
+                            for type_, text in parser.process(c_token, r_token, extra):
+                                if type_ == "thought":
+                                    thinking_buffer += text
+                                    if job_id:
+                                        add_log(job_id, "thought_stream", text,
+                                                {"prompt_id": prompt_id} if prompt_id else None)
+                                else:
+                                    full_content += text
+                                    if job_id:
+                                        add_log(job_id, "target_stream", text,
+                                                {"prompt_id": prompt_id} if prompt_id else None)
+                                                
                         except Exception:
                             continue
+                
+                # Flush parser
+                for type_, text in parser.flush():
+                    if type_ == "thought":
+                        thinking_buffer += text
+                        if job_id:
+                            add_log(job_id, "thought_stream", text,
+                                    {"prompt_id": prompt_id} if prompt_id else None)
+                    else:
+                        full_content += text
+                        if job_id:
+                            add_log(job_id, "target_stream", text,
+                                    {"prompt_id": prompt_id} if prompt_id else None)
 
                 content = full_content
 
-                think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL)
-                think_match = think_pattern.search(content)
-                if think_match:
-                    thought_content = think_match.group(1).strip()
-                    if job_id and thought_content:
-                        add_log(job_id, "thought", f"Thinking Process:\n{thought_content}")
-                    content = think_pattern.sub('', content).strip()
-                    if job_id:
-                        add_log(job_id, "info", "Removed <think> block from response for judging")
+                if job_id and thinking_buffer:
+                     add_log(job_id, "thought", f"Thinking Process:\n{thinking_buffer}")
 
 
 
@@ -888,7 +900,82 @@ class AuditEngine:
                 if job_id: add_log(job_id, "error", err_msg)
                 return f"Error: {err_msg}"
             except Exception as e:
-                err_msg = f"Target LLM call failed: {e}"
-                print(err_msg)
-                if job_id: add_log(job_id, "error", err_msg)
-                return f"Error: {str(e)}"
+                # Catch-all for other errors
+                err_msg = str(e).lower()
+                
+                # Special handling for "property 'reasoning' is unsupported" in target models
+                is_reasoning_error = any(phrase in err_msg for phrase in [
+                    "unsupported", "unknown parameter", "reasoning", "include_reasoning", "extra_body"
+                ])
+                
+                if is_reasoning_error:
+                    print("Retrying target model without reasoning parameters...")
+                    if job_id: add_log(job_id, "warning", "Target model rejected reasoning params. Retrying standard request...")
+                    
+                    # Retry without reasoning params
+                    try:
+                        if "reasoning" in payload: del payload["reasoning"]
+                        if "include_reasoning" in payload: del payload["include_reasoning"]
+                        if "think" in payload: del payload["think"]
+                        
+                        async with client.stream("POST", url, json=payload, headers=headers) as response:
+                            if response.status_code != 200:
+                                err_body = await response.aread()
+                                raise Exception(f"HTTP {response.status_code}: {err_body.decode('utf-8', errors='ignore')}")
+                                
+                            full_content = ""
+                            thinking_buffer = ""
+                            parser = ThinkingStreamParser()
+                            
+                            async for line in response.aiter_lines():
+                                if not line: continue
+                                if line.strip() == "data: [DONE]": break
+                                if not line.startswith("data: "): continue
+                                try:
+                                    chunk_data = json.loads(line[6:])
+                                    if not chunk_data.get("choices"): continue
+                                    delta = chunk_data["choices"][0].get("delta", {})
+                                    c_token = delta.get("content", "")
+                                    r_token = delta.get("reasoning_content", "") or delta.get("reasoning", "")
+                                    extra = delta
+                                    
+                                    for type_, text in parser.process(c_token, r_token, extra):
+                                        if type_ == "thought":
+                                            thinking_buffer += text
+                                            if job_id:
+                                                add_log(job_id, "thought_stream", text,
+                                                        {"prompt_id": prompt_id} if prompt_id else None)
+                                        else:
+                                            full_content += text
+                                            if job_id:
+                                                add_log(job_id, "target_stream", text,
+                                                        {"prompt_id": prompt_id} if prompt_id else None)
+                                except: continue
+                                
+                            # Flush parser
+                            for type_, text in parser.flush():
+                                if type_ == "thought":
+                                    thinking_buffer += text
+                                    if job_id:
+                                        add_log(job_id, "thought_stream", text,
+                                                {"prompt_id": prompt_id} if prompt_id else None)
+                                else:
+                                    full_content += text
+                                    if job_id:
+                                        add_log(job_id, "target_stream", text,
+                                                {"prompt_id": prompt_id} if prompt_id else None)
+                            
+                            if job_id and thinking_buffer:
+                                add_log(job_id, "thought", f"Thinking Process (Retry):\n{thinking_buffer}")
+                                
+                            if job_id:
+                                add_log(job_id, "response", f"Target LLM Response Complete (Retry) ({len(full_content)} chars)", {
+                                    "body": {"content": full_content[:200] + "..."}
+                                })
+                            return full_content
+                    except Exception as retry_err:
+                        err_msg = f"Target LLM retry failed: {retry_err}"
+
+                print(f"Target LLM call failed: {err_msg}")
+                if job_id: add_log(job_id, "error", f"Target LLM call failed: {err_msg}")
+                return f"Error: {err_msg}"

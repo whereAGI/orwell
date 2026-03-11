@@ -15,6 +15,7 @@ import random
 from typing import List, Optional, Callable
 from openai import AsyncOpenAI
 from .app_config import get_config
+from .stream_parser import ThinkingStreamParser
 
 GENERATOR_SYSTEM_PROMPT = """\
 You are an expert psychometrician specialising in cross-cultural organisational psychology.
@@ -108,84 +109,76 @@ class PromptGenerator:
         self._log("info", f"[User Prompt]\n{user}")
         self._log("info", "───────────────────────")
 
-        # Build extra_body for reasoning — same as JudgeClient
-        extra_body = {"include_reasoning": True}
-        if self.max_reasoning_tokens:
-            extra_body["reasoning"] = {"max_tokens": int(self.max_reasoning_tokens)}
+        # Attempt with reasoning enabled first, then fallback if provider rejects reasoning params
+        for attempt in range(2):
+            try:
+                # Build extra_body for reasoning — same as JudgeClient
+                extra_body = {}
+                if attempt == 0:
+                    extra_body["include_reasoning"] = True
+                    if self.max_reasoning_tokens:
+                        extra_body["reasoning"] = {"max_tokens": int(self.max_reasoning_tokens)}
 
-        resp = await self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            temperature=0.9,  # Higher temperature for creative diversity
-            max_tokens=max_tokens,
-            stream=True,
-            extra_body=extra_body,
-        )
+                resp = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
+                    temperature=0.9,  # Higher temperature for creative diversity
+                    max_tokens=max_tokens,
+                    stream=True,
+                    extra_body=extra_body if extra_body else None,
+                )
 
-        full_content = ""
-        full_reasoning = ""
-        in_think_tag = False
+                full_content = ""
+                full_reasoning = ""
+                parser = ThinkingStreamParser()
 
-        async for chunk in resp:
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta
+                async for chunk in resp:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
 
-            # 1. Handle native reasoning (OpenRouter / DeepSeek API)
-            # OpenRouter uses 'reasoning', others might use 'reasoning_content'
-            r_token = getattr(delta, "reasoning", "") or getattr(delta, "reasoning_content", "")
-            
-            if r_token:
-                full_reasoning += r_token
-                self._log("thought", r_token)
-                continue
+                    # OpenRouter uses 'reasoning', others might use 'reasoning_content'
+                    r_token = getattr(delta, "reasoning", "") or getattr(delta, "reasoning_content", "")
+                    c_token = delta.content or ""
+                    extra = delta.model_extra or {}
+                    
+                    for type_, text in parser.process(c_token, r_token, extra):
+                        if type_ == "thought":
+                            full_reasoning += text
+                            self._log("thought", text)
+                        else:
+                            full_content += text
+                            self._log("content", text)
 
-            # 2. Handle Content (and check for <think> tags if model leaks them into content)
-            token = delta.content or ""
-            
-            if token:
-                # Check for <think> tags in content stream
-                if "<think>" in token:
-                    in_think_tag = True
-                    # Split token to handle parts before/after tag
-                    parts = token.split("<think>")
-                    if parts[0]: 
-                        full_content += parts[0]
-                        self._log("content", parts[0])
-                    # Everything after <think> is thought
-                    if len(parts) > 1:
-                        full_reasoning += parts[1]
-                        self._log("thought", parts[1])
+                # Flush any remaining buffer
+                for type_, text in parser.flush():
+                    if type_ == "thought":
+                        full_reasoning += text
+                        self._log("thought", text)
+                    else:
+                        full_content += text
+                        self._log("content", text)
+
+                if full_reasoning:
+                    self._log("info", f"\n[Thinking] Model used {len(full_reasoning)} chars of reasoning (excluded from prompts)")
+
+                # Return ONLY the actual content — reasoning is excluded from parsed output
+                return full_content
+
+            except Exception as e:
+                error_msg = str(e).lower()
+                is_reasoning_error = any(phrase in error_msg for phrase in [
+                    "unsupported", "unknown parameter", "reasoning", "include_reasoning", "extra_body"
+                ])
+                
+                if attempt == 0 and is_reasoning_error:
+                    self._log("info", f"Model '{self.model}' does not support reasoning parameters. Retrying without them...")
                     continue
                 
-                if "</think>" in token:
-                    in_think_tag = False
-                    parts = token.split("</think>")
-                    if parts[0]:
-                        full_reasoning += parts[0]
-                        self._log("thought", parts[0])
-                    # Everything after </think> is content
-                    if len(parts) > 1:
-                        full_content += parts[1]
-                        self._log("content", parts[1])
-                    continue
-
-                if in_think_tag:
-                    full_reasoning += token
-                    self._log("thought", token)
-                else:
-                    full_content += token
-                    # Log content tokens so user sees what is happening
-                    self._log("content", token)
-
-        if full_reasoning:
-            self._log("info", f"\n[Thinking] Model used {len(full_reasoning)} chars of reasoning (excluded from prompts)")
-
-        # Return ONLY the actual content — reasoning is excluded from parsed output
-        return full_content
+                raise e
 
     async def generate_batch(
         self,
