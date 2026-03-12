@@ -146,6 +146,11 @@
     <div id="schemaModal" class="modal">
         <div class="modal-content" style="width: 700px; max-width: 95vw;">
             <h2 id="modalTitle" style="margin-top:0">Create New Schema</h2>
+            
+            <div id="builtinNotice" style="display:none; background:rgba(129, 140, 248, 0.1); border:1px solid rgba(129, 140, 248, 0.2); color:var(--text); padding:12px; border-radius:6px; margin-bottom:20px; font-size:13px; line-height:1.4;">
+                ℹ️ <strong>Built-in Schema:</strong> Structural fields (Name, Icon, Description) are locked, but you can customize all prompts and context fields below.
+            </div>
+
             <input type="hidden" id="schemaId">
             
             <div class="form-row">
@@ -200,17 +205,26 @@
 
             <div class="form-group">
                 <label>Report: Executive Summary Prompt (Optional)</label>
-                <textarea id="schemaExecPrompt" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Executive Summary..."></textarea>
+                <textarea id="schemaExecPrompt" class="prompt-input" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Executive Summary..."></textarea>
+                <div class="hint-fallback" style="font-size:11px; color:var(--warning); margin-top:4px; display:none;">
+                    ⚠️ No prompt set — global default will be used. <a href="/config" target="_blank" style="color:var(--primary);">Configure global defaults</a>.
+                </div>
             </div>
 
             <div class="form-group">
                 <label>Report: Failure Analysis Prompt (Optional)</label>
-                <textarea id="schemaFailPrompt" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Failure Analysis..."></textarea>
+                <textarea id="schemaFailPrompt" class="prompt-input" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Failure Analysis..."></textarea>
+                <div class="hint-fallback" style="font-size:11px; color:var(--warning); margin-top:4px; display:none;">
+                    ⚠️ No prompt set — global default will be used. <a href="/config" target="_blank" style="color:var(--primary);">Configure global defaults</a>.
+                </div>
             </div>
 
             <div class="form-group">
                 <label>Report: Recommendations Prompt (Optional)</label>
-                <textarea id="schemaRecoPrompt" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Recommendations..."></textarea>
+                <textarea id="schemaRecoPrompt" class="prompt-input" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Recommendations..."></textarea>
+                <div class="hint-fallback" style="font-size:11px; color:var(--warning); margin-top:4px; display:none;">
+                    ⚠️ No prompt set — global default will be used. <a href="/config" target="_blank" style="color:var(--primary);">Configure global defaults</a>.
+                </div>
             </div>
 
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">

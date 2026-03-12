@@ -52,7 +52,7 @@ function renderSchemas(schemas) {
 
             <div style="display:flex; gap:8px; margin-top:auto; padding-top:12px; border-top:1px solid var(--border);">
                 <button class="secondary" style="flex:1; padding:6px; font-size:12px;" onclick="openSchemaModal('${s.id}')">
-                    ${isBuiltin ? 'View Details' : 'Edit'}
+                    Edit
                 </button>
                 ${!isBuiltin ? `
                 <button class="danger" style="width:auto; padding:6px 12px; font-size:12px;" onclick="deleteSchema('${s.id}')">
@@ -87,12 +87,13 @@ function openSchemaModal(schemaId = null) {
     // Enable all fields by default
     const inputs = modal.querySelectorAll('input, textarea, button:not(.secondary)');
     inputs.forEach(el => el.disabled = false);
+    document.getElementById('builtinNotice').style.display = 'none';
 
     if (schemaId) {
         const schema = currentSchemas.find(s => s.id === schemaId);
         if (!schema) return;
 
-        title.textContent = schema.is_builtin ? 'View Schema Details' : 'Edit Schema';
+        title.textContent = schema.is_builtin ? 'Edit Schema' : 'Edit Schema';
         document.getElementById('schemaId').value = schema.id;
         document.getElementById('schemaName').value = schema.name;
         document.getElementById('schemaIcon').value = schema.icon || '';
@@ -108,17 +109,17 @@ function openSchemaModal(schemaId = null) {
         document.getElementById('schemaRecoPrompt').value = schema.report_recommendations_prompt || '';
 
         if (schema.is_builtin) {
-            inputs.forEach(el => el.disabled = true);
-            // Re-enable close/cancel buttons if any (but here we just have Cancel and Save)
-            // We should hide the Save button for built-ins
-            const saveBtn = modal.querySelector('button[onclick="saveSchema()"]');
-            if (saveBtn) saveBtn.style.display = 'none';
-        } else {
-            const saveBtn = modal.querySelector('button[onclick="saveSchema()"]');
-            if (saveBtn) {
-                saveBtn.style.display = 'inline-block';
-                saveBtn.textContent = 'Save Changes';
-            }
+            document.getElementById('builtinNotice').style.display = 'block';
+            
+            // Lock structural fields
+            const lockedIds = ['schemaName', 'schemaIcon', 'schemaDesc', 'schemaLowLabel', 'schemaHighLabel'];
+            lockedIds.forEach(id => document.getElementById(id).disabled = true);
+        }
+        
+        const saveBtn = modal.querySelector('button[onclick="saveSchema()"]');
+        if (saveBtn) {
+            saveBtn.style.display = 'inline-block';
+            saveBtn.textContent = 'Save Changes';
         }
     } else {
         title.textContent = 'Create New Schema';
@@ -130,7 +131,39 @@ function openSchemaModal(schemaId = null) {
     }
 
     modal.style.display = 'flex';
+    updateHints();
 }
+
+function updateHints() {
+    const fields = [
+        { id: 'schemaExecPrompt', hint: null },
+        { id: 'schemaFailPrompt', hint: null },
+        { id: 'schemaRecoPrompt', hint: null }
+    ];
+    
+    fields.forEach(f => {
+        const el = document.getElementById(f.id);
+        const hint = el.nextElementSibling;
+        if (hint && hint.classList.contains('hint-fallback')) {
+            hint.style.display = el.value.trim() ? 'none' : 'block';
+        }
+    });
+}
+
+// Add event listeners for hints
+document.addEventListener('DOMContentLoaded', () => {
+    ['schemaExecPrompt', 'schemaFailPrompt', 'schemaRecoPrompt'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', () => {
+                const hint = el.nextElementSibling;
+                if (hint && hint.classList.contains('hint-fallback')) {
+                    hint.style.display = el.value.trim() ? 'none' : 'block';
+                }
+            });
+        }
+    });
+});
 
 function closeSchemaModal() {
     document.getElementById('schemaModal').style.display = 'none';

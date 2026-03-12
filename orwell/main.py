@@ -810,31 +810,52 @@ async def update_schema(schema_id: str, schema: AuditSchema):
             row = await cursor.fetchone()
             if not row:
                 raise HTTPException(status_code=404, detail="Schema not found")
-            if row["is_builtin"]:
-                raise HTTPException(status_code=400, detail="Cannot modify built-in schemas")
             
-            await db.execute(
-                """UPDATE audit_schemas SET
-                   name=?, schema_type=?, description=?, icon=?,
-                   scoring_axis_low_label=?, scoring_axis_high_label=?,
-                   generator_system_prompt=?, judge_system_prompt=?, dimension_template=?,
-                   schema_context=?, report_executive_summary_prompt=?,
-                   report_failure_analysis_prompt=?, report_recommendations_prompt=?
-                   WHERE id=?""",
-                (
-                    schema.name, schema.schema_type, schema.description, schema.icon,
-                    schema.scoring_axis_low_label, schema.scoring_axis_high_label,
-                    schema.generator_system_prompt, schema.judge_system_prompt,
-                    schema.dimension_template,
-                    schema.schema_context, schema.report_executive_summary_prompt,
-                    schema.report_failure_analysis_prompt, schema.report_recommendations_prompt,
-                    schema_id
+            is_builtin = bool(row["is_builtin"])
+            
+            if is_builtin:
+                # Only allow updating prompt fields
+                await db.execute(
+                    """UPDATE audit_schemas SET
+                       generator_system_prompt=?, judge_system_prompt=?, dimension_template=?,
+                       schema_context=?, report_executive_summary_prompt=?,
+                       report_failure_analysis_prompt=?, report_recommendations_prompt=?
+                       WHERE id=?""",
+                    (
+                        schema.generator_system_prompt, schema.judge_system_prompt,
+                        schema.dimension_template,
+                        schema.schema_context, schema.report_executive_summary_prompt,
+                        schema.report_failure_analysis_prompt, schema.report_recommendations_prompt,
+                        schema_id
+                    )
                 )
-            )
+            else:
+                # Full update for custom schemas
+                await db.execute(
+                    """UPDATE audit_schemas SET
+                       name=?, schema_type=?, description=?, icon=?,
+                       scoring_axis_low_label=?, scoring_axis_high_label=?,
+                       generator_system_prompt=?, judge_system_prompt=?, dimension_template=?,
+                       schema_context=?, report_executive_summary_prompt=?,
+                       report_failure_analysis_prompt=?, report_recommendations_prompt=?
+                       WHERE id=?""",
+                    (
+                        schema.name, schema.schema_type, schema.description, schema.icon,
+                        schema.scoring_axis_low_label, schema.scoring_axis_high_label,
+                        schema.generator_system_prompt, schema.judge_system_prompt,
+                        schema.dimension_template,
+                        schema.schema_context, schema.report_executive_summary_prompt,
+                        schema.report_failure_analysis_prompt, schema.report_recommendations_prompt,
+                        schema_id
+                    )
+                )
             await db.commit()
-        schema.id = schema_id
-        schema.is_builtin = False
-        return schema
+        
+        # Refetch to return correct object (especially if some fields were ignored)
+        async with get_db() as db:
+            cursor = await db.execute("SELECT * FROM audit_schemas WHERE id=?", (schema_id,))
+            row = await cursor.fetchone()
+        return _row_to_audit_schema(row)
     except HTTPException:
         raise
     except Exception as e:
