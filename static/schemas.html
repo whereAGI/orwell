@@ -192,6 +192,27 @@
                 <textarea id="schemaDimTemplate" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Template for describing dimension poles..."></textarea>
             </div>
 
+            <div class="form-group">
+                <label>Schema Context (Report Briefing)</label>
+                <textarea id="schemaContext" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Brief context injected into every report prompt..."></textarea>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">Injected into all report generation prompts.</div>
+            </div>
+
+            <div class="form-group">
+                <label>Report: Executive Summary Prompt (Optional)</label>
+                <textarea id="schemaExecPrompt" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Executive Summary..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Report: Failure Analysis Prompt (Optional)</label>
+                <textarea id="schemaFailPrompt" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Failure Analysis..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label>Report: Recommendations Prompt (Optional)</label>
+                <textarea id="schemaRecoPrompt" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Override system prompt for Recommendations..."></textarea>
+            </div>
+
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
                 <button class="secondary" onclick="closeSchemaModal()">Cancel</button>
                 <button onclick="saveSchema()">Save Schema</button>

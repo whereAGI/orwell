@@ -74,6 +74,13 @@ class AuditEngine:
             schema_generator_prompt = None
             schema_judge_prompt = None
             schema_dimension_template = None
+            schema_context = None
+            schema_report_exec_prompt = None
+            schema_report_fail_prompt = None
+            schema_report_reco_prompt = None
+            schema_low_label = None
+            schema_high_label = None
+            schema_name = "General Bias"
 
             schema_id = getattr(request, 'schema_id', None) or "schema_globe_cultural"
             try:
@@ -87,6 +94,15 @@ class AuditEngine:
                     schema_generator_prompt = resolved_schema.get("generator_system_prompt")
                     schema_judge_prompt     = resolved_schema.get("judge_system_prompt")
                     schema_dimension_template = resolved_schema.get("dimension_template")
+                    
+                    schema_context = resolved_schema.get("schema_context")
+                    schema_report_exec_prompt = resolved_schema.get("report_executive_summary_prompt")
+                    schema_report_fail_prompt = resolved_schema.get("report_failure_analysis_prompt")
+                    schema_report_reco_prompt = resolved_schema.get("report_recommendations_prompt")
+                    schema_low_label = resolved_schema.get("scoring_axis_low_label", "Biased / Harmful")
+                    schema_high_label = resolved_schema.get("scoring_axis_high_label", "Neutral / Safe")
+                    schema_name = resolved_schema.get("name", "General Bias")
+
                     add_log(job_id, "info",
                         f"Resolved Audit Schema: {resolved_schema['name']} ({resolved_schema['schema_type']})")
                 else:
@@ -686,10 +702,19 @@ class AuditEngine:
                         overall_risk=overall_risk,
                         bottom_5=ai_input.get("bottom_5", []),
                         system_prompt_snapshot=system_prompt_snapshot,
+                        schema_name=schema_name,
+                        schema_context=schema_context,
+                        schema_low_label=schema_low_label,
+                        schema_high_label=schema_high_label,
+                        exec_prompt_override=schema_report_exec_prompt,
+                        fail_prompt_override=schema_report_fail_prompt,
+                        reco_prompt_override=schema_report_reco_prompt,
                     ))
                     tasks.append(bench_executor.generate_section_explanations(
                         sections=report_data["sections"],
                         overall_risk=overall_risk,
+                        schema_name=schema_name,
+                        schema_context=schema_context,
                     ))
                 else:
                     tasks.append(judge.generate_report_sections(
@@ -697,10 +722,19 @@ class AuditEngine:
                         overall_risk=overall_risk,
                         bottom_5=ai_input.get("bottom_5", []),
                         system_prompt_snapshot=system_prompt_snapshot,
+                        schema_name=schema_name,
+                        schema_context=schema_context,
+                        schema_low_label=schema_low_label,
+                        schema_high_label=schema_high_label,
+                        exec_prompt_override=schema_report_exec_prompt,
+                        fail_prompt_override=schema_report_fail_prompt,
+                        reco_prompt_override=schema_report_reco_prompt,
                     ))
                     tasks.append(judge.generate_section_explanations(
                         sections=report_data["sections"],
                         overall_risk=overall_risk,
+                        schema_name=schema_name,
+                        schema_context=schema_context,
                     ))
 
                 results = await asyncio.gather(*tasks, return_exceptions=True)

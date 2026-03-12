@@ -56,6 +56,10 @@ class AuditSchema(BaseModel):
     generator_system_prompt: Optional[str] = None
     judge_system_prompt: Optional[str] = None
     dimension_template: Optional[str] = None
+    schema_context: Optional[str] = None
+    report_executive_summary_prompt: Optional[str] = None
+    report_failure_analysis_prompt: Optional[str] = None
+    report_recommendations_prompt: Optional[str] = None
     is_builtin: bool = False
     created_at: Optional[datetime] = None
 

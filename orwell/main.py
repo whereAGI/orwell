@@ -739,6 +739,10 @@ def _row_to_audit_schema(row) -> AuditSchema:
         generator_system_prompt=r["generator_system_prompt"],
         judge_system_prompt=r["judge_system_prompt"],
         dimension_template=r["dimension_template"],
+        schema_context=r.get("schema_context"),
+        report_executive_summary_prompt=r.get("report_executive_summary_prompt"),
+        report_failure_analysis_prompt=r.get("report_failure_analysis_prompt"),
+        report_recommendations_prompt=r.get("report_recommendations_prompt"),
         is_builtin=bool(r["is_builtin"]),
         created_at=r.get("created_at"),
     )
@@ -777,13 +781,18 @@ async def create_schema(schema: AuditSchema):
                 """INSERT INTO audit_schemas (
                     id, name, schema_type, description, icon,
                     scoring_axis_low_label, scoring_axis_high_label,
-                    generator_system_prompt, judge_system_prompt, dimension_template, is_builtin
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                    generator_system_prompt, judge_system_prompt, dimension_template,
+                    schema_context, report_executive_summary_prompt,
+                    report_failure_analysis_prompt, report_recommendations_prompt,
+                    is_builtin
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
                 (
                     sid, schema.name, schema.schema_type, schema.description, schema.icon,
                     schema.scoring_axis_low_label, schema.scoring_axis_high_label,
                     schema.generator_system_prompt, schema.judge_system_prompt,
-                    schema.dimension_template
+                    schema.dimension_template,
+                    schema.schema_context, schema.report_executive_summary_prompt,
+                    schema.report_failure_analysis_prompt, schema.report_recommendations_prompt
                 )
             )
             await db.commit()
@@ -808,13 +817,18 @@ async def update_schema(schema_id: str, schema: AuditSchema):
                 """UPDATE audit_schemas SET
                    name=?, schema_type=?, description=?, icon=?,
                    scoring_axis_low_label=?, scoring_axis_high_label=?,
-                   generator_system_prompt=?, judge_system_prompt=?, dimension_template=?
+                   generator_system_prompt=?, judge_system_prompt=?, dimension_template=?,
+                   schema_context=?, report_executive_summary_prompt=?,
+                   report_failure_analysis_prompt=?, report_recommendations_prompt=?
                    WHERE id=?""",
                 (
                     schema.name, schema.schema_type, schema.description, schema.icon,
                     schema.scoring_axis_low_label, schema.scoring_axis_high_label,
                     schema.generator_system_prompt, schema.judge_system_prompt,
-                    schema.dimension_template, schema_id
+                    schema.dimension_template,
+                    schema.schema_context, schema.report_executive_summary_prompt,
+                    schema.report_failure_analysis_prompt, schema.report_recommendations_prompt,
+                    schema_id
                 )
             )
             await db.commit()

@@ -79,6 +79,10 @@ function openSchemaModal(schemaId = null) {
     document.getElementById('schemaGenPrompt').value = '';
     document.getElementById('schemaJudgePrompt').value = '';
     document.getElementById('schemaDimTemplate').value = '';
+    document.getElementById('schemaContext').value = '';
+    document.getElementById('schemaExecPrompt').value = '';
+    document.getElementById('schemaFailPrompt').value = '';
+    document.getElementById('schemaRecoPrompt').value = '';
 
     // Enable all fields by default
     const inputs = modal.querySelectorAll('input, textarea, button:not(.secondary)');
@@ -98,6 +102,10 @@ function openSchemaModal(schemaId = null) {
         document.getElementById('schemaGenPrompt').value = schema.generator_system_prompt || '';
         document.getElementById('schemaJudgePrompt').value = schema.judge_system_prompt || '';
         document.getElementById('schemaDimTemplate').value = schema.dimension_template || '';
+        document.getElementById('schemaContext').value = schema.schema_context || '';
+        document.getElementById('schemaExecPrompt').value = schema.report_executive_summary_prompt || '';
+        document.getElementById('schemaFailPrompt').value = schema.report_failure_analysis_prompt || '';
+        document.getElementById('schemaRecoPrompt').value = schema.report_recommendations_prompt || '';
 
         if (schema.is_builtin) {
             inputs.forEach(el => el.disabled = true);
@@ -139,7 +147,11 @@ async function saveSchema() {
         scoring_axis_high_label: document.getElementById('schemaHighLabel').value.trim(),
         generator_system_prompt: document.getElementById('schemaGenPrompt').value.trim() || null,
         judge_system_prompt: document.getElementById('schemaJudgePrompt').value.trim() || null,
-        dimension_template: document.getElementById('schemaDimTemplate').value.trim() || null
+        dimension_template: document.getElementById('schemaDimTemplate').value.trim() || null,
+        schema_context: document.getElementById('schemaContext').value.trim() || null,
+        report_executive_summary_prompt: document.getElementById('schemaExecPrompt').value.trim() || null,
+        report_failure_analysis_prompt: document.getElementById('schemaFailPrompt').value.trim() || null,
+        report_recommendations_prompt: document.getElementById('schemaRecoPrompt').value.trim() || null
     };
 
     if (!payload.name) {

@@ -270,6 +270,13 @@ class BenchExecutor:
         overall_risk: str,
         bottom_5: List[Dict],
         system_prompt_snapshot: Optional[str] = None,
+        schema_name: Optional[str] = None,
+        schema_context: Optional[str] = None,
+        schema_low_label: Optional[str] = None,
+        schema_high_label: Optional[str] = None,
+        exec_prompt_override: Optional[str] = None,
+        fail_prompt_override: Optional[str] = None,
+        reco_prompt_override: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate multi-stage report sections using the foreman or random judge.
@@ -278,20 +285,26 @@ class BenchExecutor:
         judge = self._get_report_author()
         self._log("info", f"[Bench] Generating report sections with: {judge.model}")
         return await judge.generate_report_sections(
-            dim_stats, overall_risk, bottom_5, system_prompt_snapshot
+            dim_stats, overall_risk, bottom_5, system_prompt_snapshot,
+            schema_name, schema_context, schema_low_label, schema_high_label,
+            exec_prompt_override, fail_prompt_override, reco_prompt_override
         )
 
     async def generate_section_explanations(
         self,
         sections: List[Dict[str, Any]],
         overall_risk: str,
+        schema_name: Optional[str] = None,
+        schema_context: Optional[str] = None,
     ) -> Dict[str, str]:
         """
         Delegates explanation generation to the foreman or random judge.
         """
         judge = self._get_report_author()
         self._log("info", f"[Bench] Generating explanations with: {judge.model}")
-        return await judge.generate_section_explanations(sections, overall_risk)
+        return await judge.generate_section_explanations(
+            sections, overall_risk, schema_name, schema_context
+        )
 
     # ───────────────────────────────────────────────
     # Utility
