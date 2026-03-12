@@ -276,6 +276,48 @@ function connectStream(jobId) {
             logSpan.textContent = log.content;
           }
         }
+      } else if (log.type === 'loop_detected') {
+        const pid = log.details && log.details.prompt_id;
+        if (pid) {
+          const d = log.details;
+          const loopType = d.loop_type; // 'thinking_trace' or 'content_repetition'
+
+          // 1. Update status pill
+          const pill = document.getElementById(`score-pill-${pid}`);
+          if (pill) {
+            pill.textContent = 'Loop Detected';
+            pill.style.background = '#f59e0b';
+            pill.style.color = '#fff';
+            pill.style.borderColor = '#f59e0b';
+          }
+
+          // 2. Append warning to relevant area
+          let targetEl = null;
+          let targetWrap = null;
+
+          if (loopType === 'thinking_trace') {
+            targetEl = document.getElementById(`thought-${pid}`);
+            targetWrap = document.getElementById(`thought-wrap-${pid}`);
+          } else {
+            targetEl = document.getElementById(`resp-${pid}`);
+          }
+
+          if (targetWrap) targetWrap.style.display = 'block';
+
+          if (targetEl) {
+            const warningDiv = document.createElement('div');
+            warningDiv.className = 'loop-warning';
+            warningDiv.style.marginTop = '8px';
+            warningDiv.style.padding = '8px';
+            warningDiv.style.background = 'rgba(245, 158, 11, 0.1)';
+            warningDiv.style.border = '1px solid rgba(245, 158, 11, 0.3)';
+            warningDiv.style.borderRadius = '4px';
+            warningDiv.style.color = '#fbbf24';
+            warningDiv.style.fontSize = '0.9em';
+            warningDiv.innerHTML = `<strong>⚠️ Loop Detected:</strong> ${log.content}`;
+            targetEl.appendChild(warningDiv);
+          }
+        }
       } else if (log.type === 'judge_stream') {
         const pid = log.details && log.details.prompt_id;
         if (pid) {

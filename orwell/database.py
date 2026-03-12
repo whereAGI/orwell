@@ -213,7 +213,10 @@ _DEFAULT_CONFIGS = [
         "Data Generation",
         "Template for the dimension description used in prompt generation.",
         "text"
-    )
+    ),
+    ("loop_detection_enabled", "1", "Audit", "Enable automatic loop detection for target models", "int"),
+    ("loop_detection_max_thought_tokens", "3000", "Audit", "Max reasoning/thinking tokens before aborting", "int"),
+    ("loop_detection_repetition_threshold", "4", "Audit", "Phrase repetition count that triggers loop abort", "int"),
 ]
 
 

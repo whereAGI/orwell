@@ -17,6 +17,7 @@ from .report_builder import ReportDataBuilder
 from .app_config import get_bool_config, get_float_config, get_int_config
 from .provider_keys import get_provider_key
 from .stream_parser import ThinkingStreamParser
+from .loop_detector import LoopDetector
 
 
 class AuditEngine:
@@ -932,6 +933,13 @@ class AuditEngine:
                 thinking_buffer = ""
                 parser = ThinkingStreamParser()
 
+                loop_detector = None
+                if get_bool_config("loop_detection_enabled", True):
+                    loop_detector = LoopDetector(
+                        max_tokens=get_int_config("loop_detection_max_thought_tokens", 3000),
+                        repetition_threshold=get_int_config("loop_detection_repetition_threshold", 4)
+                    )
+
                 async with client.stream("POST", url, json=payload, headers=headers) as response:
                     if response.status_code != 200:
                         err_body = await response.aread()
@@ -940,6 +948,7 @@ class AuditEngine:
                     if job_id:
                         add_log(job_id, "info", "Target LLM connection established (Streaming)...")
 
+                    should_abort = False
                     async for line in response.aiter_lines():
                         if not line: continue
                         if line.strip() == "data: [DONE]": break
@@ -955,15 +964,45 @@ class AuditEngine:
                             
                             for type_, text in parser.process(c_token, r_token, extra):
                                 if type_ == "thought":
+                                    if loop_detector:
+                                        abort_reason = loop_detector.feed_thought(text)
+                                        if abort_reason:
+                                            if job_id:
+                                                add_log(job_id, "loop_detected", 
+                                                    f"Loop detected in thinking trace: {abort_reason}",
+                                                    {
+                                                        "prompt_id": prompt_id,
+                                                        "thought_tokens": loop_detector.total_thought_tokens(),
+                                                        "loop_type": "thinking_trace"
+                                                    })
+                                            should_abort = True
+                                            break
+
                                     thinking_buffer += text
                                     if job_id:
                                         add_log(job_id, "thought_stream", text,
                                                 {"prompt_id": prompt_id} if prompt_id else None)
                                 else:
+                                    if loop_detector:
+                                        abort_reason = loop_detector.feed_content(text)
+                                        if abort_reason:
+                                            if job_id:
+                                                add_log(job_id, "loop_detected", 
+                                                    f"Loop detected in response: {abort_reason}",
+                                                    {
+                                                        "prompt_id": prompt_id,
+                                                        "loop_type": "content_repetition"
+                                                    })
+                                            should_abort = True
+                                            break
+
                                     full_content += text
                                     if job_id:
                                         add_log(job_id, "target_stream", text,
                                                 {"prompt_id": prompt_id} if prompt_id else None)
+                            
+                            if should_abort:
+                                break
                                                 
                         except Exception:
                             continue
@@ -1034,6 +1073,14 @@ class AuditEngine:
                             thinking_buffer = ""
                             parser = ThinkingStreamParser()
                             
+                            loop_detector = None
+                            if get_bool_config("loop_detection_enabled", True):
+                                loop_detector = LoopDetector(
+                                    max_tokens=get_int_config("loop_detection_max_thought_tokens", 3000),
+                                    repetition_threshold=get_int_config("loop_detection_repetition_threshold", 4)
+                                )
+
+                            should_abort = False
                             async for line in response.aiter_lines():
                                 if not line: continue
                                 if line.strip() == "data: [DONE]": break
@@ -1048,15 +1095,45 @@ class AuditEngine:
                                     
                                     for type_, text in parser.process(c_token, r_token, extra):
                                         if type_ == "thought":
+                                            if loop_detector:
+                                                abort_reason = loop_detector.feed_thought(text)
+                                                if abort_reason:
+                                                    if job_id:
+                                                        add_log(job_id, "loop_detected", 
+                                                            f"Loop detected in thinking trace (Retry): {abort_reason}",
+                                                            {
+                                                                "prompt_id": prompt_id,
+                                                                "thought_tokens": loop_detector.total_thought_tokens(),
+                                                                "loop_type": "thinking_trace"
+                                                            })
+                                                    should_abort = True
+                                                    break
+
                                             thinking_buffer += text
                                             if job_id:
                                                 add_log(job_id, "thought_stream", text,
                                                         {"prompt_id": prompt_id} if prompt_id else None)
                                         else:
+                                            if loop_detector:
+                                                abort_reason = loop_detector.feed_content(text)
+                                                if abort_reason:
+                                                    if job_id:
+                                                        add_log(job_id, "loop_detected", 
+                                                            f"Loop detected in response (Retry): {abort_reason}",
+                                                            {
+                                                                "prompt_id": prompt_id,
+                                                                "loop_type": "content_repetition"
+                                                            })
+                                                    should_abort = True
+                                                    break
+
                                             full_content += text
                                             if job_id:
                                                 add_log(job_id, "target_stream", text,
                                                         {"prompt_id": prompt_id} if prompt_id else None)
+                                    
+                                    if should_abort:
+                                        break
                                 except: continue
                                 
                             # Flush parser
