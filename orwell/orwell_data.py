@@ -100,11 +100,12 @@ class OrwellDataModule:
                 dims.add(d)
         self.dimensions = sorted(dims)
 
-        _PROMPT_CACHE["closed_prompts"] = self.closed_prompts
-        _PROMPT_CACHE["open_prompts"] = self.open_prompts
-        _PROMPT_CACHE["custom_prompts"] = self.custom_prompts
-        _PROMPT_CACHE["dimensions"] = self.dimensions
-        _PROMPT_CACHE["last_loaded"] = time.time()
+        if not schema_id:
+            _PROMPT_CACHE["closed_prompts"] = self.closed_prompts
+            _PROMPT_CACHE["open_prompts"] = self.open_prompts
+            _PROMPT_CACHE["custom_prompts"] = self.custom_prompts
+            _PROMPT_CACHE["dimensions"] = self.dimensions
+            _PROMPT_CACHE["last_loaded"] = time.time()
 
     def generate_prompts(
         self,

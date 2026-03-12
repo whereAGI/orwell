@@ -25,6 +25,21 @@ from .config import get_db_path
 # ──────────────────────────────────────────────────────────────
 
 _CREATE_TABLES = """
+CREATE TABLE IF NOT EXISTS audit_schemas (
+    id                       TEXT PRIMARY KEY,
+    name                     TEXT NOT NULL,
+    schema_type              TEXT NOT NULL DEFAULT 'custom',
+    description              TEXT,
+    icon                     TEXT,             -- emoji or icon slug for UI
+    scoring_axis_low_label   TEXT,             -- what score 1 means for this schema
+    scoring_axis_high_label  TEXT,             -- what score 7 means for this schema
+    generator_system_prompt  TEXT,             -- overrides global generator_system_prompt
+    judge_system_prompt      TEXT,             -- overrides DEFAULT_JUDGE_SYSTEM_PROMPT
+    dimension_template       TEXT,             -- overrides global dimension_template
+    is_builtin               INTEGER DEFAULT 0,-- 1 = ships with Orwell, not deletable
+    created_at               TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS models (
     id                   TEXT PRIMARY KEY,
     name                 TEXT NOT NULL,
@@ -67,6 +82,7 @@ CREATE TABLE IF NOT EXISTS audit_jobs (
     message                TEXT DEFAULT '',
     error_message          TEXT,
     bench_id               TEXT,
+    schema_id              TEXT REFERENCES audit_schemas(id),
     created_at             TEXT DEFAULT (datetime('now'))
 );
 
@@ -117,6 +133,7 @@ CREATE TABLE IF NOT EXISTS custom_prompts (
     language   TEXT DEFAULT 'en',
     type       TEXT DEFAULT 'custom',
     model      TEXT,
+    schema_id  TEXT REFERENCES audit_schemas(id),
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -133,21 +150,6 @@ CREATE TABLE IF NOT EXISTS app_configurations (
     group_name  TEXT,
     description TEXT,
     type        TEXT DEFAULT 'string'
-);
-
-CREATE TABLE IF NOT EXISTS audit_schemas (
-    id                       TEXT PRIMARY KEY,
-    name                     TEXT NOT NULL,
-    schema_type              TEXT NOT NULL DEFAULT 'custom',
-    description              TEXT,
-    icon                     TEXT,             -- emoji or icon slug for UI
-    scoring_axis_low_label   TEXT,             -- what score 1 means for this schema
-    scoring_axis_high_label  TEXT,             -- what score 7 means for this schema
-    generator_system_prompt  TEXT,             -- overrides global generator_system_prompt
-    judge_system_prompt      TEXT,             -- overrides DEFAULT_JUDGE_SYSTEM_PROMPT
-    dimension_template       TEXT,             -- overrides global dimension_template
-    is_builtin               INTEGER DEFAULT 0,-- 1 = ships with Orwell, not deletable
-    created_at               TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS model_providers (
@@ -350,6 +352,7 @@ async def _run_migrations(db):
     migrations = [
         "ALTER TABLE custom_prompts ADD COLUMN schema_id TEXT REFERENCES audit_schemas(id)",
         "ALTER TABLE audit_jobs ADD COLUMN schema_id TEXT REFERENCES audit_schemas(id)",
+        "ALTER TABLE custom_prompts ADD COLUMN model TEXT",
     ]
     for sql in migrations:
         try:

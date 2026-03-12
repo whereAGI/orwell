@@ -1287,7 +1287,7 @@ async def list_prompts(
         conditions.append("dimension = ?")
         params.append(dimension)
     if schema_id:
-        conditions.append("schema_id = ?")
+        conditions.append("(schema_id = ? OR (schema_id IS NULL AND type = 'system'))")
         params.append(schema_id)
     if from_date:
         conditions.append("created_at >= ?")
@@ -1557,7 +1557,20 @@ async def _run_prompt_generation(job_id: str, req: GeneratePromptsRequest, model
         add_log(job_id, "info", f"Target: {req.total_count} prompts using model: {model['name']}")
 
         provider     = model.get("provider", "") or ""
-        resolved_key = model.get("api_key") or get_provider_key(provider)
+        resolved_key = model.get("api_key")
+        if not resolved_key and provider:
+            try:
+                async with get_db() as db:
+                    cursor = await db.execute("SELECT api_key FROM model_providers WHERE slug=?", (provider,))
+                    row = await cursor.fetchone()
+                    if row and row["api_key"]:
+                        resolved_key = row["api_key"]
+            except Exception:
+                pass
+        
+        if not resolved_key:
+            resolved_key = get_provider_key(provider)
+            
         max_reasoning_tokens = model.get("max_reasoning_tokens")
 
         # Resolve schema if provided
