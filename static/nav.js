@@ -16,6 +16,7 @@ function renderNavbar(activePage) {
         'data_studio': 'data studio',
         'prompt_studio': 'prompt studio',
         'model_hub': 'model hub',
+        'schemas': 'schemas',
         'config': 'config',
         'docs': 'docs',
         'generate': 'generate'
@@ -29,6 +30,7 @@ function renderNavbar(activePage) {
         { id: 'data_studio', href: '/studio', text: 'Data Studio' },
         { id: 'prompt_studio', href: '/prompt-studio', text: 'Prompt Studio' },
         { id: 'model_hub', href: '/model-hub', text: 'Model Hub' },
+        { id: 'schemas', href: '/schemas', text: 'Schemas' },
         { id: 'generate', href: '/generate', text: 'Generate' },
         { id: 'config', href: '/config', text: 'Config' },
         { id: 'docs', href: '/docs', text: 'Docs' }

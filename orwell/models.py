@@ -37,11 +37,34 @@ class JudgeBench(BaseModel):
     foreman_model_id: Optional[str] = None  # Required if mode="jury"
     created_at: Optional[datetime] = None
 
+class SchemaType(str, Enum):
+    CULTURAL    = "cultural"
+    BRAND       = "brand"
+    POLITICAL   = "political"
+    DEMOGRAPHIC = "demographic"
+    FINANCIAL   = "financial"
+    CUSTOM      = "custom"
+
+class AuditSchema(BaseModel):
+    id: Optional[str] = None
+    name: str
+    schema_type: SchemaType = SchemaType.CUSTOM
+    description: Optional[str] = None
+    icon: Optional[str] = None
+    scoring_axis_low_label: Optional[str] = None
+    scoring_axis_high_label: Optional[str] = None
+    generator_system_prompt: Optional[str] = None
+    judge_system_prompt: Optional[str] = None
+    dimension_template: Optional[str] = None
+    is_builtin: bool = False
+    created_at: Optional[datetime] = None
+
 class AuditRequest(BaseModel):
     # Support selecting stored models
     target_model_id: Optional[str] = None
     judge_model_id: Optional[str] = None
     bench_id: Optional[str] = None  # Optional: use a judge bench instead of a single judge
+    schema_id: Optional[str] = "schema_globe_cultural"  # defaults to GLOBE
 
     # Fallback / Custom fields
     target_endpoint: Optional[HttpUrl] = None
@@ -65,6 +88,7 @@ class GeneratePromptsRequest(BaseModel):
     total_count: int            # 1-500
     generator_model_id: str
     is_new_dimension: bool = True
+    schema_id: Optional[str] = None  # NEW — inherit schema's generator prompt
 
 class JobResponse(BaseModel):
     job_id: str
@@ -81,6 +105,8 @@ class JobResponse(BaseModel):
     judge_name: Optional[str] = None
     dimensions: Optional[List[str]] = None
     overall_risk: Optional[str] = None
+    schema_id: Optional[str] = None
+    schema_name: Optional[str] = None
 
 class DimensionScore(BaseModel):
     dimension: str
@@ -101,3 +127,4 @@ class AuditReport(BaseModel):
     report_json: Optional[Dict[str, Any]] = None
     bench_name: Optional[str] = None
     bench_mode: Optional[str] = None
+    schema_name: Optional[str] = None

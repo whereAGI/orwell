@@ -494,6 +494,16 @@
     <aside class="rightbar">
       <div class="card">
         <h3 style="margin:0 0 12px">Start Audit</h3>
+        
+        <div style="margin-bottom:16px">
+          <label>Audit Schema</label>
+          <select id="schemaSelect" onchange="onSchemaChanged()"
+            style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--border);background:#0e0e14;color:var(--text);outline:none;">
+            <option value="" disabled selected>Loading schemas...</option>
+          </select>
+          <div id="schemaDescription" style="font-size:11px; color:var(--muted); margin-top:6px; line-height:1.4;"></div>
+        </div>
+
         <div>
           <label>Select Dimensions</label>
           <div id="dimList" style="display:flex;flex-wrap:wrap;gap:8px"></div>

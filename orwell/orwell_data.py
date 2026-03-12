@@ -28,10 +28,10 @@ class OrwellDataModule:
         self.dimensions: List[str] = []
         self.remote_repo = os.getenv("ORWELL_PROMPT_REPO", "")
 
-    async def load(self, skip_custom: bool = False, force_reload: bool = False):
+    async def load(self, skip_custom: bool = False, force_reload: bool = False, schema_id: Optional[str] = None):
         global _PROMPT_CACHE
         cache_age = time.time() - _PROMPT_CACHE["last_loaded"]
-        if not force_reload and cache_age < _PROMPT_CACHE["cache_ttl"] and _PROMPT_CACHE["closed_prompts"] is not None:
+        if not force_reload and not schema_id and cache_age < _PROMPT_CACHE["cache_ttl"] and _PROMPT_CACHE["closed_prompts"] is not None:
             self.closed_prompts = _PROMPT_CACHE["closed_prompts"]
             self.open_prompts = _PROMPT_CACHE["open_prompts"]
             self.custom_prompts = [] if skip_custom else (_PROMPT_CACHE["custom_prompts"] or [])
@@ -46,7 +46,14 @@ class OrwellDataModule:
 
         try:
             async with get_db() as db:
-                rows = await db.execute("SELECT * FROM custom_prompts WHERE type='system'")
+                if schema_id:
+                    rows = await db.execute(
+                        "SELECT * FROM custom_prompts WHERE type='system' AND (schema_id=? OR schema_id IS NULL)",
+                        (schema_id,)
+                    )
+                else:
+                    rows = await db.execute("SELECT * FROM custom_prompts WHERE type='system'")
+                
                 async for r in rows:
                     prompt_data = {
                         "id": r["id"],
@@ -60,7 +67,14 @@ class OrwellDataModule:
                     self.closed_prompts.append(prompt_data)
 
                 if not skip_custom:
-                    rows = await db.execute("SELECT * FROM custom_prompts WHERE type='custom'")
+                    if schema_id:
+                        rows = await db.execute(
+                            "SELECT * FROM custom_prompts WHERE type='custom' AND schema_id=?",
+                            (schema_id,)
+                        )
+                    else:
+                        rows = await db.execute("SELECT * FROM custom_prompts WHERE type='custom'")
+                    
                     async for r in rows:
                         prompt_data = {
                             "id": r["id"],
@@ -155,31 +169,33 @@ class OrwellDataModule:
                 return
             local.write_text(r.text, encoding="utf-8")
 
-    async def add_custom_prompt(self, dimension: str, text: str, language: str = "en") -> Dict:
-        from orwell.pb_client import get_pb
-        pb = get_pb()
-        try:
-            record = pb.collection("custom_prompts").create({
+    async def add_custom_prompt(self, dimension: str, text: str,
+                               language: str = "en",
+                               schema_id: Optional[str] = None) -> Dict:
+        from .database import get_db, new_id
+        
+        pid = new_id()
+        async with get_db() as db:
+            await db.execute(
+                "INSERT INTO custom_prompts (id, dimension, text, language, type, schema_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (pid, dimension, text, language, "custom", schema_id)
+            )
+            await db.commit()
+            
+            return {
+                "id": pid,
                 "dimension": dimension,
                 "text": text,
-                "language": language
-            })
-            return {
-                "id": record.id,
-                "dimension": record.dimension,
-                "text": record.text,
-                "language": record.language,
-                "created_at": record.created
+                "language": language,
+                "created_at": time.time()
             }
-        except Exception as e:
-            print(f"Error adding custom prompt: {e}")
-            raise
 
     async def delete_custom_prompt(self, pid: str):
-        from orwell.pb_client import get_pb
-        pb = get_pb()
+        from .database import get_db
         try:
-            pb.collection("custom_prompts").delete(pid)
+            async with get_db() as db:
+                await db.execute("DELETE FROM custom_prompts WHERE id=?", (pid,))
+                await db.commit()
         except Exception as e:
             print(f"Error deleting custom prompt: {e}")
             raise

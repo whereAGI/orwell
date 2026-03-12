@@ -18,6 +18,7 @@ let genPollInterval = null;
 // ─── Init ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     loadModels();
+    loadSchemas();
     loadExistingDimensions();
     loadTemplate();
 
@@ -29,7 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(debounce);
             debounce = setTimeout(() => {
                 const name = nameInput.value.trim();
-                if (name) loadTemplate(name);
+                const schemaId = document.getElementById('schemaSelect').value;
+                if (name) loadTemplate(name, schemaId);
             }, 600);
         });
     }
@@ -116,18 +118,61 @@ async function loadModels() {
     }
 }
 
-// ─── Load Existing Dimensions ─────────────────────────────
-async function loadExistingDimensions() {
+// ─── Load Schemas ──────────────────────────────────────────
+async function loadSchemas() {
     try {
-        const res = await fetch('/api/data/dimensions');
+        const res = await fetch('/api/schemas');
         if (!res.ok) return;
-        const dims = await res.json();
+        const schemas = await res.json();
+        
+        const sel = document.getElementById('schemaSelect');
+        sel.innerHTML = '<option value="" selected>Default (GLOBE Cultural)</option>'; // Default option
+        
+        schemas.forEach(s => {
+            const o = document.createElement('option');
+            o.value = s.id;
+            o.textContent = `${s.name} (${s.schema_type})`;
+            sel.appendChild(o);
+        });
+    } catch (e) {
+        console.error('Failed to load schemas:', e);
+    }
+}
+
+async function onSchemaChanged() {
+    const schemaId = document.getElementById('schemaSelect').value;
+    // Reload dimensions for this schema
+    loadExistingDimensions(schemaId);
+    // Reload template for this schema
+    loadTemplate(document.getElementById('dimName').value.trim(), schemaId);
+}
+
+// ─── Load Existing Dimensions ─────────────────────────────
+async function loadExistingDimensions(schemaId = null) {
+    try {
+        let url = '/api/data/dimensions';
+        // The API endpoint /api/data/dimensions doesn't seem to support schema_id filtering yet based on my read of main.py
+        // Wait, main.py has /api/dimensions which supports schema_id, but /api/data/dimensions (list_dimensions) does not?
+        // Let's check main.py again. list_dimensions (line 1233) uses custom_prompts table. 
+        // get_dimensions (line 1209) also uses custom_prompts. 
+        // /api/dimensions seems to be the one used by dashboard.js. 
+        // promptgen.js uses /api/data/dimensions. 
+        // I should probably switch promptgen.js to use /api/dimensions or update /api/data/dimensions.
+        // For now, let's use /api/dimensions as it supports schema_id.
+        
+        if (schemaId) url = `/api/dimensions?schema_id=${schemaId}`;
+        else url = '/api/dimensions'; // Use the one that supports filtering if possible, or fallback
+
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const data = await res.json();
+        const dims = data.dimensions || [];
 
         const sel = document.getElementById('existingDimSelect');
         sel.innerHTML = '';
 
         if (!dims.length) {
-            sel.innerHTML = '<option value="" disabled selected>No dimensions available</option>';
+            sel.innerHTML = '<option value="" disabled selected>No dimensions available for this schema</option>';
             return;
         }
 
@@ -143,13 +188,36 @@ async function loadExistingDimensions() {
 }
 
 // ─── Load Rubric Template ─────────────────────────────────
-async function loadTemplate(name = 'Your Dimension') {
+async function loadTemplate(name = 'Your Dimension', schemaId = null) {
     try {
-        const res = await fetch(`/api/data/dimension-template?name=${encodeURIComponent(name)}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        let url = `/api/data/dimension-template?name=${encodeURIComponent(name)}`;
+        // Note: The backend /api/data/dimension-template doesn't strictly support schema_id yet to fetch *schema-specific* template.
+        // It fetches a config value 'dimension_template'.
+        // However, if we want to support schema-specific templates, we should probably update the backend endpoint or fetch the schema details directly.
+        // For now, let's fetch schema details if schemaId is provided to get the template.
+        
+        let templateText = '';
+        
+        if (schemaId) {
+            const schemaRes = await fetch(`/api/schemas/${schemaId}`);
+            if (schemaRes.ok) {
+                const schema = await schemaRes.json();
+                if (schema.dimension_template) {
+                    templateText = schema.dimension_template.replace('{dimension_name}', name);
+                }
+            }
+        }
+        
+        if (!templateText) {
+             const res = await fetch(url);
+             if (res.ok) {
+                 const data = await res.json();
+                 templateText = data.template;
+             }
+        }
+        
         const desc = document.getElementById('dimDesc');
-        if (desc) desc.value = data.template;
+        if (desc && templateText) desc.value = templateText;
     } catch (e) {
         console.error('Failed to load template:', e);
     }
@@ -205,6 +273,8 @@ async function startGeneration() {
 
     const modelId = document.getElementById('modelSelect').value;
     if (!modelId) { showError('Please select a generator model.'); return; }
+    
+    const schemaId = document.getElementById('schemaSelect').value || null;
 
     currentDimName = dimName;
 
@@ -237,6 +307,7 @@ async function startGeneration() {
                 total_count: count,
                 generator_model_id: modelId,
                 is_new_dimension: currentMode === 'new',
+                schema_id: schemaId
             }),
         });
 
@@ -519,6 +590,7 @@ async function saveApproved() {
                 approved_prompts: approved,
                 dimension_name: currentDimName,
                 language: 'en',
+                schema_id: document.getElementById('schemaSelect').value || null
             }),
         });
 

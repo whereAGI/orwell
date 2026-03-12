@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 import os
 import re
 
-from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig, JudgeBench, GeneratePromptsRequest
+from .models import AuditRequest, JobResponse, AuditReport, JobStatus, ModelConfig, JudgeBench, GeneratePromptsRequest, AuditSchema, SchemaType
 from .engine import AuditEngine
 from .orwell_data import OrwellDataModule
 from .judge import DEFAULT_JUDGE_SYSTEM_PROMPT
@@ -142,6 +142,7 @@ class CreatePromptRequest(BaseModel):
     dimension: str
     text: str
     language: str = "en"
+    schema_id: Optional[str] = None
 
 
 class TestConnectionRequest(BaseModel):
@@ -188,6 +189,10 @@ async def prompt_studio():
 @app.get("/model-hub")
 async def model_hub():
     return FileResponse("static/model_hub.html")
+
+@app.get("/schemas")
+async def schemas_page():
+    return FileResponse("static/schemas.html")
 
 @app.get("/login")
 async def login():
@@ -718,6 +723,130 @@ async def delete_bench(bench_id: str):
 
 
 # ──────────────────────────────────────────────────
+# Schema CRUD
+# ──────────────────────────────────────────────────
+
+def _row_to_audit_schema(row) -> AuditSchema:
+    r = dict(row)
+    return AuditSchema(
+        id=r["id"],
+        name=r["name"],
+        schema_type=r["schema_type"],
+        description=r["description"],
+        icon=r["icon"],
+        scoring_axis_low_label=r["scoring_axis_low_label"],
+        scoring_axis_high_label=r["scoring_axis_high_label"],
+        generator_system_prompt=r["generator_system_prompt"],
+        judge_system_prompt=r["judge_system_prompt"],
+        dimension_template=r["dimension_template"],
+        is_builtin=bool(r["is_builtin"]),
+        created_at=r.get("created_at"),
+    )
+
+@app.get("/api/schemas", response_model=List[AuditSchema])
+async def list_schemas():
+    try:
+        async with get_db() as db:
+            cursor = await db.execute("SELECT * FROM audit_schemas ORDER BY is_builtin DESC, name ASC")
+            rows = await cursor.fetchall()
+        return [_row_to_audit_schema(r) for r in rows]
+    except Exception as e:
+        print(f"Error fetching schemas: {e}")
+        return []
+
+@app.get("/api/schemas/{schema_id}", response_model=AuditSchema)
+async def get_schema(schema_id: str):
+    try:
+        async with get_db() as db:
+            cursor = await db.execute("SELECT * FROM audit_schemas WHERE id=?", (schema_id,))
+            row = await cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Schema not found")
+        return _row_to_audit_schema(row)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/schemas", response_model=AuditSchema)
+async def create_schema(schema: AuditSchema):
+    sid = new_id()
+    try:
+        async with get_db() as db:
+            await db.execute(
+                """INSERT INTO audit_schemas (
+                    id, name, schema_type, description, icon,
+                    scoring_axis_low_label, scoring_axis_high_label,
+                    generator_system_prompt, judge_system_prompt, dimension_template, is_builtin
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+                (
+                    sid, schema.name, schema.schema_type, schema.description, schema.icon,
+                    schema.scoring_axis_low_label, schema.scoring_axis_high_label,
+                    schema.generator_system_prompt, schema.judge_system_prompt,
+                    schema.dimension_template
+                )
+            )
+            await db.commit()
+        schema.id = sid
+        schema.is_builtin = False
+        return schema
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/schemas/{schema_id}", response_model=AuditSchema)
+async def update_schema(schema_id: str, schema: AuditSchema):
+    try:
+        async with get_db() as db:
+            cursor = await db.execute("SELECT is_builtin FROM audit_schemas WHERE id=?", (schema_id,))
+            row = await cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Schema not found")
+            if row["is_builtin"]:
+                raise HTTPException(status_code=400, detail="Cannot modify built-in schemas")
+            
+            await db.execute(
+                """UPDATE audit_schemas SET
+                   name=?, schema_type=?, description=?, icon=?,
+                   scoring_axis_low_label=?, scoring_axis_high_label=?,
+                   generator_system_prompt=?, judge_system_prompt=?, dimension_template=?
+                   WHERE id=?""",
+                (
+                    schema.name, schema.schema_type, schema.description, schema.icon,
+                    schema.scoring_axis_low_label, schema.scoring_axis_high_label,
+                    schema.generator_system_prompt, schema.judge_system_prompt,
+                    schema.dimension_template, schema_id
+                )
+            )
+            await db.commit()
+        schema.id = schema_id
+        schema.is_builtin = False
+        return schema
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/schemas/{schema_id}")
+async def delete_schema(schema_id: str):
+    try:
+        async with get_db() as db:
+            cursor = await db.execute("SELECT is_builtin FROM audit_schemas WHERE id=?", (schema_id,))
+            row = await cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Schema not found")
+            if row["is_builtin"]:
+                raise HTTPException(status_code=400, detail="Cannot delete built-in schemas")
+            
+            await db.execute("DELETE FROM audit_schemas WHERE id=?", (schema_id,))
+            await db.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ──────────────────────────────────────────────────
 # Audit Endpoints
 # ──────────────────────────────────────────────────
 
@@ -754,8 +883,8 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
         async with get_db() as db:
             await db.execute(
                 """INSERT INTO audit_jobs
-                   (id,target_endpoint,target_model,status,progress,config_json,name,system_prompt_snapshot)
-                   VALUES (?,?,?,?,?,?,?,?)""",
+                   (id,target_endpoint,target_model,status,progress,config_json,name,system_prompt_snapshot, schema_id)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
                 (
                     job_id,
                     str(request.target_endpoint) if request.target_endpoint else None,
@@ -765,6 +894,7 @@ async def create_audit(request: AuditRequest, background_tasks: BackgroundTasks)
                     json.dumps(config_dict),
                     f"Audit {datetime.now().strftime('%Y-%m-%d %H:%M')}",
                     request.system_prompt,
+                    request.schema_id,
                 ),
             )
             await db.commit()
@@ -812,6 +942,8 @@ def _row_to_job_response(row, config: dict = None, overall_risk: Optional[str] =
         judge_name=judge_name,
         dimensions=config.get("dimensions"),
         overall_risk=overall_risk,
+        schema_id=r.get("schema_id"),
+        schema_name=r.get("schema_name"),
     )
 
 
@@ -821,9 +953,10 @@ async def list_audits():
         async with get_db() as db:
             cursor = await db.execute(
                 """
-                SELECT j.*, r.overall_risk
+                SELECT j.*, r.overall_risk, s.name as schema_name
                 FROM audit_jobs j
                 LEFT JOIN reports r ON r.job_id = j.id
+                LEFT JOIN audit_schemas s ON s.id = j.schema_id
                 ORDER BY j.created_at DESC
                 """
             )
@@ -873,11 +1006,21 @@ async def update_audit(job_id: str, req: UpdateAuditRequest):
 async def get_audit_status(job_id: str):
     try:
         async with get_db() as db:
-            cursor = await db.execute("SELECT * FROM audit_jobs WHERE id=?", (job_id,))
+            cursor = await db.execute(
+                """
+                SELECT j.*, r.overall_risk, s.name as schema_name
+                FROM audit_jobs j
+                LEFT JOIN reports r ON r.job_id = j.id
+                LEFT JOIN audit_schemas s ON s.id = j.schema_id
+                WHERE j.id = ?
+                """, (job_id,)
+            )
             row = await cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail=f"Audit job not found: {job_id}")
-        return _row_to_job_response(row)
+        r = dict(row)
+        overall_risk = r.pop("overall_risk", None)
+        return _row_to_job_response(row, overall_risk=overall_risk)
     except HTTPException:
         raise
     except Exception as e:
@@ -916,6 +1059,14 @@ async def get_audit_report(job_id: str):
             if not report:
                 raise HTTPException(status_code=404, detail="Report not found")
 
+            # Fetch schema name
+            schema_name = "Unknown"
+            if job.get("schema_id"):
+                cursor = await db.execute("SELECT name FROM audit_schemas WHERE id=?", (job["schema_id"],))
+                s_row = await cursor.fetchone()
+                if s_row:
+                    schema_name = s_row["name"]
+
         job    = dict(job)
         report = dict(report)
 
@@ -952,6 +1103,7 @@ async def get_audit_report(job_id: str):
             generated_at=report.get("created_at", datetime.now(timezone.utc)),
             bench_name=config.get("bench_name"),
             bench_mode=config.get("bench_mode"),
+            schema_name=schema_name,
         )
     except HTTPException:
         raise
@@ -1064,13 +1216,22 @@ async def get_evaluation_criteria():
 
 
 @app.get("/api/dimensions")
-async def get_dimensions():
+async def get_dimensions(schema_id: Optional[str] = None):
     try:
         async with get_db() as db:
-            cursor = await db.execute(
-                "SELECT DISTINCT dimension FROM custom_prompts "
-                "WHERE dimension IS NOT NULL AND dimension != '' ORDER BY dimension"
-            )
+            if schema_id:
+                cursor = await db.execute(
+                    "SELECT DISTINCT dimension FROM custom_prompts "
+                    "WHERE dimension IS NOT NULL AND dimension != '' AND (schema_id=? OR schema_id IS NULL) "
+                    "ORDER BY dimension",
+                    (schema_id,)
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT DISTINCT dimension FROM custom_prompts "
+                    "WHERE dimension IS NOT NULL AND dimension != '' "
+                    "ORDER BY dimension"
+                )
             rows = await cursor.fetchall()
         return {"dimensions": [r["dimension"] for r in rows]}
     except Exception as e:
@@ -1106,6 +1267,7 @@ async def list_prompts(
     source:    str          = Query("all", regex="^(all|system|custom)$"),
     search:    Optional[str] = None,
     dimension: Optional[str] = None,
+    schema_id: Optional[str] = None,
     from_date: Optional[str] = None,
     to_date:   Optional[str] = None,
     sort:      str          = Query("-created_at", regex="^-?created_at$"),
@@ -1125,6 +1287,9 @@ async def list_prompts(
     if dimension:
         conditions.append("dimension = ?")
         params.append(dimension)
+    if schema_id:
+        conditions.append("schema_id = ?")
+        params.append(schema_id)
     if from_date:
         conditions.append("created_at >= ?")
         params.append(f"{from_date} 00:00:00")
@@ -1164,8 +1329,8 @@ async def create_custom_prompt(req: CreatePromptRequest):
     try:
         async with get_db() as db:
             await db.execute(
-                "INSERT INTO custom_prompts (id,dimension,text,language,type) VALUES (?,?,?,?,?)",
-                (new_id(), req.dimension, req.text, req.language, "custom"),
+                "INSERT INTO custom_prompts (id,dimension,text,language,type,schema_id) VALUES (?,?,?,?,?,?)",
+                (new_id(), req.dimension, req.text, req.language, "custom", req.schema_id),
             )
             await db.commit()
         return {"status": "success"}
@@ -1200,11 +1365,12 @@ async def import_prompts_csv(file: UploadFile = File(...)):
                     text_val = row.get("text") or row.get("prompt")
                     dim_val  = row.get("dimension")
                     lang_val = row.get("language", "en")
+                    schema_val = row.get("schema_id")
                     if not text_val or not dim_val:
                         continue
                     await db.execute(
-                        "INSERT INTO custom_prompts (id,dimension,text,language,type) VALUES (?,?,?,?,?)",
-                        (new_id(), dim_val.strip(), text_val.strip(), lang_val.strip(), "custom"),
+                        "INSERT INTO custom_prompts (id,dimension,text,language,type,schema_id) VALUES (?,?,?,?,?,?)",
+                        (new_id(), dim_val.strip(), text_val.strip(), lang_val.strip(), "custom", schema_val),
                     )
                     imported_count += 1
                 except Exception as e:
@@ -1395,6 +1561,18 @@ async def _run_prompt_generation(job_id: str, req: GeneratePromptsRequest, model
         resolved_key = model.get("api_key") or get_provider_key(provider)
         max_reasoning_tokens = model.get("max_reasoning_tokens")
 
+        # Resolve schema if provided
+        schema_generator_prompt = None
+        if req.schema_id:
+            try:
+                async with get_db() as db:
+                    cursor = await db.execute("SELECT generator_system_prompt FROM audit_schemas WHERE id=?", (req.schema_id,))
+                    row = await cursor.fetchone()
+                    if row:
+                        schema_generator_prompt = row["generator_system_prompt"]
+            except Exception as e:
+                add_log(job_id, "warning", f"Failed to resolve schema {req.schema_id}: {e}")
+
         generator = PromptGenerator(
             model=model["model_key"],
             api_key=resolved_key,
@@ -1402,11 +1580,12 @@ async def _run_prompt_generation(job_id: str, req: GeneratePromptsRequest, model
             provider=provider,
             max_reasoning_tokens=max_reasoning_tokens,
             log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
+            schema_generator_prompt=schema_generator_prompt,
         )
 
         add_log(job_id, "info", "Loading reference prompts from Orwell data...")
         orwell_data = OrwellDataModule()
-        await orwell_data.load()
+        await orwell_data.load(schema_id=req.schema_id)
 
         target_dims = [req.dimension_name] if not req.is_new_dimension else None
         all_orwell_prompts = orwell_data.generate_prompts(language="en", sample_size=200, dimensions=target_dims)
@@ -1482,6 +1661,7 @@ async def generate_prompts(req: GeneratePromptsRequest, background_tasks: Backgr
         "progress":       0.0,
         "errors":         [],
         "dimension_name": req.dimension_name,
+        "schema_id":      req.schema_id,
     }
 
     background_tasks.add_task(_run_prompt_generation, job_id, req, model)
@@ -1516,6 +1696,7 @@ async def save_generated_prompts(job_id: str, body: dict):
     dimension_name   = body.get("dimension_name", job.get("dimension_name", ""))
     model_name       = job.get("model_name", "")
     language         = body.get("language", "en")
+    schema_id        = body.get("schema_id", job.get("schema_id"))
 
     if not approved_prompts:
         raise HTTPException(status_code=400, detail="No prompts to save")
@@ -1528,8 +1709,8 @@ async def save_generated_prompts(job_id: str, body: dict):
                 continue
             try:
                 await db.execute(
-                    "INSERT INTO custom_prompts (id,dimension,text,language,type,model) VALUES (?,?,?,?,?,?)",
-                    (new_id(), dimension_name, prompt_text.strip(), language, "custom", model_name),
+                    "INSERT INTO custom_prompts (id,dimension,text,language,type,model,schema_id) VALUES (?,?,?,?,?,?,?)",
+                    (new_id(), dimension_name, prompt_text.strip(), language, "custom", model_name, schema_id),
                 )
                 saved_count += 1
             except Exception as e:

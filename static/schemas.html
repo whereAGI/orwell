@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/static/logo.png">
+    <title>Orwell Schemas</title>
+    <link rel="stylesheet" href="/static/global.css">
+    <style>
+        .schema-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 16px;
+        }
+
+        .schema-card {
+            background: #0e0e14;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .schema-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .schema-icon {
+            font-size: 24px;
+            background: #1a1a23;
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .schema-info {
+            flex: 1;
+        }
+
+        .schema-name {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 4px;
+            color: var(--text);
+        }
+
+        .schema-desc {
+            font-size: 13px;
+            color: var(--muted);
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .schema-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: auto;
+        }
+
+        .tag {
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #1f2937;
+            color: var(--text);
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+
+        .tag.builtin {
+            background: rgba(129, 140, 248, 0.1);
+            color: var(--primary);
+            border: 1px solid rgba(129, 140, 248, 0.2);
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+            border-top: 1px solid var(--border);
+            padding-top: 12px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 6px;
+            font-size: 12px;
+            background: #1a1a23;
+            border: 1px solid var(--border);
+            color: var(--text);
+            cursor: pointer;
+            border-radius: 4px;
+            text-align: center;
+        }
+
+        .action-btn:hover {
+            background: #252536;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <header></header>
+
+    <div class="app-container">
+        <div class="card">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <div>
+                    <h2 style="margin:0;">Audit Schemas</h2>
+                    <p style="margin:4px 0 0; color:var(--muted); font-size:13px;">Define evaluation criteria, scoring rubrics, and generation templates.</p>
+                </div>
+                <button onclick="openSchemaModal()" style="width:auto; padding:8px 16px;">+ New Schema</button>
+            </div>
+            
+            <div id="schemaList" class="schema-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Schema Modal -->
+    <div id="schemaModal" class="modal">
+        <div class="modal-content" style="width: 700px; max-width: 95vw;">
+            <h2 id="modalTitle" style="margin-top:0">Create New Schema</h2>
+            <input type="hidden" id="schemaId">
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="schemaName" style="width:100%" placeholder="e.g. Retail Safety Audit">
+                </div>
+                <div class="form-group">
+                    <label>Icon (Emoji)</label>
+                    <input type="text" id="schemaIcon" style="width:100%" placeholder="e.g. 🛒">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="schemaDesc" style="width:100%; height:60px;" placeholder="Brief description of what this schema evaluates..."></textarea>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Low Score Label (1)</label>
+                    <input type="text" id="schemaLowLabel" style="width:100%" placeholder="e.g. Severely Biased">
+                </div>
+                <div class="form-group">
+                    <label>High Score Label (7)</label>
+                    <input type="text" id="schemaHighLabel" style="width:100%" placeholder="e.g. Perfectly Neutral">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Generator Instructions (Optional)</label>
+                <textarea id="schemaGenPrompt" style="width:100%; height:100px; font-family:monospace; font-size:12px;" placeholder="Instructions for the LLM to generate prompts..."></textarea>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">Overrides global generator prompt.</div>
+            </div>
+
+            <div class="form-group">
+                <label>Judge Instructions (Optional)</label>
+                <textarea id="schemaJudgePrompt" style="width:100%; height:100px; font-family:monospace; font-size:12px;" placeholder="Instructions for the Judge to score responses..."></textarea>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">Overrides global judge prompt.</div>
+            </div>
+
+            <div class="form-group">
+                <label>Dimension Template (Optional)</label>
+                <textarea id="schemaDimTemplate" style="width:100%; height:80px; font-family:monospace; font-size:12px;" placeholder="Template for describing dimension poles..."></textarea>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
+                <button class="secondary" onclick="closeSchemaModal()">Cancel</button>
+                <button onclick="saveSchema()">Save Schema</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/auth.js"></script>
+    <script src="/static/nav.js"></script>
+    <script>renderNavbar('schemas');</script>
+    <script src="/static/schemas.js"></script>
+</body>
+</html>

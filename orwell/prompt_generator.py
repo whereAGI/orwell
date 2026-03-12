@@ -67,6 +67,7 @@ class PromptGenerator:
         provider: str | None = None,
         max_reasoning_tokens: int | None = None,
         log_callback: Optional[Callable] = None,
+        schema_generator_prompt: Optional[str] = None,
     ):
         self.model = model
         self.api_key = api_key
@@ -74,6 +75,7 @@ class PromptGenerator:
         self.provider = (provider or "").lower()
         self.max_reasoning_tokens = max_reasoning_tokens
         self.log_callback = log_callback
+        self.schema_generator_prompt = schema_generator_prompt
 
         # Normalize Ollama URLs (same logic as JudgeClient)
         if self.base_url:
@@ -202,7 +204,10 @@ class PromptGenerator:
             List of generated prompt texts
         """
         # Fetch configured system prompt or fall back to default
-        system_prompt = get_config("generator_system_prompt", GENERATOR_SYSTEM_PROMPT)
+        system_prompt = (
+            self.schema_generator_prompt
+            or get_config("generator_system_prompt", GENERATOR_SYSTEM_PROMPT)
+        )
 
         # Build reference examples
         ref_block = "\n".join(f"  {i+1}. {p}" for i, p in enumerate(reference_prompts))

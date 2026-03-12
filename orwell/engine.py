@@ -69,11 +69,47 @@ class AuditEngine:
                     await db.commit()
                 return
 
+            # ── Resolve Audit Schema ──
+            resolved_schema = None
+            schema_generator_prompt = None
+            schema_judge_prompt = None
+            schema_dimension_template = None
+
+            schema_id = getattr(request, 'schema_id', None) or "schema_globe_cultural"
+            try:
+                async with get_db() as db:
+                    cursor = await db.execute(
+                        "SELECT * FROM audit_schemas WHERE id=?", (schema_id,)
+                    )
+                    schema_row = await cursor.fetchone()
+                if schema_row:
+                    resolved_schema = dict(schema_row)
+                    schema_generator_prompt = resolved_schema.get("generator_system_prompt")
+                    schema_judge_prompt     = resolved_schema.get("judge_system_prompt")
+                    schema_dimension_template = resolved_schema.get("dimension_template")
+                    add_log(job_id, "info",
+                        f"Resolved Audit Schema: {resolved_schema['name']} ({resolved_schema['schema_type']})")
+                else:
+                    add_log(job_id, "warning",
+                        f"Schema '{schema_id}' not found — falling back to global defaults")
+            except Exception as e:
+                add_log(job_id, "warning", f"Schema resolution failed: {e} — using defaults")
+
+            # Store schema_id in job config
+            try:
+                async with get_db() as db:
+                    await db.execute(
+                        "UPDATE audit_jobs SET schema_id=? WHERE id=?", (schema_id, job_id)
+                    )
+                    await db.commit()
+            except Exception:
+                pass
+
             # 1. Generate Prompts
             add_log(job_id, "info", "Generating prompts via Orwell",
                     {"language": request.language, "dimensions": request.dimensions})
             orwell_data = OrwellDataModule()
-            await orwell_data.load()
+            await orwell_data.load(schema_id=schema_id)
             prompts = orwell_data.generate_prompts(
                 language=request.language,
                 sample_size=request.sample_size,
@@ -154,11 +190,12 @@ class AuditEngine:
                             or await self._resolve_provider_key(fm.get("provider"))
                             or request.api_key
                         )
+                        effective_foreman_prompt = fm.get("system_prompt") or schema_judge_prompt
                         foreman_client = JudgeClient(
                             model=fm["model_key"],
                             api_key=foreman_api_key,
                             base_url=fm["base_url"],
-                            system_prompt=fm.get("system_prompt"),
+                            system_prompt=effective_foreman_prompt,
                             analysis_persona=fm.get("analysis_persona"),
                             temperature=foreman_runtime["temperature"],
                             log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
@@ -183,11 +220,12 @@ class AuditEngine:
                             or await self._resolve_provider_key(jm.get("provider"))
                             or request.api_key
                         )
+                        effective_judge_prompt = jm.get("system_prompt") or schema_judge_prompt
                         jc = JudgeClient(
                             model=jm["model_key"],
                             api_key=judge_api_key,
                             base_url=jm["base_url"],
-                            system_prompt=jm.get("system_prompt"),
+                            system_prompt=effective_judge_prompt,
                             analysis_persona=jm.get("analysis_persona"),
                             temperature=judge_runtime["temperature"],
                             log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
@@ -259,7 +297,7 @@ class AuditEngine:
                             if pk:
                                 judge_api_key = pk
                         judge_base_url = jm.get("base_url")
-                        judge_system_prompt = jm.get("system_prompt")
+                        judge_system_prompt = jm.get("system_prompt") or schema_judge_prompt
                         judge_runtime = self._resolve_judge_runtime_params(jm)
                         judge_temperature = judge_runtime["temperature"]
                         judge_analysis_persona = jm.get("analysis_persona")

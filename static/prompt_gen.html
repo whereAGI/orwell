@@ -413,6 +413,14 @@
                 <button id="modeExistingBtn" onclick="setMode('existing')">Existing Dimension</button>
             </div>
 
+            <!-- Schema Selection -->
+            <div style="margin-bottom:16px;">
+                <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">Target Schema</label>
+                <select id="schemaSelect" style="width:100%" onchange="onSchemaChanged()">
+                    <option value="" disabled selected>Loading schemas...</option>
+                </select>
+            </div>
+
             <!-- New dimension fields -->
             <div id="newFields">
                 <div style="margin-bottom:16px;">
