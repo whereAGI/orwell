@@ -1233,7 +1233,7 @@ async def get_dimensions(schema_id: Optional[str] = None):
             if schema_id:
                 cursor = await db.execute(
                     "SELECT DISTINCT dimension FROM custom_prompts "
-                    "WHERE dimension IS NOT NULL AND dimension != '' AND (schema_id=? OR schema_id IS NULL) "
+                    "WHERE dimension IS NOT NULL AND dimension != '' AND schema_id=? "
                     "ORDER BY dimension",
                     (schema_id,)
                 )
@@ -1257,11 +1257,18 @@ async def list_dimensions(schema_id: Optional[str] = None):
             if schema_id:
                 cursor = await db.execute(
                     "SELECT DISTINCT dimension FROM custom_prompts "
-                    "WHERE dimension IS NOT NULL AND dimension != '' AND (schema_id=? OR schema_id IS NULL) "
+                    "WHERE dimension IS NOT NULL AND dimension != '' AND schema_id=? "
                     "ORDER BY dimension",
                     (schema_id,)
                 )
             else:
+                # If no schema_id, return ALL unique dimensions across all schemas?
+                # Or just global ones (NULL)?
+                # Usually 'no schema_id' means 'all schemas' or 'default view'.
+                # Given user wants strict isolation, maybe 'all schemas' is safer for admin view.
+                # But 'Existing Dimension' dropdown uses this without schema_id sometimes.
+                # Let's keep the 'no schema_id' case as returning ALL dimensions for now,
+                # as it likely serves global views.
                 cursor = await db.execute(
                     "SELECT DISTINCT dimension FROM custom_prompts "
                     "WHERE dimension IS NOT NULL AND dimension != '' ORDER BY dimension"
@@ -1307,7 +1314,7 @@ async def list_prompts(
         conditions.append("dimension = ?")
         params.append(dimension)
     if schema_id:
-        conditions.append("(schema_id = ? OR (schema_id IS NULL AND type = 'system'))")
+        conditions.append("schema_id = ?")
         params.append(schema_id)
     if from_date:
         conditions.append("created_at >= ?")

@@ -2898,11 +2898,15 @@ async function loadSchemas() {
       select.appendChild(opt);
     });
     
-    // Select first one (GLOBE) by default or whatever is first
-    if (schemas.length > 0) {
+    // Select Cultural Values (GLOBE) by default if available
+    const culturalSchema = schemas.find(s => s.name.includes("Cultural Values"));
+    if (culturalSchema) {
+      select.value = culturalSchema.id;
+    } else if (schemas.length > 0) {
       select.value = schemas[0].id;
-      onSchemaChanged();
     }
+    
+    onSchemaChanged();
   } catch (e) {
     console.error("Failed to load schemas:", e);
   }
@@ -2931,7 +2935,10 @@ async function loadDimensions(schemaId) {
     
     const res = await fetch(url);
     const data = await res.json();
-    const dims = data.dimensions || [];
+    const dims = (data.dimensions || []).sort();
+    
+    // Store dimensions for modal use
+    window.allDimensions = dims;
     
     const container = document.getElementById('dimList');
     if (!container) return;
@@ -2940,30 +2947,23 @@ async function loadDimensions(schemaId) {
     
     if (dims.length === 0) {
         container.innerHTML = '<div style="font-size:12px;color:var(--muted)">No dimensions found for this schema.</div>';
+        document.getElementById('dimShowAll').style.display = 'none';
         return;
     }
 
-    dims.sort();
+    // Render first 5 dimensions
+    renderDimensionList(dims.slice(0, 5));
     
-    dims.forEach(d => {
-        const pill = document.createElement('div');
-        pill.className = 'pill';
-        pill.textContent = d;
-        pill.onclick = () => {
-            if (selectedDimensions.includes(d)) {
-                selectedDimensions = selectedDimensions.filter(x => x !== d);
-                pill.classList.remove('selected');
-            } else {
-                selectedDimensions.push(d);
-                pill.classList.add('selected');
-            }
-        };
-        container.appendChild(pill);
-    });
-    
-    // Show/Hide "Show All" button logic if needed (simplified here)
+    // Show/Hide "Show All" button logic
     const showAllBtn = document.getElementById('dimShowAll');
-    if (showAllBtn) showAllBtn.style.display = 'none';
+    if (showAllBtn) {
+        if (dims.length > 5) {
+            showAllBtn.style.display = 'inline-block';
+            showAllBtn.onclick = openDimModal;
+        } else {
+            showAllBtn.style.display = 'none';
+        }
+    }
 
   } catch (e) {
     console.error("Failed to load dimensions:", e);

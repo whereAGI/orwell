@@ -48,7 +48,7 @@ class OrwellDataModule:
             async with get_db() as db:
                 if schema_id:
                     rows = await db.execute(
-                        "SELECT * FROM custom_prompts WHERE type='system' AND (schema_id=? OR schema_id IS NULL)",
+                        "SELECT * FROM custom_prompts WHERE type='system' AND schema_id=?",
                         (schema_id,)
                     )
                 else:
