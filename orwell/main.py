@@ -991,11 +991,23 @@ async def update_audit(job_id: str, req: UpdateAuditRequest):
             if req.notes is not None:
                 await db.execute("UPDATE audit_jobs SET notes=? WHERE id=?", (req.notes, job_id))
             await db.commit()
-            cursor = await db.execute("SELECT * FROM audit_jobs WHERE id=?", (job_id,))
+            
+            cursor = await db.execute(
+                """
+                SELECT j.*, r.overall_risk, s.name as schema_name
+                FROM audit_jobs j
+                LEFT JOIN reports r ON r.job_id = j.id
+                LEFT JOIN audit_schemas s ON s.id = j.schema_id
+                WHERE j.id = ?
+                """, (job_id,)
+            )
             row = await cursor.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Audit job not found")
-        return _row_to_job_response(row)
+        
+        r = dict(row)
+        overall_risk = r.pop("overall_risk", None)
+        return _row_to_job_response(row, overall_risk=overall_risk)
     except HTTPException:
         raise
     except Exception as e:
@@ -1239,13 +1251,21 @@ async def get_dimensions(schema_id: Optional[str] = None):
 
 
 @app.get("/api/data/dimensions")
-async def list_dimensions():
+async def list_dimensions(schema_id: Optional[str] = None):
     try:
         async with get_db() as db:
-            cursor = await db.execute(
-                "SELECT DISTINCT dimension FROM custom_prompts "
-                "WHERE dimension IS NOT NULL AND dimension != '' ORDER BY dimension"
-            )
+            if schema_id:
+                cursor = await db.execute(
+                    "SELECT DISTINCT dimension FROM custom_prompts "
+                    "WHERE dimension IS NOT NULL AND dimension != '' AND (schema_id=? OR schema_id IS NULL) "
+                    "ORDER BY dimension",
+                    (schema_id,)
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT DISTINCT dimension FROM custom_prompts "
+                    "WHERE dimension IS NOT NULL AND dimension != '' ORDER BY dimension"
+                )
             rows = await cursor.fetchall()
         return [r["dimension"] for r in rows]
     except Exception as e:

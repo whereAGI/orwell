@@ -371,13 +371,13 @@ async def init_db() -> None:
     os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
 
     async with aiosqlite.connect(db_path) as db:
+        # Enable foreign-key enforcement
+        await db.execute("PRAGMA foreign_keys = ON")
+
         await db.executescript(_CREATE_TABLES)
 
         # Run migrations for existing DBs
         await _run_migrations(db)
-
-        # Enable foreign-key enforcement
-        await db.execute("PRAGMA foreign_keys = ON")
 
         cursor = await db.execute("PRAGMA table_info(models)")
         model_columns = {row[1] for row in await cursor.fetchall()}
