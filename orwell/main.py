@@ -1048,16 +1048,18 @@ async def get_audit_report(job_id: str):
     try:
         async with get_db() as db:
             cursor = await db.execute("SELECT * FROM audit_jobs WHERE id=?", (job_id,))
-            job = await cursor.fetchone()
-            if not job:
+            job_row = await cursor.fetchone()
+            if not job_row:
                 raise HTTPException(status_code=404, detail="Audit job not found")
+            job = dict(job_row)
             if job["status"] != JobStatus.COMPLETED.value:
                 raise HTTPException(status_code=400, detail="Audit not completed yet")
 
             cursor = await db.execute("SELECT * FROM reports WHERE job_id=?", (job_id,))
-            report = await cursor.fetchone()
-            if not report:
+            report_row = await cursor.fetchone()
+            if not report_row:
                 raise HTTPException(status_code=404, detail="Report not found")
+            report = dict(report_row)
 
             # Fetch schema name
             schema_name = "Unknown"
@@ -1066,9 +1068,6 @@ async def get_audit_report(job_id: str):
                 s_row = await cursor.fetchone()
                 if s_row:
                     schema_name = s_row["name"]
-
-        job    = dict(job)
-        report = dict(report)
 
         config = {}
         try:
