@@ -126,14 +126,26 @@ async function loadSchemas() {
         const schemas = await res.json();
         
         const sel = document.getElementById('schemaSelect');
-        sel.innerHTML = '<option value="" selected>Default (GLOBE Cultural)</option>'; // Default option
+        sel.innerHTML = '';
         
         schemas.forEach(s => {
             const o = document.createElement('option');
             o.value = s.id;
-            o.textContent = `${s.name} (${s.schema_type})`;
+            o.textContent = `${s.icon || '✦'} ${s.name} ${s.is_builtin ? '[built-in]' : ''}`;
             sel.appendChild(o);
         });
+
+        // Select Cultural Values (GLOBE) by default if available
+        const culturalSchema = schemas.find(s => s.name.includes("Cultural Values"));
+        if (culturalSchema) {
+            sel.value = culturalSchema.id;
+        } else if (schemas.length > 0) {
+            sel.value = schemas[0].id;
+        }
+        
+        // Trigger change to load dimensions
+        onSchemaChanged();
+
     } catch (e) {
         console.error('Failed to load schemas:', e);
     }
