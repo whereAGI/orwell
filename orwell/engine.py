@@ -20,8 +20,12 @@ from .stream_parser import ThinkingStreamParser
 from .loop_detector import LoopDetector
 
 
+SKIP_PRINT_LEVELS = {"thought_stream", "target_stream", "judge_stream"}
+
 def _log(job_id, level, msg, data=None):
     add_log(job_id, level, msg, data)
+    if level in SKIP_PRINT_LEVELS:
+        return
     prefix = {
         "error": "❌", "warning": "⚠️", "success": "✅",
         "info": "ℹ️", "request": "→", "response": "←",
