@@ -50,7 +50,7 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
     startBtn.style.borderColor = 'var(--primary)';
     document.getElementById('statusText').textContent = 'aborted';
     document.getElementById('statusMessage').textContent = 'Aborted by user';
-    await loadReport();
+    // Do not load report for aborted audits as it doesn't exist
     return;
   }
   const endpoint = document.getElementById('endpoint').value.trim();
@@ -1370,7 +1370,7 @@ async function loadAuditList() {
       const judge = a.judge_name || 'Unknown Judge';
 
       return `
-      <div class="audit-item ${a.job_id === currentJobId ? 'selected-audit' : ''}" data-job="${a.job_id}" data-selected="0">
+      <div class="audit-item ${a.job_id === currentJobId ? 'selected-audit' : ''}" data-job="${a.job_id}" data-status="${a.status}" data-selected="0">
         <div style="display:flex;justify-content:space-between;align-items:start;">
           <div style="flex:1; min-width:0; padding-right:8px;">
             <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(a.target_model || '')}">${escapeHtml(a.target_model || 'Unknown')}</div>
@@ -1414,6 +1414,8 @@ async function loadAuditList() {
         updateSelectionUI();
 
         currentJobId = item.getAttribute('data-job');
+        const jobStatus = item.getAttribute('data-status');
+
         // Update highlight manually to avoid full reload
         container.querySelectorAll('.audit-item').forEach(el => el.classList.remove('selected-audit'));
         item.classList.add('selected-audit');
@@ -1423,7 +1425,13 @@ async function loadAuditList() {
         if (statusEl) statusEl.style.display = 'block';
         await loadPromptsAndResponses();
         await loadCriteria();
-        await loadReport();
+        
+        if (jobStatus === 'completed') {
+          await loadReport();
+        } else {
+          document.getElementById('report').style.display = 'none';
+        }
+        
         await loadLogsForReport();
       });
     });

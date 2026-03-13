@@ -20,6 +20,16 @@ from .stream_parser import ThinkingStreamParser
 from .loop_detector import LoopDetector
 
 
+def _log(job_id, level, msg, data=None):
+    add_log(job_id, level, msg, data)
+    prefix = {
+        "error": "❌", "warning": "⚠️", "success": "✅",
+        "info": "ℹ️", "request": "→", "response": "←",
+        "loop_detected": "🔁", "score_result": "📊",
+    }.get(level, "  ")
+    print(f"[{level.upper()}] {prefix} [{job_id[:8]}] {msg}" + 
+          (f" | {json.dumps(data)}" if data else ""))
+
 class AuditEngine:
     def __init__(self):
         self.mock_mode = os.getenv("ORWELL_TEST_MODE") == "1"
@@ -40,7 +50,7 @@ class AuditEngine:
 
     async def execute_audit(self, job_id: str, request: AuditRequest):
         start_time = time.time()
-        add_log(job_id, "info", "Starting audit execution", {"job_id": job_id})
+        _log(job_id, "info", "Starting audit execution", {"job_id": job_id})
 
         try:
             # --- Update status to running ---
@@ -52,15 +62,15 @@ class AuditEngine:
                 await db.commit()
 
             # 0. Connectivity Check
-            add_log(job_id, "info", "Verifying target model connectivity...", {"model": request.model_name})
+            _log(job_id, "info", "Verifying target model connectivity...", {"model": request.model_name})
             try:
                 check_resp = await self._call_target(request, "Hi", is_check=True)
                 if check_resp.startswith("Error:"):
                     raise Exception(check_resp)
-                add_log(job_id, "success", "Target model connected successfully")
+                _log(job_id, "success", "Target model connected successfully")
             except Exception as e:
                 err_msg = f"Target model connectivity check failed: {e}"
-                add_log(job_id, "error", err_msg)
+                _log(job_id, "error", err_msg)
                 async with get_db() as db:
                     await db.execute(
                         "UPDATE audit_jobs SET status=?, error_message=?, message=? WHERE id=?",
@@ -104,13 +114,13 @@ class AuditEngine:
                     schema_high_label = resolved_schema.get("scoring_axis_high_label", "Neutral / Safe")
                     schema_name = resolved_schema.get("name", "General Bias")
 
-                    add_log(job_id, "info",
+                    _log(job_id, "info",
                         f"Resolved Audit Schema: {resolved_schema['name']} ({resolved_schema['schema_type']})")
                 else:
-                    add_log(job_id, "warning",
+                    _log(job_id, "warning",
                         f"Schema '{schema_id}' not found — falling back to global defaults")
             except Exception as e:
-                add_log(job_id, "warning", f"Schema resolution failed: {e} — using defaults")
+                _log(job_id, "warning", f"Schema resolution failed: {e} — using defaults")
 
             # Store schema_id in job config
             try:
@@ -123,7 +133,7 @@ class AuditEngine:
                 pass
 
             # 1. Generate Prompts
-            add_log(job_id, "info", "Generating prompts via Orwell",
+            _log(job_id, "info", "Generating prompts via Orwell",
                     {"language": request.language, "dimensions": request.dimensions})
             orwell_data = OrwellDataModule()
             await orwell_data.load(schema_id=schema_id)
@@ -132,7 +142,7 @@ class AuditEngine:
                 sample_size=request.sample_size,
                 dimensions=request.dimensions,
             )
-            add_log(job_id, "info", f"Generated {len(prompts)} prompts")
+            _log(job_id, "info", f"Generated {len(prompts)} prompts")
 
             # Store prompts
             async with get_db() as db:
@@ -146,7 +156,7 @@ class AuditEngine:
             total = len(prompts)
             if total == 0:
                 msg = "No prompts to process"
-                add_log(job_id, "warning", msg)
+                _log(job_id, "warning", msg)
                 async with get_db() as db:
                     await db.execute(
                         "UPDATE audit_jobs SET status=?, progress=?, message=? WHERE id=?",
@@ -185,7 +195,7 @@ class AuditEngine:
                         if isinstance(bench_record["judge_model_ids"], str) \
                         else bench_record["judge_model_ids"]
 
-                    add_log(job_id, "info",
+                    _log(job_id, "info",
                             f"Using Judge Bench: {bench_record['name']} "
                             f"({bench_record['mode']} mode, {len(bench_judge_ids)} judges)")
 
@@ -215,11 +225,11 @@ class AuditEngine:
                             system_prompt=effective_foreman_prompt,
                             analysis_persona=fm.get("analysis_persona"),
                             temperature=foreman_runtime["temperature"],
-                            log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
+                            log_callback=lambda level, msg, data=None: _log(job_id, level, msg, data),
                             max_tokens=foreman_runtime["max_tokens"],
                             max_reasoning_tokens=foreman_runtime["max_reasoning_tokens"],
                         )
-                        add_log(job_id, "info", f"  Bench foreman resolved: {fm['name']} ({fm['model_key']})")
+                        _log(job_id, "info", f"  Bench foreman resolved: {fm['name']} ({fm['model_key']})")
 
                     # Resolve each judge model into a JudgeClient
                     judge_clients = []
@@ -228,7 +238,7 @@ class AuditEngine:
                             cursor = await db.execute("SELECT * FROM models WHERE id=?", (jid,))
                             jm_row = await cursor.fetchone()
                         if not jm_row:
-                            add_log(job_id, "error", f"  Bench judge {jid} not found")
+                            _log(job_id, "error", f"  Bench judge {jid} not found")
                             continue
                         jm = dict(jm_row)
                         judge_runtime = self._resolve_judge_runtime_params(jm)
@@ -245,12 +255,12 @@ class AuditEngine:
                             system_prompt=effective_judge_prompt,
                             analysis_persona=jm.get("analysis_persona"),
                             temperature=judge_runtime["temperature"],
-                            log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
+                            log_callback=lambda level, msg, data=None: _log(job_id, level, msg, data),
                             max_tokens=judge_runtime["max_tokens"],
                             max_reasoning_tokens=judge_runtime["max_reasoning_tokens"],
                         )
                         judge_clients.append(jc)
-                        add_log(job_id, "info", f"  Bench judge resolved: {jm['name']} ({jm['model_key']})")
+                        _log(job_id, "info", f"  Bench judge resolved: {jm['name']} ({jm['model_key']})")
 
                     if not judge_clients:
                         raise RuntimeError("No valid judges resolved from bench")
@@ -258,7 +268,7 @@ class AuditEngine:
                     bench_executor = BenchExecutor(
                         judges=judge_clients,
                         mode=bench_record["mode"],
-                        log_callback=lambda level, msg, data=None: add_log(job_id, level, msg, data),
+                        log_callback=lambda level, msg, data=None: _log(job_id, level, msg, data),
                         foreman_client=foreman_client,
                     )
 
@@ -287,7 +297,7 @@ class AuditEngine:
 
                 except Exception as e:
                     err_msg = f"Failed to resolve judge bench {request.bench_id}: {e}"
-                    add_log(job_id, "error", err_msg)
+                    _log(job_id, "error", err_msg)
                     async with get_db() as db:
                         await db.execute(
                             "UPDATE audit_jobs SET status=?, error_message=?, message=? WHERE id=?",
@@ -320,16 +330,16 @@ class AuditEngine:
                         judge_analysis_persona = jm.get("analysis_persona")
                         judge_max_tokens = judge_runtime["max_tokens"]
                         judge_max_reasoning_tokens = judge_runtime["max_reasoning_tokens"]
-                        add_log(job_id, "info", f"Resolved Judge Model: {jm['name']}",
+                        _log(job_id, "info", f"Resolved Judge Model: {jm['name']}",
                                 {"provider": jm.get("provider"), "model": judge_model_name})
                     except Exception as e:
                         err_msg = f"Error resolving judge model {request.judge_model_id}: {e}"
                         print(err_msg)
-                        add_log(job_id, "error", err_msg)
+                        _log(job_id, "error", err_msg)
 
                 if not judge_model_name:
                     msg = "No judge model specified"
-                    add_log(job_id, "error", msg)
+                    _log(job_id, "error", msg)
                     async with get_db() as db:
                         await db.execute(
                             "UPDATE audit_jobs SET status=?, error_message=?, message=? WHERE id=?",
@@ -355,7 +365,7 @@ class AuditEngine:
                     print(f"Failed to update job config with judge name: {e}")
 
             def judge_log_callback(level, msg, data=None):
-                add_log(job_id, level, msg, data)
+                _log(job_id, level, msg, data)
 
             judge = None
             if not bench_executor:
@@ -380,17 +390,17 @@ class AuditEngine:
                     cursor = await db.execute("SELECT status FROM audit_jobs WHERE id=?", (job_id,))
                     status_row = await cursor.fetchone()
                 if status_row and status_row["status"] == JobStatus.ABORTED.value:
-                    add_log(job_id, "warning", "Audit aborted by user")
+                    _log(job_id, "warning", "Audit aborted by user")
                     return
 
-                add_log(job_id, "prompt_start", f"Processing prompt {i+1}/{total}", {
+                _log(job_id, "prompt_start", f"Processing prompt {i+1}/{total}", {
                     "prompt_id": p["id"],
                     "text": p["text"],
                     "dimension": p["dimension"],
                     "index": i,
                     "total": total,
                 })
-                add_log(job_id, "info", f"Processing prompt {i+1}/{total}", {
+                _log(job_id, "info", f"Processing prompt {i+1}/{total}", {
                     "dimension": p["dimension"],
                     "prompt_id": p["id"],
                     "prompt_text": p["text"],
@@ -404,17 +414,30 @@ class AuditEngine:
                     if response_text.startswith("Error:"):
                         target_error = response_text
                         if attempt < MAX_RETRIES - 1:
-                            add_log(job_id, "warning",
+                            _log(job_id, "warning",
                                     f"Target model failed (Attempt {attempt+1}/{MAX_RETRIES}). Retrying...",
                                     {"error": response_text})
                             await asyncio.sleep(2)
                     else:
                         target_error = None
                         break
+                
+                # Check for Empty Response (which is not an "Error:" string but a valid empty string)
+                # Treat empty response as a skipped prompt, never score it
+                EMPTY_RESPONSE_SENTINEL = "[SKIPPED: No response content]"
+
+                if not target_error and not response_text.strip():
+                    _log(job_id, "warning", 
+                        f"Target model returned empty response for prompt {p['id']} — skipping scoring",
+                        {"prompt_id": p["id"], "attempt_count": MAX_RETRIES})
+                    response_text = EMPTY_RESPONSE_SENTINEL
+                    target_error = "Empty response"  # force the score-skip path
+                    consecutive_failures += 1
 
                 if target_error:
-                    add_log(job_id, "error", f"Target model failed after {MAX_RETRIES} attempts: {target_error}")
-                    consecutive_failures += 1
+                    _log(job_id, "error", f"Target model failed after {MAX_RETRIES} attempts: {target_error}")
+                    if target_error != "Empty response":
+                        consecutive_failures += 1
                     response_text = f"[FAILED] {target_error}"
 
                 # Store Response — look up the prompt record id by prompt_id
@@ -443,7 +466,7 @@ class AuditEngine:
                     for attempt in range(MAX_RETRIES):
                         try:
                             if bench_executor:
-                                add_log(job_id, "info", f"Scoring with bench ({bench_record['mode']} mode)")
+                                _log(job_id, "info", f"Scoring with bench ({bench_record['mode']} mode)")
                                 score_results = await bench_executor.score_response(
                                     p["text"], response_text, p["dimension"]
                                 )
@@ -458,13 +481,13 @@ class AuditEngine:
                                 )
                                 score_val = mean_score
                                 reason = combined_reason
-                                add_log(job_id, "score_result", f"Bench mean score: {mean_score:.1f}/7", {
+                                _log(job_id, "score_result", f"Bench mean score: {mean_score:.1f}/7", {
                                     "prompt_id": p["id"],
                                     "score": mean_score,
                                     "reason": combined_reason,
                                     "judge_count": len(score_results),
                                 })
-                                add_log(job_id, "success", f"Bench mean score: {mean_score:.1f}/7 ({len(score_results)} judge(s))", {
+                                _log(job_id, "success", f"Bench mean score: {mean_score:.1f}/7 ({len(score_results)} judge(s))", {
                                     "score": mean_score,
                                     "reason": combined_reason,
                                     "prompt_id": p["id"],
@@ -472,18 +495,18 @@ class AuditEngine:
                                 judge_error = None
                                 break
                             else:
-                                add_log(job_id, "info", "Scoring response with Judge",
+                                _log(job_id, "info", "Scoring response with Judge",
                                         {"judge_model": judge_model_name})
                                 score_val, reason = await judge.score(
                                     p["text"], response_text, p["dimension"], prompt_id=p["id"]
                                 )
-                                add_log(job_id, "score_result", f"Scored: {score_val}/7", {
+                                _log(job_id, "score_result", f"Scored: {score_val}/7", {
                                     "prompt_id": p["id"],
                                     "score": score_val,
                                     "reason": reason,
                                     "judge_model": judge_model_name,
                                 })
-                                add_log(job_id, "success", f"Scored: {score_val}/7", {
+                                _log(job_id, "success", f"Scored: {score_val}/7", {
                                     "reason": reason,
                                     "score": score_val,
                                     "prompt_id": p["id"],
@@ -493,13 +516,13 @@ class AuditEngine:
                         except Exception as je:
                             judge_error = str(je)
                             if attempt < MAX_RETRIES - 1:
-                                add_log(job_id, "warning",
+                                _log(job_id, "warning",
                                         f"Judge failed (Attempt {attempt+1}/{MAX_RETRIES}). Retrying...",
                                         {"error": judge_error})
                                 await asyncio.sleep(2)
 
                     if judge_error:
-                        add_log(job_id, "error",
+                        _log(job_id, "error",
                                 f"Judge scoring failed after {MAX_RETRIES} attempts: {judge_error}")
                         score_val, reason = 0, f"Error: {judge_error}"
                         consecutive_failures += 1
@@ -511,7 +534,7 @@ class AuditEngine:
                 # Check for Halt Condition
                 if consecutive_failures >= 3:
                     err_msg = "Audit halted: 3 consecutive failures (Target or Judge)"
-                    add_log(job_id, "error", err_msg)
+                    _log(job_id, "error", err_msg)
                     print("\n" + "=" * 50)
                     print(f"!!! AUDIT HALTED: {err_msg} !!!")
                     print(f"Last Prompt: {p['text'][:100]}...")
@@ -559,7 +582,7 @@ class AuditEngine:
                     await db.commit()
 
             # 3. Generate Structured Report
-            add_log(job_id, "info", "Generating structured report")
+            _log(job_id, "info", "Generating structured report")
 
             async with get_db() as db:
                 # Fetch all scores with response + prompt info via join
@@ -615,7 +638,7 @@ class AuditEngine:
             if overall_mean < 3: overall_risk = "high"
 
             # ── Build Deterministic Report Data ──
-            add_log(job_id, "info", "Building quantitative report sections")
+            _log(job_id, "info", "Building quantitative report sections")
 
             if bench_executor and bench_record:
                 judge_cfg = {
@@ -688,11 +711,11 @@ class AuditEngine:
             )
 
             report_data = builder.build_all()
-            add_log(job_id, "success",
+            _log(job_id, "success",
                     f"Built quantitative sections ({len(report_data['sections'])} sections)")
 
             # ── Multi-Stage AI Generation ──
-            add_log(job_id, "info", "Starting multi-stage AI report generation")
+            _log(job_id, "info", "Starting multi-stage AI report generation")
             ai_input = report_data.pop("_ai_input", {})
 
             try:
@@ -746,7 +769,7 @@ class AuditEngine:
 
                 explanations = results[1]
                 if isinstance(explanations, Exception):
-                    add_log(job_id, "warning", f"Failed to generate explanations: {explanations}")
+                    _log(job_id, "warning", f"Failed to generate explanations: {explanations}")
                 elif isinstance(explanations, dict):
                     count = 0
                     for section in report_data["sections"]:
@@ -754,14 +777,14 @@ class AuditEngine:
                         if sType in explanations:
                             section["explanation"] = explanations[sType]
                             count += 1
-                    add_log(job_id, "success", f"Added explanations to {count} sections")
+                    _log(job_id, "success", f"Added explanations to {count} sections")
 
-                add_log(job_id, "success", "Multi-stage AI generation complete")
+                _log(job_id, "success", "Multi-stage AI generation complete")
 
             except Exception as e:
                 err_msg = f"AI report generation failed: {e}"
                 print(err_msg)
-                add_log(job_id, "error", err_msg)
+                _log(job_id, "error", err_msg)
                 ai_sections = {
                     "executive_summary": {
                         "type":    "executive_summary",
@@ -821,13 +844,13 @@ class AuditEngine:
                 )
                 await db.commit()
 
-            add_log(job_id, "success", "Report saved with structured report_json")
-            add_log(job_id, "success", "Audit completed successfully")
+            _log(job_id, "success", "Report saved with structured report_json")
+            _log(job_id, "success", "Audit completed successfully")
 
         except Exception as e:
             err_msg = f"Audit failed: {e}"
             print(err_msg)
-            add_log(job_id, "error", err_msg, {"trace": str(e)})
+            _log(job_id, "error", err_msg, {"trace": str(e)})
             import traceback
             traceback.print_exc()
             try:
@@ -848,7 +871,7 @@ class AuditEngine:
         # Mock Mode
         if self.mock_mode:
             await asyncio.sleep(0.5)
-            if job_id: add_log(job_id, "debug", "Mock target call", {"prompt": prompt_text[:50]})
+            if job_id: _log(job_id, "debug", "Mock target call", {"prompt": prompt_text[:50]})
             return f"Mock response to: {prompt_text[:20]}..."
 
         headers = {"Content-Type": "application/json"}
@@ -920,7 +943,7 @@ class AuditEngine:
 
                 if job_id:
                     log_type = "debug" if is_check else "request"
-                    add_log(job_id, log_type,
+                    _log(job_id, log_type,
                             f"Target LLM Request{' (Check)' if is_check else ''}: {request.model_name}", {
                                 "url": url,
                                 "headers": {**headers, "Authorization": f"Bearer {masked_key}" if masked_key else None},
@@ -946,7 +969,7 @@ class AuditEngine:
                         raise Exception(f"HTTP {response.status_code}: {err_body.decode('utf-8', errors='ignore')}")
 
                     if job_id:
-                        add_log(job_id, "info", "Target LLM connection established (Streaming)...")
+                        _log(job_id, "info", "Target LLM connection established (Streaming)...")
 
                     should_abort = False
                     async for line in response.aiter_lines():
@@ -968,7 +991,7 @@ class AuditEngine:
                                         abort_reason = loop_detector.feed_thought(text)
                                         if abort_reason:
                                             if job_id:
-                                                add_log(job_id, "loop_detected", 
+                                                _log(job_id, "loop_detected", 
                                                     f"Loop detected in thinking trace: {abort_reason}",
                                                     {
                                                         "prompt_id": prompt_id,
@@ -980,14 +1003,14 @@ class AuditEngine:
 
                                     thinking_buffer += text
                                     if job_id:
-                                        add_log(job_id, "thought_stream", text,
+                                        _log(job_id, "thought_stream", text,
                                                 {"prompt_id": prompt_id} if prompt_id else None)
                                 else:
                                     if loop_detector:
                                         abort_reason = loop_detector.feed_content(text)
                                         if abort_reason:
                                             if job_id:
-                                                add_log(job_id, "loop_detected", 
+                                                _log(job_id, "loop_detected", 
                                                     f"Loop detected in response: {abort_reason}",
                                                     {
                                                         "prompt_id": prompt_id,
@@ -998,7 +1021,7 @@ class AuditEngine:
 
                                     full_content += text
                                     if job_id:
-                                        add_log(job_id, "target_stream", text,
+                                        _log(job_id, "target_stream", text,
                                                 {"prompt_id": prompt_id} if prompt_id else None)
                             
                             if should_abort:
@@ -1012,38 +1035,43 @@ class AuditEngine:
                     if type_ == "thought":
                         thinking_buffer += text
                         if job_id:
-                            add_log(job_id, "thought_stream", text,
+                            _log(job_id, "thought_stream", text,
                                     {"prompt_id": prompt_id} if prompt_id else None)
                     else:
                         full_content += text
                         if job_id:
-                            add_log(job_id, "target_stream", text,
+                            _log(job_id, "target_stream", text,
                                     {"prompt_id": prompt_id} if prompt_id else None)
 
                 content = full_content
 
                 if job_id and thinking_buffer:
-                     add_log(job_id, "thought", f"Thinking Process:\n{thinking_buffer}")
-
-
+                     _log(job_id, "thought", f"Thinking Process:\n{thinking_buffer}")
 
                 if job_id:
-                    add_log(job_id, "response",
+                    _log(job_id, "response",
                             f"Target LLM Response Complete ({len(content)} chars)", {
                                 "body": {"content": content[:200] + "..."},
                             })
+
+                if should_abort and not content.strip():
+                    if job_id:
+                        _log(job_id, "warning", 
+                            "Loop detected before any response content was generated — treating as skipped prompt",
+                            {"prompt_id": prompt_id})
+                    return "Error: Loop detected — model produced no response content"
 
                 return content
 
             except httpx.ReadTimeout:
                 err_msg = "Target LLM timed out (read timeout). The model might be loading or too slow."
                 print(err_msg)
-                if job_id: add_log(job_id, "error", err_msg)
+                if job_id: _log(job_id, "error", err_msg)
                 return f"Error: {err_msg}"
             except httpx.ConnectError:
                 err_msg = "Target LLM connection failed. Is Ollama running?"
                 print(err_msg)
-                if job_id: add_log(job_id, "error", err_msg)
+                if job_id: _log(job_id, "error", err_msg)
                 return f"Error: {err_msg}"
             except Exception as e:
                 # Catch-all for other errors
@@ -1056,13 +1084,18 @@ class AuditEngine:
                 
                 if is_reasoning_error:
                     print("Retrying target model without reasoning parameters...")
-                    if job_id: add_log(job_id, "warning", "Target model rejected reasoning params. Retrying standard request...")
+                    if job_id: _log(job_id, "warning", "Target model rejected reasoning params. Retrying standard request...")
                     
                     # Retry without reasoning params
                     try:
                         if "reasoning" in payload: del payload["reasoning"]
                         if "include_reasoning" in payload: del payload["include_reasoning"]
                         if "think" in payload: del payload["think"]
+
+                        if job_id:
+                            _log(job_id, "request", 
+                                f"Target LLM Request (Retry — no reasoning params): {request.model_name}",
+                                {"url": url, "payload": {k: v for k, v in payload.items() if k != "stream"}})
                         
                         async with client.stream("POST", url, json=payload, headers=headers) as response:
                             if response.status_code != 200:
@@ -1099,7 +1132,7 @@ class AuditEngine:
                                                 abort_reason = loop_detector.feed_thought(text)
                                                 if abort_reason:
                                                     if job_id:
-                                                        add_log(job_id, "loop_detected", 
+                                                        _log(job_id, "loop_detected", 
                                                             f"Loop detected in thinking trace (Retry): {abort_reason}",
                                                             {
                                                                 "prompt_id": prompt_id,
@@ -1111,14 +1144,14 @@ class AuditEngine:
 
                                             thinking_buffer += text
                                             if job_id:
-                                                add_log(job_id, "thought_stream", text,
+                                                _log(job_id, "thought_stream", text,
                                                         {"prompt_id": prompt_id} if prompt_id else None)
                                         else:
                                             if loop_detector:
                                                 abort_reason = loop_detector.feed_content(text)
                                                 if abort_reason:
                                                     if job_id:
-                                                        add_log(job_id, "loop_detected", 
+                                                        _log(job_id, "loop_detected", 
                                                             f"Loop detected in response (Retry): {abort_reason}",
                                                             {
                                                                 "prompt_id": prompt_id,
@@ -1129,7 +1162,7 @@ class AuditEngine:
 
                                             full_content += text
                                             if job_id:
-                                                add_log(job_id, "target_stream", text,
+                                                _log(job_id, "target_stream", text,
                                                         {"prompt_id": prompt_id} if prompt_id else None)
                                     
                                     if should_abort:
@@ -1141,27 +1174,35 @@ class AuditEngine:
                                 if type_ == "thought":
                                     thinking_buffer += text
                                     if job_id:
-                                        add_log(job_id, "thought_stream", text,
+                                        _log(job_id, "thought_stream", text,
                                                 {"prompt_id": prompt_id} if prompt_id else None)
                                 else:
                                     full_content += text
                                     if job_id:
-                                        add_log(job_id, "target_stream", text,
+                                        _log(job_id, "target_stream", text,
                                                 {"prompt_id": prompt_id} if prompt_id else None)
                             
                             if job_id and thinking_buffer:
-                                add_log(job_id, "thought", f"Thinking Process (Retry):\n{thinking_buffer}")
+                                _log(job_id, "thought", f"Thinking Process (Retry):\n{thinking_buffer}")
                                 
                             if job_id:
-                                add_log(job_id, "response", f"Target LLM Response Complete (Retry) ({len(full_content)} chars)", {
+                                _log(job_id, "response", f"Target LLM Response Complete (Retry) ({len(full_content)} chars)", {
                                     "body": {"content": full_content[:200] + "..."}
                                 })
+
+                            if should_abort and not full_content.strip():
+                                if job_id:
+                                    _log(job_id, "warning", 
+                                        "Loop detected before any response content was generated (Retry) — treating as skipped prompt",
+                                        {"prompt_id": prompt_id})
+                                return "Error: Loop detected — model produced no response content"
+
                             return full_content
                     except Exception as retry_err:
                         err_msg = f"Target LLM retry failed: {retry_err}"
 
                 print(f"Target LLM call failed: {err_msg}")
-                if job_id: add_log(job_id, "error", f"Target LLM call failed: {err_msg}")
+                if job_id: _log(job_id, "error", f"Target LLM call failed: {err_msg}")
                 return f"Error: {err_msg}"
 
     def _resolve_target_runtime_params(self, request: AuditRequest) -> Dict[str, Optional[float]]:

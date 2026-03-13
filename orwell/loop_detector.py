@@ -5,12 +5,14 @@ class LoopDetector:
         self,
         max_tokens: int = 3000,          # hard token ceiling (approx 12000 chars)
         repetition_window: int = 1000,   # chars to check for repeat (increased to capture longer loops)
-        repetition_threshold: int = 4,   # how many times a phrase repeats = loop
-        min_phrase_len: int = 20,        # ignore short phrases
+        repetition_threshold: int = 4,   # how many times a phrase repeats = loop (for exact line match)
+        phrase_repetition_threshold: int = 6, # for fuzzy sliding window check
+        min_phrase_len: int = 60,        # ignore short phrases (increased from 20 to 60)
     ):
         self.max_tokens = max_tokens
         self.repetition_window = repetition_window
         self.repetition_threshold = repetition_threshold
+        self.phrase_repetition_threshold = phrase_repetition_threshold
         self.min_phrase_len = min_phrase_len
         
         self.thought_buffer = ""
@@ -35,10 +37,16 @@ class LoopDetector:
                 last_line = recent_lines[-1].strip()
                 
                 if len(last_line) > 10: # Ignore short lines
-                    count = recent_lines.count(last_line)
-                    # Use a stricter threshold for exact line matches
-                    if count >= 4:
-                        return f"Line repeated {count} times in thinking trace: '{last_line[:30]}...'"
+                    # Check if line is just markdown structure
+                    stripped_line = last_line.strip().lstrip('*->#| \t\n')
+                    if len(stripped_line) < 15:
+                        # Line is mostly structure, ignore it to prevent false positives on lists
+                        pass
+                    else:
+                        count = recent_lines.count(last_line)
+                        # Use a stricter threshold for exact line matches
+                        if count >= self.repetition_threshold:
+                            return f"Line repeated {count} times in thinking trace: '{last_line[:30]}...'"
 
         # 3. Phrase Repetition Check (Sliding Window)
         return self._check_repetition(self.thought_buffer)
@@ -47,8 +55,9 @@ class LoopDetector:
         """Returns an abort reason string if a loop is detected, else None."""
         self.content_buffer += text
         
-        # Phrase Repetition Check
-        return self._check_repetition(self.content_buffer)
+        # We DO NOT run phrase repetition checks on content stream anymore
+        # to avoid false positives on legitimate lists/tables.
+        return None
 
     def _check_repetition(self, buffer_text: str) -> Optional[str]:
         # Only check the window at the end
@@ -56,13 +65,8 @@ class LoopDetector:
         if len(window) < self.min_phrase_len * 2:
             return None
             
-        # Check if the END of the window repeats a pattern found earlier in the window
-        # We iterate through possible phrase lengths ending at the current position
-        
         # Limit candidate length to avoid performance hit on large windows
-        # But we need to catch long phrases too.
-        # Max candidate length is window/2 (since it needs to appear at least twice)
-        max_len = len(window) // 2
+        max_len = min(200, len(window) // 2)
         
         # We start checking from the longest possible phrase (most significant loop) down to min_phrase_len
         # Actually, usually we want to catch the smallest repeating unit?
@@ -72,9 +76,15 @@ class LoopDetector:
         # Let's check a few candidate lengths from the end
         for length in range(self.min_phrase_len, max_len + 1):
             candidate = window[-length:]
+            
+            # Skip candidates that are mostly whitespace or markdown structure
+            stripped = candidate.strip().lstrip('*->#| \t\n')
+            if len(stripped) < 15:  # not enough real content
+                continue
+
             # Count occurrences in the window
             count = window.count(candidate)
-            if count >= self.repetition_threshold:
+            if count >= self.phrase_repetition_threshold:
                 return f"Phrase repeated {count} times: '{candidate[:20]}...'"
                 
         return None
