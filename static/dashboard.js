@@ -1,4 +1,7 @@
 let currentJobId = null;
+let currentReportData = null;
+let reportLoadedForJob = null;
+let isReportLoading = false;
 let pollInterval = null;
 let selectedDimensions = [];
 let systemPromptsMap = {};
@@ -331,12 +334,9 @@ function connectStream(jobId) {
         if (q && q.trim()) {
             clearTimeout(termSearchDebounce);
             termSearchDebounce = setTimeout(() => {
-                // We need access to the controller instance created in DOMContentLoaded.
-                // Since it's scoped there, we can't access it directly.
-                // Workaround: Trigger input event or expose controller globally.
-                // Simpler: Just trigger the input event on the search box
-                const input = document.getElementById('termSearchInput');
-                if(input) input.dispatchEvent(new Event('input'));
+                if (window.termSearchController) {
+                    window.termSearchController.highlight(q);
+                }
             }, 300);
         }
       }
@@ -581,14 +581,18 @@ function connectStream(jobId) {
 
 
 async function loadReport() {
+  if (reportLoadedForJob === currentJobId || isReportLoading) return;
+  isReportLoading = true;
   try {
     const response = await fetch(`/api/audit/${currentJobId}/report`);
     if (!response.ok) {
       console.warn(`Report not available yet (${response.status})`);
+      isReportLoading = false;
       return;
     }
     const report = await response.json();
     currentReportData = report;
+    reportLoadedForJob = currentJobId;
 
     // Destroy any existing chart instances
     if (window._orwellCharts) {
@@ -672,6 +676,8 @@ async function loadReport() {
 
   } catch (err) {
     console.error('Error loading report:', err);
+  } finally {
+    isReportLoading = false;
   }
 }
 
@@ -1450,7 +1456,7 @@ if (criteriaClose) {
   });
 }
 
-// let termSearchDebounce; // Removed duplicate
+
 
 async function loadAuditList() {
   const container = document.getElementById('auditList');
@@ -1876,15 +1882,7 @@ if (saveDetailsBtn) {
 // Removed fetch wrapper for pb auth token
 
 
-// Removed duplicate DOMContentLoaded listener
-/*
-document.addEventListener('DOMContentLoaded', () => {
-  loadAuditList();
-  loadSystemPrompts();
-  loadModels(); // Added
-  if (typeof loadDimensions === 'function') loadDimensions();
-});
-*/
+
 
 async function loadSystemPrompts() {
   try {
@@ -3113,7 +3111,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAuditList();
     loadSystemPrompts();
     loadModels(); // Added
-    if (typeof loadDimensions === 'function') loadDimensions();
 
     // Wire up search controllers
     // Terminal search
@@ -3125,6 +3122,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('termSearchClose'),
         document.getElementById('termSearchInput')
     );
+    window.termSearchController = termController;
 
     document.getElementById('termSearchClose').addEventListener('click', () => {
         document.getElementById('termSearchInput').value = '';
