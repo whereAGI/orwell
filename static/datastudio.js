@@ -342,7 +342,7 @@ async function submitNewPrompt() {
     const dim = document.getElementById('newDimension').value.trim();
     const text = document.getElementById('newText').value.trim();
     const lang = document.getElementById('newLanguage').value.trim();
-    const schemaId = document.getElementById('schemaFilter').value || null;
+    const schemaId = getActiveSchema()?.id;
 
     if (!dim || !text) {
         alert("Dimension and Text are required");
@@ -529,7 +529,7 @@ async function loadJudgeModels() {
 // Load existing dimensions for the "Existing Dimension" dropdown
 async function loadExistingDimensions() {
     try {
-        const schemaId = document.getElementById('schemaFilter').value;
+        const schemaId = getActiveSchema()?.id;
         let url = '/api/data/dimensions';
         if (schemaId) url += `?schema_id=${schemaId}`;
 
@@ -665,7 +665,7 @@ async function startGeneration() {
     closeGenerateModal();
     openProgressModal(dimensionName, totalCount);
 
-    const schemaId = document.getElementById('schemaFilter').value || null;
+    const schemaId = getActiveSchema()?.id;
 
     try {
         const res = await fetch('/api/data/generate-prompts', {

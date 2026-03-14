@@ -407,6 +407,22 @@
       font-size: 14px;
       color: var(--text);
     }
+
+    /* Search Highlights */
+    mark.search-highlight {
+      background: rgba(250, 204, 21, 0.35);
+      color: inherit;
+      border-radius: 2px;
+      padding: 0 1px;
+    }
+    mark.search-highlight.active-match {
+      background: rgba(250, 204, 21, 0.75);
+      outline: 1px solid #facc15;
+    }
+
+    /* Accordion */
+    details.log-accordion > summary::-webkit-details-marker { display: none; }
+    details.log-accordion[open] > summary span:last-child { color: var(--muted); }
   </style>
 </head>
 
@@ -483,7 +499,18 @@
 
       <div class="card">
         <details id="fullLogDetails">
-          <summary style="cursor:pointer;font-weight:600;font-size:16px;outline:none;user-select:none;">Full Audit Logs</summary>
+          <summary style="cursor:pointer;font-weight:600;font-size:16px;outline:none;user-select:none;margin-bottom:12px;">Full Audit Logs</summary>
+          
+          <!-- Log Search Bar -->
+          <div id="logSearchBar" style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+            <input id="logSearchInput" type="text" placeholder="Search logs..."
+              style="background:#0e0e14;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:6px;font-size:12px;font-family:monospace;flex:1;min-width:160px;outline:none;">
+            <span id="logSearchCount" style="font-size:11px;color:var(--muted);min-width:60px;">0 results</span>
+            <button id="logSearchPrev" class="secondary" style="width:auto;padding:4px 8px;font-size:11px;">↑ Prev</button>
+            <button id="logSearchNext" class="secondary" style="width:auto;padding:4px 8px;font-size:11px;">↓ Next</button>
+            <button id="logSearchClear" class="secondary" style="width:auto;padding:4px 8px;font-size:11px;">Clear</button>
+          </div>
+
           <div id="fullLogContent" class="terminal-content"
             style="max-height: 500px; overflow-y: auto; margin-top: 16px; background: #0d0d10; border: 1px solid #333; border-radius: 6px;">
             <div style="color:#666;font-style:italic;padding:12px">Loading logs...</div>
@@ -688,6 +715,17 @@
         <span style="font-weight:bold;color:#fff">TERMINAL</span>
         <span id="logStatus" style="font-size:11px;opacity:0.8;font-weight:500;">Ready</span>
       </div>
+      
+      <!-- Terminal Search Bar -->
+      <div id="termSearchBar" style="display:flex;align-items:center;gap:6px;z-index:1;position:relative;">
+        <input id="termSearchInput" type="text" placeholder="Search logs..."
+          style="background:#1a1a23;border:1px solid #444;color:#e5e7eb;padding:2px 8px;border-radius:4px;font-size:11px;font-family:monospace;width:180px;outline:none;">
+        <span id="termSearchCount" style="font-size:10px;color:#a0a0b8;min-width:50px;">0 results</span>
+        <button id="termSearchPrev" style="width:auto;padding:2px 6px;font-size:10px;background:#333;border:none;">↑</button>
+        <button id="termSearchNext" style="width:auto;padding:2px 6px;font-size:10px;background:#333;border:none;">↓</button>
+        <button id="termSearchClose" style="width:auto;padding:2px 6px;font-size:10px;background:#333;border:none;">✕</button>
+      </div>
+
       <div style="display:flex;gap:8px;z-index:1;position:relative;">
         <span id="terminalPercentage" style="font-size:11px;font-weight:bold;color:#fff;margin-right:8px;display:none;">0%</span>
         <button id="clearLogsBtn"

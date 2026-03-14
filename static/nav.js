@@ -51,7 +51,7 @@ async function renderNavbar(activePage, options = {}) {
         { id: 'schemas', href: '/schemas', text: 'Schemas' },
         { id: 'playground', href: '/', text: 'Playground' },
         { id: 'data_studio', href: '/studio', text: 'Data Studio' },
-        { id: 'generate', href: '/generate', text: 'Generate' },
+        { id: 'prompt_studio', href: '/prompt-studio', text: 'Prompt Studio' },
         { id: 'model_hub', href: '/model-hub', text: 'Model Hub' },
         { id: 'config', href: '/config', text: 'Config' },
         { id: 'docs', href: '/docs', text: 'Docs' }
@@ -139,13 +139,12 @@ async function initSchemaSelector(activePage) {
             const icon = s.icon || '🌐';
             select.value = s.id;
             setActiveSchema({ id: s.id, name: s.name, icon: icon });
+        } else if (schemas.length === 0) {
+            // No schemas at all → redirect
+            if (activePage === 'playground') window.location.href = '/schemas';
         } else {
-            // No valid selection
-            if (activePage === 'playground') {
-                // Redirect to schemas if on playground and no schema selected
-                 window.location.href = '/schemas';
-                 return;
-            }
+            // Multiple schemas, none selected → redirect
+            if (activePage === 'playground') window.location.href = '/schemas';
         }
 
         // Handle changes

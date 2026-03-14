@@ -4,6 +4,7 @@ let selectedDimensions = [];
 let systemPromptsMap = {};
 let currentMarkdownPreviewContent = '';
 let currentMarkdownPreviewMode = 'rendered';
+let termSearchDebounce = null;
 
 function formatDuration(seconds) {
   if (typeof seconds === 'undefined' || seconds === null) return '0s';
@@ -18,6 +19,142 @@ function formatDuration(seconds) {
   parts.push(`${s}s`);
 
   return parts.length > 0 ? parts.join(' ') : '0s';
+}
+
+// ─── Search Controller ───
+function createSearchController(contentEl, countEl, prevBtn, nextBtn, clearBtn, inputEl) {
+    let matches = [];
+    let currentIdx = -1;
+
+    function escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function clearHighlights() {
+        contentEl.querySelectorAll('mark.search-highlight').forEach(mark => {
+            mark.replaceWith(document.createTextNode(mark.textContent));
+        });
+        contentEl.normalize();
+        matches = [];
+        currentIdx = -1;
+        updateCount();
+    }
+
+    function updateCount() {
+        if (!matches.length) {
+            countEl.textContent = inputEl.value.trim() ? 'No results' : '0 results';
+            countEl.style.color = inputEl.value.trim() && !matches.length ? '#f87171' : '#a0a0b8';
+        } else {
+            countEl.textContent = `${currentIdx + 1} of ${matches.length}`;
+            countEl.style.color = '#a0a0b8';
+        }
+    }
+
+    function highlight(query) {
+        clearHighlights();
+        if (!query.trim()) return;
+
+        const regex = new RegExp(`(${escapeRegex(query)})`, 'gi');
+        const logContents = contentEl.querySelectorAll('.log-content');
+        logContents.forEach(lc => {
+            const walker = document.createTreeWalker(lc, NodeFilter.SHOW_TEXT);
+            const textNodes = [];
+            let node;
+            while ((node = walker.nextNode())) textNodes.push(node);
+
+            textNodes.forEach(tn => {
+                if (!regex.test(tn.textContent)) return;
+                regex.lastIndex = 0;
+                const frag = document.createDocumentFragment();
+                let last = 0, match;
+                while ((match = regex.exec(tn.textContent)) !== null) {
+                    frag.appendChild(document.createTextNode(tn.textContent.slice(last, match.index)));
+                    const mark = document.createElement('mark');
+                    mark.className = 'search-highlight';
+                    mark.textContent = match[0];
+                    frag.appendChild(mark);
+                    last = regex.lastIndex;
+                }
+                frag.appendChild(document.createTextNode(tn.textContent.slice(last)));
+                tn.replaceWith(frag);
+            });
+        });
+
+        matches = Array.from(contentEl.querySelectorAll('mark.search-highlight'));
+        if (matches.length) {
+            currentIdx = 0;
+            activateMatch(0);
+        }
+        updateCount();
+    }
+
+    function activateMatch(idx) {
+        matches.forEach(m => m.classList.remove('active-match'));
+        if (!matches[idx]) return;
+        matches[idx].classList.add('active-match');
+        let parent = matches[idx].parentElement;
+        while (parent && parent !== contentEl) {
+            if (parent.tagName === 'DETAILS') parent.open = true;
+            parent = parent.parentElement;
+        }
+        matches[idx].scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        updateCount();
+    }
+
+    function next() {
+        if (!matches.length) return;
+        currentIdx = (currentIdx + 1) % matches.length;
+        activateMatch(currentIdx);
+    }
+
+    function prev() {
+        if (!matches.length) return;
+        currentIdx = (currentIdx - 1 + matches.length) % matches.length;
+        activateMatch(currentIdx);
+    }
+
+    let debounce;
+    inputEl.addEventListener('input', () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => highlight(inputEl.value), 200);
+    });
+    inputEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.shiftKey ? prev() : next(); }
+        if (e.key === 'Escape') { clearBtn.click(); }
+    });
+    nextBtn.addEventListener('click', next);
+    prevBtn.addEventListener('click', prev);
+    clearBtn.addEventListener('click', () => {
+        inputEl.value = '';
+        clearHighlights();
+    });
+
+    return { highlight, clear: clearHighlights, next, prev };
+}
+
+// ─── Collapsible Terminal Helper ───
+function collapseIfLong(entryDiv, threshold = 1000) {
+    const contentEl = entryDiv.querySelector('.log-content');
+    if (!contentEl) return;
+    const text = contentEl.textContent || '';
+    if (text.length <= threshold) return;
+
+    if (entryDiv.querySelector('details.log-accordion')) return;
+
+    const preview = text.slice(0, 120).replace(/\n/g, ' ') + '…';
+    const charCount = text.length.toLocaleString();
+
+    const details = document.createElement('details');
+    details.className = 'log-accordion';
+    details.style.cssText = 'margin:0;padding:0;';
+
+    const summary = document.createElement('summary');
+    summary.style.cssText = 'cursor:pointer;list-style:none;outline:none;color:#a0a0b8;font-size:11px;padding:2px 0;user-select:none;';
+    summary.innerHTML = `<span style="color:#666;">${preview}</span> <span style="color:var(--primary);font-size:10px;">[+${charCount} chars — click to expand]</span>`;
+
+    details.appendChild(summary);
+    details.appendChild(contentEl.cloneNode(true));
+    contentEl.replaceWith(details);
 }
 
 document.getElementById('startBtn').addEventListener('click', async (e) => {
@@ -188,6 +325,20 @@ function connectStream(jobId) {
 
       if (typeof renderLogs === 'function') {
         enqueueTerminalLog(log);
+        
+        // Re-run search during streaming
+        const q = document.getElementById('termSearchInput')?.value;
+        if (q && q.trim()) {
+            clearTimeout(termSearchDebounce);
+            termSearchDebounce = setTimeout(() => {
+                // We need access to the controller instance created in DOMContentLoaded.
+                // Since it's scoped there, we can't access it directly.
+                // Workaround: Trigger input event or expose controller globally.
+                // Simpler: Just trigger the input event on the search box
+                const input = document.getElementById('termSearchInput');
+                if(input) input.dispatchEvent(new Event('input'));
+            }, 300);
+        }
       }
 
       // Handle Structured Events
@@ -408,6 +559,9 @@ function connectStream(jobId) {
         setTimeout(() => {
           loadReport();
         }, 500);
+        
+        // Collapse all long entries in terminal
+        document.querySelectorAll('#terminalContent .log-entry').forEach(el => collapseIfLong(el));
       }
 
     } catch (e) {
@@ -424,74 +578,7 @@ function connectStream(jobId) {
   };
 }
 
-async function pollStatus() {
-  if (!currentJobId) return;
 
-  // Poll logs concurrently
-  // pollLogs(); // Deprecated in favor of EventSource stream
-
-  try {
-    await loadAuditList();
-    const response = await fetch(`/api/audit/${currentJobId}`);
-    const status = await response.json();
-    const detailsRes = await fetch(`/api/audit/${currentJobId}/details`);
-    const details = detailsRes.ok ? await detailsRes.json() : null;
-    document.getElementById('statusText').textContent = status.status;
-    const progress = Math.round((status.progress || 0) * 100);
-    const fill = document.getElementById('progressFill');
-    fill.style.width = progress + '%';
-    fill.textContent = progress + '%';
-
-    // Sync terminal loader
-    const termBar = document.getElementById('terminalProgressBar');
-    const termPct = document.getElementById('terminalPercentage');
-    if (termBar) termBar.style.width = progress + '%';
-    if (termPct) termPct.textContent = progress + '%';
-    document.getElementById('statusMessage').textContent = status.message || '';
-    if (status.status === 'completed') {
-      clearInterval(pollInterval);
-      const startBtn = document.getElementById('startBtn');
-      if (startBtn) {
-        startBtn.textContent = 'Start Audit';
-        startBtn.style.background = 'var(--primary)';
-        startBtn.style.borderColor = 'var(--primary)';
-      }
-      await loadPromptsAndResponses();
-      await loadCriteria();
-      await loadReport();
-      await loadLogsForReport();
-      document.getElementById('live-feed').style.display = 'none';
-      if (details && details.error_message) {
-        document.getElementById('statusMessage').textContent = details.error_message;
-      }
-    } else if (status.status === 'failed') {
-      clearInterval(pollInterval);
-      const startBtn = document.getElementById('startBtn');
-      if (startBtn) {
-        startBtn.textContent = 'Start Audit';
-        startBtn.style.background = 'var(--primary)';
-        startBtn.style.borderColor = 'var(--primary)';
-      }
-      document.getElementById('statusText').textContent = 'failed';
-      document.getElementById('statusText').style.color = 'var(--danger)';
-      document.getElementById('statusMessage').textContent = status.message || 'Audit failed';
-      document.getElementById('statusMessage').style.color = 'var(--danger)';
-      // alert('Audit failed: ' + status.message);
-    } else if (status.status === 'aborted') {
-      clearInterval(pollInterval);
-      const startBtn = document.getElementById('startBtn');
-      if (startBtn) {
-        startBtn.textContent = 'Start Audit';
-        startBtn.style.background = 'var(--primary)';
-        startBtn.style.borderColor = 'var(--primary)';
-      }
-      document.getElementById('statusText').textContent = 'aborted';
-      document.getElementById('statusMessage').textContent = status.message || 'Aborted by user';
-    }
-  } catch (err) {
-    console.error('Error polling status:', err);
-  }
-}
 
 async function loadReport() {
   try {
@@ -543,8 +630,14 @@ async function loadReport() {
         html += renderReportSection(section);
       }
 
-      document.getElementById('reportContent').innerHTML = html;
-      document.getElementById('report').style.display = 'block';
+      const reportContent = document.getElementById('reportContent');
+      if (reportContent) {
+        reportContent.innerHTML = html;
+      }
+      const reportElement = document.getElementById('report');
+      if (reportElement) {
+        reportElement.style.display = 'block';
+      }
 
       // Initialize charts after DOM is ready
       setTimeout(() => initReportCharts(rj.sections), 100);
@@ -567,8 +660,16 @@ async function loadReport() {
         `Mean Score: ${score.mean_score}/7 (n=${score.sample_size}, risk: ${score.risk_level})</div>`;
     }
     html += `<p style="color:var(--muted);font-style:italic;margin-top:16px;">This is a legacy report without structured sections.</p>`;
-    document.getElementById('reportContent').innerHTML = html;
-    document.getElementById('report').style.display = 'block';
+    
+    const reportContent = document.getElementById('reportContent');
+    if (reportContent) {
+      reportContent.innerHTML = html;
+    }
+    const reportElement = document.getElementById('report');
+    if (reportElement) {
+      reportElement.style.display = 'block';
+    }
+
   } catch (err) {
     console.error('Error loading report:', err);
   }
@@ -1349,6 +1450,8 @@ if (criteriaClose) {
   });
 }
 
+// let termSearchDebounce; // Removed duplicate
+
 async function loadAuditList() {
   const container = document.getElementById('auditList');
   const schemaId = getActiveSchema()?.id;
@@ -1450,6 +1553,27 @@ async function loadAuditList() {
     const currentExists = audits.some(a => a.job_id === currentJobId);
 
     if ((!currentJobId || !currentExists) && audits.length > 0) {
+      // Ensure report structure is restored if it was previously overwritten
+      const reportContainer = document.getElementById('report');
+      if (reportContainer && !document.getElementById('reportContent')) {
+         reportContainer.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0">Audit Report</h3>
+            <div style="position:relative; display:inline-block;">
+              <button onclick="toggleDownloadDropdown()" style="width:auto;padding:6px 12px;font-size:12px;background:var(--card);border-color:var(--border);display:flex;align-items:center;gap:6px;" title="Download Report">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                Download
+              </button>
+              <div id="downloadDropdown" style="display:none; position:absolute; right:0; top:100%; margin-top:4px; background:var(--card); border:1px solid var(--border); border-radius:6px; min-width:120px; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+                <div onclick="downloadReport('md')" class="dropdown-item" style="padding:8px 12px; cursor:pointer; font-size:13px; color:var(--text);">Markdown</div>
+                <div onclick="downloadReport('pdf')" class="dropdown-item" style="padding:8px 12px; cursor:pointer; font-size:13px; color:var(--text); border-top:1px solid var(--border);">PDF</div>
+              </div>
+            </div>
+          </div>
+          <div id="reportContent"></div>
+         `;
+      }
+
       const first = container.querySelector('.audit-item');
       if (first) first.click();
     } else if (audits.length === 0) {
@@ -1596,7 +1720,17 @@ async function loadLogsForReport() {
     let html = '';
     logs.forEach(log => {
       // Reuse the same styling classes as terminal
-      const time = log.timestamp.split('T')[1].split('.')[0];
+      let time = '';
+      try {
+        if (log.timestamp) {
+            time = log.timestamp.includes('T') ? log.timestamp.split('T')[1].split('.')[0] : log.timestamp;
+        } else {
+            time = 'Unknown';
+        }
+      } catch (e) {
+        time = log.timestamp || 'Unknown';
+      }
+
       html += `<div class="log-entry">
         <div class="log-meta">
           <span class="log-time">${time}</span> 
@@ -1609,6 +1743,9 @@ async function loadLogsForReport() {
     container.innerHTML = html;
     // Scroll to bottom? Maybe not for a report view, top is better.
     container.scrollTop = 0;
+    
+    // Collapse all long entries in logs
+    container.querySelectorAll('.log-entry').forEach(el => collapseIfLong(el));
 
   } catch (err) {
     console.error("Error loading logs:", err);
@@ -1739,12 +1876,15 @@ if (saveDetailsBtn) {
 // Removed fetch wrapper for pb auth token
 
 
+// Removed duplicate DOMContentLoaded listener
+/*
 document.addEventListener('DOMContentLoaded', () => {
   loadAuditList();
   loadSystemPrompts();
   loadModels(); // Added
   if (typeof loadDimensions === 'function') loadDimensions();
 });
+*/
 
 async function loadSystemPrompts() {
   try {
@@ -1984,7 +2124,7 @@ if (header) {
   let startY, startHeight;
 
   header.addEventListener('mousedown', (e) => {
-    if (e.target.tagName === 'BUTTON') return; // Ignore button clicks
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return; // Ignore button and input clicks
     isResizing = true;
     startY = e.clientY;
     startHeight = terminal.clientHeight;
@@ -2968,6 +3108,38 @@ document.addEventListener('DOMContentLoaded', () => {
     // loadAuditList is called earlier in DOMContentLoaded or by nav?
     // Looking at existing code, loadAuditList was called in DOMContentLoaded at line ~1757.
     // We should keep it there.
+    
+    // Merge existing DOMContentLoaded logic here
+    loadAuditList();
+    loadSystemPrompts();
+    loadModels(); // Added
+    if (typeof loadDimensions === 'function') loadDimensions();
+
+    // Wire up search controllers
+    // Terminal search
+    const termController = createSearchController(
+        document.getElementById('terminalContent'),
+        document.getElementById('termSearchCount'),
+        document.getElementById('termSearchPrev'),
+        document.getElementById('termSearchNext'),
+        document.getElementById('termSearchClose'),
+        document.getElementById('termSearchInput')
+    );
+
+    document.getElementById('termSearchClose').addEventListener('click', () => {
+        document.getElementById('termSearchInput').value = '';
+        termController.clear();
+    });
+
+    // Log viewer search
+    const logController = createSearchController(
+        document.getElementById('fullLogContent'),
+        document.getElementById('logSearchCount'),
+        document.getElementById('logSearchPrev'),
+        document.getElementById('logSearchNext'),
+        document.getElementById('logSearchClear'),
+        document.getElementById('logSearchInput')
+    );
 });
 
 // Listen for schema changes from Nav
