@@ -156,9 +156,7 @@
                 style="display:flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
                 <div style="display:flex; gap:12px; align-items: center;">
                     <input type="text" id="search" placeholder="Search prompts..." style="width: 200px;">
-                    <select id="schemaFilter" style="width: 180px;">
-                        <option value="">All Schemas</option>
-                    </select>
+                    <!-- schemaFilter removed -->
                     <select id="dimFilter" style="width: 150px;">
                         <option value="">All Dimensions</option>
                     </select>
@@ -419,7 +417,7 @@
     </div>
 
     <script src="/static/nav.js"></script>
-    <script>renderNavbar('data_studio');</script>
+    <script>renderNavbar('data_studio', { showSchemaSelector: true });</script>
     <script src="/static/datastudio.js"></script>
 </body>
 

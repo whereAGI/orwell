@@ -51,7 +51,10 @@ function renderSchemas(schemas) {
             </div>
 
             <div style="display:flex; gap:8px; margin-top:auto; padding-top:12px; border-top:1px solid var(--border);">
-                <button class="secondary" style="flex:1; padding:6px; font-size:12px;" onclick="openSchemaModal('${s.id}')">
+                <button class="primary" style="flex:1; padding:6px; font-size:12px;" onclick="startAuditWithSchema('${s.id}')">
+                    Start Audit
+                </button>
+                <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="openSchemaModal('${s.id}')">
                     Edit
                 </button>
                 ${!isBuiltin ? `
@@ -63,6 +66,14 @@ function renderSchemas(schemas) {
         </div>
         `;
     }).join('');
+}
+
+function startAuditWithSchema(id) {
+    const s = currentSchemas.find(sch => sch.id === id);
+    if (s) {
+        setActiveSchema({ id: s.id, name: s.name, icon: s.icon || '✦' });
+        window.location.href = '/';
+    }
 }
 
 function openSchemaModal(schemaId = null) {

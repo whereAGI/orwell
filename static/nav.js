@@ -1,9 +1,31 @@
 
-function renderNavbar(activePage) {
+function getActiveSchema() {
+    try {
+        return JSON.parse(localStorage.getItem('orwell_active_schema') || 'null');
+    } catch (e) {
+        return null;
+    }
+}
+
+function setActiveSchema(s) {
+    localStorage.setItem('orwell_active_schema', JSON.stringify(s));
+    window.dispatchEvent(new CustomEvent('schemaChanged', { detail: s }));
+}
+
+function clearActiveSchema() {
+    localStorage.removeItem('orwell_active_schema');
+}
+
+// Make helpers available globally
+window.getActiveSchema = getActiveSchema;
+window.setActiveSchema = setActiveSchema;
+window.clearActiveSchema = clearActiveSchema;
+
+async function renderNavbar(activePage, options = {}) {
     const header = document.querySelector('header');
     if (!header) return;
 
-    // Enforce header styles to ensure consistency
+    // Enforce header styles
     header.style.display = 'flex';
     header.style.alignItems = 'center';
     header.style.justifyContent = 'space-between';
@@ -24,86 +46,126 @@ function renderNavbar(activePage) {
 
     const pageTitle = titleMap[activePage] || 'studio';
 
-    // Define all available links
+    // New nav order
     const allLinks = [
+        { id: 'schemas', href: '/schemas', text: 'Schemas' },
         { id: 'playground', href: '/', text: 'Playground' },
         { id: 'data_studio', href: '/studio', text: 'Data Studio' },
-        { id: 'prompt_studio', href: '/prompt-studio', text: 'Prompt Studio' },
-        { id: 'model_hub', href: '/model-hub', text: 'Model Hub' },
-        { id: 'schemas', href: '/schemas', text: 'Schemas' },
         { id: 'generate', href: '/generate', text: 'Generate' },
+        { id: 'model_hub', href: '/model-hub', text: 'Model Hub' },
         { id: 'config', href: '/config', text: 'Config' },
         { id: 'docs', href: '/docs', text: 'Docs' }
     ];
 
-    // Filter out current page to match the pattern "links to other places"
     const navLinksHtml = allLinks
         .filter(link => link.id !== activePage)
         .map(link => `<a href="${link.href}" style="color:var(--text);text-decoration:none;padding:4px 8px;border-radius:4px;background:#1f2937;">${link.text}</a>`)
         .join('');
 
+    const showSelector = options.showSchemaSelector === true;
+    const selectorHtml = showSelector ? `
+        <div id="navSchemaWrap" style="display:flex;align-items:center;gap:6px;">
+          <span style="color:var(--muted);font-size:13px;">/</span>
+          <select id="navSchemaSelect" style="
+            background:#1a1a28;
+            border:1px solid var(--border);
+            color:var(--text);
+            border-radius:6px;
+            padding:4px 28px 4px 10px;
+            font-size:13px;
+            font-family:inherit;
+            cursor:pointer;
+            appearance:none;
+            -webkit-appearance:none;
+            background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239ca3af'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E&quot;);
+            background-repeat:no-repeat;
+            background-position:right 8px center;
+            min-width:160px;
+          ">
+            <option value="" disabled>Select Schema...</option>
+          </select>
+        </div>
+    ` : '';
+
+    // Note: Logo now links to /schemas
     header.innerHTML = `
-        <a href="/" style="display:flex;align-items:center;gap:10px;text-decoration:none;">
-            <img src="/static/logo.png" alt="Orwell Logo" style="height:32px;width:auto;">
-            <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell <span
-                    style="color:var(--muted);font-weight:400;">/ ${pageTitle}</span></h1>
-        </a>
+        <div style="display:flex;align-items:center;gap:10px;">
+            <a href="/schemas" style="display:flex;align-items:center;gap:10px;text-decoration:none;">
+                <img src="/static/logo.png" alt="Orwell Logo" style="height:32px;width:auto;">
+                <h1 style="margin:0;font-size:16px;letter-spacing:0.3px;color:#e5e7eb;">orwell <span
+                        style="color:var(--muted);font-weight:400;">/ ${pageTitle}</span></h1>
+            </a>
+            ${selectorHtml}
+        </div>
         <div class="mono" style="color:var(--muted);display:flex;align-items:center;gap:16px;">
             ${navLinksHtml}
-            <!-- Local mode: Removed User Email and Logout Button -->
         </div>
     `;
 
-    // Attach listeners
-    attachNavListeners();
+    // Initialize Schema Selector Logic
+    if (showSelector) {
+        await initSchemaSelector(activePage);
+    }
 }
 
-function attachNavListeners() {
-    // 1. Populate User Email (Removed for local mode)
-    /*
-    const userEmailSpan = document.getElementById('userEmail');
-    if (userEmailSpan && window.pb && window.pb.authStore.model) {
-        userEmailSpan.textContent = window.pb.authStore.model.email;
-    }
-    */
+async function initSchemaSelector(activePage) {
+    const select = document.getElementById('navSchemaSelect');
+    if (!select) return;
 
-    // 2. Handle Logout (Removed for local mode)
-    /*
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
-            if (window.logout) {
-                window.logout();
-            } else if (window.pb) {
-                window.pb.authStore.clear();
-                window.location.href = '/login';
-            }
+    try {
+        const res = await fetch('/api/schemas');
+        if (!res.ok) throw new Error('Failed to fetch schemas');
+        const schemas = await res.json();
+
+        // Populate options
+        select.innerHTML = '<option value="" disabled>Select Schema...</option>';
+        schemas.forEach(s => {
+            const icon = s.icon || '🌐'; // Default icon if missing
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = `${icon} ${s.name}`;
+            opt.dataset.icon = icon;
+            opt.dataset.name = s.name;
+            select.appendChild(opt);
         });
-    }
-    */
 
-    // 3. Handle Criteria Link
-    const criteriaLink = document.getElementById('criteriaLink');
-    if (criteriaLink) {
-        // If we are not on the playground (index.html or /), redirect to playground
-        // Note: The link href is already "/" in the HTML template above, so default click will go to /
-        // But if we want to open the modal on the playground page, we need to handle that.
-        // If we are ALREADY on playground, we should prevent default and open modal (if logic exists).
-        // But the navbar is shared. The playground specific logic (opening modal) might need to be hooked up.
-        // However, the prompt studio link just goes to "/".
-
-        // Let's keep it simple: if on playground, try to open modal. If not, go to /.
-        if (window.location.pathname === '/' || window.location.pathname === '/index.html') {
-            criteriaLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                // Check if the modal logic exists (it's in dashboard.js usually)
-                // We can dispatch a custom event or check for the modal element directly
-                const modal = document.getElementById('criteriaModal');
-                if (modal) {
-                    modal.style.display = 'flex';
-                }
-            });
+        // Set active state
+        const active = getActiveSchema();
+        if (active && schemas.find(s => s.id === active.id)) {
+            select.value = active.id;
+        } else if (schemas.length === 1) {
+            // Auto-select if only one
+            const s = schemas[0];
+            const icon = s.icon || '🌐';
+            select.value = s.id;
+            setActiveSchema({ id: s.id, name: s.name, icon: icon });
+        } else {
+            // No valid selection
+            if (activePage === 'playground') {
+                // Redirect to schemas if on playground and no schema selected
+                 window.location.href = '/schemas';
+                 return;
+            }
         }
+
+        // Handle changes
+        select.addEventListener('change', (e) => {
+            const opt = select.options[select.selectedIndex];
+            const newVal = {
+                id: select.value,
+                name: opt.dataset.name,
+                icon: opt.dataset.icon
+            };
+            setActiveSchema(newVal);
+            
+            // If on a page that needs reload or data refresh, the schemaChanged event will handle it
+            // or if we are on a page where changing schema requires navigation? 
+            // The plan says "schema selector HTML (injected...)" and "Pages that pass showSchemaSelector: true".
+            // It assumes the page will react to the event or reload.
+        });
+
+    } catch (e) {
+        console.error('Schema selector init error:', e);
     }
 }
 

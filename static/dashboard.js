@@ -80,7 +80,12 @@ document.getElementById('startBtn').addEventListener('click', async (e) => {
 
   const sysPromptName = document.getElementById('systemPromptInput').value.trim();
   const sysPrompt = systemPromptsMap[sysPromptName] || (sysPromptName ? sysPromptName : null);
-  const schemaId = document.getElementById('schemaSelect').value;
+  const schemaId = getActiveSchema()?.id;
+
+  if (!schemaId) {
+    alert('No active schema selected. Please select a schema from the top navigation.');
+    return;
+  }
 
   const request = {
     schema_id: schemaId,
@@ -1346,8 +1351,12 @@ if (criteriaClose) {
 
 async function loadAuditList() {
   const container = document.getElementById('auditList');
+  const schemaId = getActiveSchema()?.id;
+  let url = '/api/audits?t=' + Date.now();
+  if (schemaId) url += `&schema_id=${schemaId}`;
+
   try {
-    const res = await fetch('/api/audits?t=' + Date.now());
+    const res = await fetch(url);
     if (!res.ok) {
       throw new Error(`Server returned ${res.status}: ${await res.text()}`);
     }
@@ -1607,30 +1616,7 @@ async function loadLogsForReport() {
   }
 }
 
-async function initDimensions() {
-  try {
-    const res = await fetch('/api/dimensions');
-    const data = await res.json();
-    const allDims = (data.dimensions || []).sort();
-
-    // Store all dimensions globally for modal
-    window.allDimensions = allDims;
-
-    // Initial display: limit to 5
-    renderDimensionList(allDims.slice(0, 5));
-
-    const showAllBtn = document.getElementById('dimShowAll');
-    if (allDims.length > 5) {
-      showAllBtn.style.display = 'inline-block';
-      showAllBtn.onclick = openDimModal;
-    } else {
-      showAllBtn.style.display = 'none';
-    }
-
-  } catch (err) {
-    console.error('Failed to load dimensions:', err);
-  }
-}
+// Removed initDimensions as it is superseded by loadDimensions
 
 function renderDimensionList(dims) {
   const listEl = document.getElementById('dimList');
@@ -1757,7 +1743,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadAuditList();
   loadSystemPrompts();
   loadModels(); // Added
-  if (typeof initDimensions === 'function') initDimensions();
+  if (typeof loadDimensions === 'function') loadDimensions();
 });
 
 async function loadSystemPrompts() {
@@ -2928,57 +2914,11 @@ function generateMarkdown(report) {
   return md;
 }
 
-// Schema Handling
-let currentSchemas = [];
+// Schema Handling via Nav
+// loadSchemas() and onSchemaChanged() replaced by Nav integration
 
-async function loadSchemas() {
-  try {
-    const res = await fetch('/api/schemas');
-    const schemas = await res.json();
-    currentSchemas = schemas;
-    
-    const select = document.getElementById('schemaSelect');
-    if (!select) return;
-    
-    select.innerHTML = '';
-    schemas.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s.id;
-      opt.textContent = `${s.icon || '✦'} ${s.name} ${s.is_builtin ? '[built-in]' : ''}`;
-      select.appendChild(opt);
-    });
-    
-    // Select Cultural Values (GLOBE) by default if available
-    const culturalSchema = schemas.find(s => s.name.includes("Cultural Values"));
-    if (culturalSchema) {
-      select.value = culturalSchema.id;
-    } else if (schemas.length > 0) {
-      select.value = schemas[0].id;
-    }
-    
-    onSchemaChanged();
-  } catch (e) {
-    console.error("Failed to load schemas:", e);
-  }
-}
-
-async function onSchemaChanged() {
-  const select = document.getElementById('schemaSelect');
-  const schemaId = select.value;
-  const schema = currentSchemas.find(s => s.id === schemaId);
-  
-  if (schema) {
-    const descEl = document.getElementById('schemaDescription');
-    if (descEl) descEl.textContent = schema.description || "";
-  }
-  
-  await loadDimensions(schemaId);
-}
-
-// Ensure this function is available globally
-window.onSchemaChanged = onSchemaChanged;
-
-async function loadDimensions(schemaId) {
+async function loadDimensions() {
+  const schemaId = getActiveSchema()?.id;
   try {
     let url = '/api/dimensions';
     if (schemaId) url += `?schema_id=${schemaId}`;
@@ -2997,7 +2937,8 @@ async function loadDimensions(schemaId) {
     
     if (dims.length === 0) {
         container.innerHTML = '<div style="font-size:12px;color:var(--muted)">No dimensions found for this schema.</div>';
-        document.getElementById('dimShowAll').style.display = 'none';
+        const btn = document.getElementById('dimShowAll');
+        if (btn) btn.style.display = 'none';
         return;
     }
 
@@ -3022,5 +2963,15 @@ async function loadDimensions(schemaId) {
 
 // Hook into init
 document.addEventListener('DOMContentLoaded', () => {
-    loadSchemas();
+    // Initial load based on localStorage
+    loadDimensions(); 
+    // loadAuditList is called earlier in DOMContentLoaded or by nav?
+    // Looking at existing code, loadAuditList was called in DOMContentLoaded at line ~1757.
+    // We should keep it there.
+});
+
+// Listen for schema changes from Nav
+window.addEventListener('schemaChanged', () => {
+    loadAuditList();
+    loadDimensions();
 });

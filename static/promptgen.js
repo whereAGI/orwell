@@ -18,7 +18,14 @@ let genPollInterval = null;
 // ─── Init ─────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
     loadModels();
-    loadSchemas();
+    // loadSchemas() removed - handled by nav
+    
+    // Initial load based on current schema
+    const active = getActiveSchema();
+    if (active) {
+        onSchemaChanged();
+    }
+
     loadExistingDimensions();
     loadTemplate();
 
@@ -30,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
             clearTimeout(debounce);
             debounce = setTimeout(() => {
                 const name = nameInput.value.trim();
-                const schemaId = document.getElementById('schemaSelect').value;
+                const schemaId = getActiveSchema()?.id;
                 if (name) loadTemplate(name, schemaId);
             }, 600);
         });
@@ -118,46 +125,21 @@ async function loadModels() {
     }
 }
 
-// ─── Load Schemas ──────────────────────────────────────────
-async function loadSchemas() {
-    try {
-        const res = await fetch('/api/schemas');
-        if (!res.ok) return;
-        const schemas = await res.json();
-        
-        const sel = document.getElementById('schemaSelect');
-        sel.innerHTML = '';
-        
-        schemas.forEach(s => {
-            const o = document.createElement('option');
-            o.value = s.id;
-            o.textContent = `${s.icon || '✦'} ${s.name} ${s.is_builtin ? '[built-in]' : ''}`;
-            sel.appendChild(o);
-        });
-
-        // Select Cultural Values (GLOBE) by default if available
-        const culturalSchema = schemas.find(s => s.name.includes("Cultural Values"));
-        if (culturalSchema) {
-            sel.value = culturalSchema.id;
-        } else if (schemas.length > 0) {
-            sel.value = schemas[0].id;
-        }
-        
-        // Trigger change to load dimensions
-        onSchemaChanged();
-
-    } catch (e) {
-        console.error('Failed to load schemas:', e);
-    }
-}
+// loadSchemas removed
 
 async function onSchemaChanged() {
-    const schemaId = document.getElementById('schemaSelect').value;
+    const schemaId = getActiveSchema()?.id;
+    if (!schemaId) return;
+
     // Reload dimensions for this schema
     loadExistingDimensions(schemaId);
     // Reload template for this schema
-    loadTemplate(document.getElementById('dimName').value.trim(), schemaId);
+    const name = document.getElementById('dimName')?.value?.trim();
+    if (name) loadTemplate(name, schemaId);
 }
+
+// Listen for nav schema changes
+window.addEventListener('schemaChanged', onSchemaChanged);
 
 // ─── Load Existing Dimensions ─────────────────────────────
 async function loadExistingDimensions(schemaId = null) {
@@ -286,7 +268,8 @@ async function startGeneration() {
     const modelId = document.getElementById('modelSelect').value;
     if (!modelId) { showError('Please select a generator model.'); return; }
     
-    const schemaId = document.getElementById('schemaSelect').value || null;
+    const schemaId = getActiveSchema()?.id;
+    if (!schemaId) { showError('Please select a target schema in the navigation bar.'); return; }
 
     currentDimName = dimName;
 
@@ -602,7 +585,7 @@ async function saveApproved() {
                 approved_prompts: approved,
                 dimension_name: currentDimName,
                 language: 'en',
-                schema_id: document.getElementById('schemaSelect').value || null
+                schema_id: getActiveSchema()?.id
             }),
         });
 

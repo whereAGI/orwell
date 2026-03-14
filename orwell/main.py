@@ -983,18 +983,23 @@ def _row_to_job_response(row, config: dict = None, overall_risk: Optional[str] =
 
 
 @app.get("/api/audits", response_model=List[JobResponse])
-async def list_audits():
+async def list_audits(schema_id: Optional[str] = None):
     try:
+        query = """
+            SELECT j.*, r.overall_risk, s.name as schema_name
+            FROM audit_jobs j
+            LEFT JOIN reports r ON r.job_id = j.id
+            LEFT JOIN audit_schemas s ON s.id = j.schema_id
+        """
+        params = []
+        if schema_id:
+            query += " WHERE j.schema_id = ?"
+            params.append(schema_id)
+        
+        query += " ORDER BY j.created_at DESC"
+
         async with get_db() as db:
-            cursor = await db.execute(
-                """
-                SELECT j.*, r.overall_risk, s.name as schema_name
-                FROM audit_jobs j
-                LEFT JOIN reports r ON r.job_id = j.id
-                LEFT JOIN audit_schemas s ON s.id = j.schema_id
-                ORDER BY j.created_at DESC
-                """
-            )
+            cursor = await db.execute(query, tuple(params))
             rows = await cursor.fetchall()
         jobs = []
         for row in rows:

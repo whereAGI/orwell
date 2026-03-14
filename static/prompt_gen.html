@@ -413,8 +413,8 @@
                 <button id="modeExistingBtn" onclick="setMode('existing')">Existing Dimension</button>
             </div>
 
-            <!-- Schema Selection -->
-            <div style="margin-bottom:16px;">
+            <!-- Schema Selection - REMOVED (Controlled by Nav) -->
+            <div style="margin-bottom:16px; display:none;">
                 <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">Target Schema</label>
                 <select id="schemaSelect" style="width:100%" onchange="onSchemaChanged()">
                     <option value="" disabled selected>Loading schemas...</option>
@@ -612,7 +612,7 @@
 
     <script src="/static/auth.js"></script>
     <script src="/static/nav.js"></script>
-    <script>renderNavbar('generate');</script>
+    <script>renderNavbar('generate', { showSchemaSelector: true });</script>
     <script src="/static/promptgen.js"></script>
 </body>
 

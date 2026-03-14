@@ -11,11 +11,9 @@ let perPage = 100; // Default to 100
 let totalItems = 0;
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Load schemas first, then dimensions, then prompts
-    loadSchemas().then(() => {
-        loadDimensions().then(() => {
-            loadPrompts(1);
-        });
+    // Load dimensions first, then prompts
+    loadDimensions().then(() => {
+        loadPrompts(1);
     });
 
     // Add listeners for filters
@@ -25,10 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
         searchTimeout = setTimeout(() => loadPrompts(1), 300);
     });
 
-    document.getElementById('schemaFilter').addEventListener('change', () => {
-        loadDimensions();
-        loadPrompts(1);
-    });
+    // schemaFilter removed
     document.getElementById('dimFilter').addEventListener('change', () => loadPrompts(1));
     document.getElementById('sourceFilter').addEventListener('change', () => loadPrompts(1));
     document.getElementById('fromDate').addEventListener('change', () => loadPrompts(1));
@@ -36,34 +31,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('rowsPerPage').addEventListener('change', updateRowsPerPage);
 });
 
-async function loadSchemas() {
-    try {
-        const res = await fetch('/api/schemas');
-        if (res.ok) {
-            const schemas = await res.json();
-            const select = document.getElementById('schemaFilter');
-            if (!select) return;
-            
-            // Clear existing options except first
-            while (select.options.length > 1) {
-                select.remove(1);
-            }
-            
-            schemas.forEach(s => {
-                const opt = document.createElement('option');
-                opt.value = s.id;
-                opt.textContent = `${s.icon || '✦'} ${s.name}`;
-                select.appendChild(opt);
-            });
-        }
-    } catch (e) {
-        console.error("Error loading schemas:", e);
-    }
-}
+// Listen for schema changes from Nav
+window.addEventListener('schemaChanged', () => {
+    loadDimensions().then(() => loadPrompts(1));
+});
+
+// loadSchemas removed
 
 async function loadDimensions() {
     try {
-        const schemaId = document.getElementById('schemaFilter').value;
+        const schemaId = getActiveSchema()?.id;
         let url = '/api/dimensions';
         if (schemaId) url += `?schema_id=${schemaId}`;
 
@@ -93,7 +70,7 @@ async function loadPrompts(page = 1) {
         const source = document.getElementById('sourceFilter').value || 'all';
         const search = document.getElementById('search').value;
         const dimension = document.getElementById('dimFilter').value;
-        const schemaId = document.getElementById('schemaFilter').value;
+        const schemaId = getActiveSchema()?.id;
         const fromDate = document.getElementById('fromDate').value;
         const toDate = document.getElementById('toDate').value;
 
