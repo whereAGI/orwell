@@ -1,0 +1,19 @@
+The Orwell Community License
+
+Copyright (c) 2026 whereAGI
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+1.  **Attribution:**
+    The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+    Any project, product, or service that incorporates the Software, in whole or in part, must clearly acknowledge the use of Orwell and provide a prominent link to the original repository: https://github.com/whereAGI/orwell.
+
+2.  **Commercial Use:**
+    You are permitted to use the Software in your own projects, including for commercial purposes (e.g., building a commercial application or service that utilizes the Software as a component or library), provided that such use complies with the other conditions of this license.
+
+3.  **Non-Resale and No White-Labeling:**
+    You may not sell, rent, lease, or sublicense the Software itself as a standalone product for a fee.
+    You may not modify the Software to create a derivative work that is substantially similar to the original Software and offer it for sale or as a paid service under a different name (rebranding/white-labeling).
+    This restriction applies to the Software in its entirety or any substantial portion thereof.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
