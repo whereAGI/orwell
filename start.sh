@@ -1,69 +1,54 @@
 #!/bin/bash
 
 # Orwell Startup Script
+# This script handles setup (venv, dependencies) and starting the application.
 
 set -e
 
+# Colors
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
-WARNING='\033[0;33m'
-NC='\033[0m'
+NC='\033[0m' # No Color
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║           Starting Orwell              ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
 echo ""
 
-# Check if virtual environment exists
-if [ ! -d ".venv" ]; then
-    echo -e "${RED}Error: Virtual environment not found${NC}"
-    echo "Please run: python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
+# 1. Check Python installation
+if command -v python3 &>/dev/null; then
+    PYTHON_CMD=python3
+elif command -v python &>/dev/null; then
+    PYTHON_CMD=python
+else
+    echo -e "${RED}Error: Python is not installed. Please install Python 3.10 or higher.${NC}"
     exit 1
 fi
 
-APP_PORT="${APP_PORT:-8000}"
+echo -e "${GREEN}✓ Found Python: $($PYTHON_CMD --version)${NC}"
 
-# Check and kill existing Orwell instance on the target port
-cleanup_port() {
-    local port=$1
-    local pid
-    pid=$(lsof -t -i:"$port" -sTCP:LISTEN 2>/dev/null || true)
-    if [ -n "$pid" ]; then
-        local cmd
-        cmd=$(ps -p "$pid" -o args= 2>/dev/null || true)
-        if [[ "$cmd" == *"uvicorn"* ]]; then
-            echo -e "${WARNING}Found existing Orwell instance on port $port (PID: $pid). Restarting...${NC}"
-            kill -9 "$pid" 2>/dev/null || true
-            sleep 1
-        else
-            echo -e "${RED}Error: Port $port is in use by another application (PID: $pid).${NC}"
-            echo -e "  Command: $cmd"
-            exit 1
-        fi
-    fi
-}
+# 2. Create Virtual Environment if missing
+if [ ! -d ".venv" ]; then
+    echo -e "${BLUE}Creating virtual environment...${NC}"
+    $PYTHON_CMD -m venv .venv
+    echo -e "${GREEN}✓ Virtual environment created${NC}"
+fi
 
-cleanup_port "$APP_PORT"
+# 3. Activate Virtual Environment
+source .venv/bin/activate
 
-# Create data directory if missing
+# 4. Install/Update Dependencies
+echo -e "${BLUE}Checking dependencies...${NC}"
+pip install -r requirements.txt --quiet
+echo -e "${GREEN}✓ Dependencies installed${NC}"
+
+# 5. Prepare Data Directory
 mkdir -p data
 
-echo -e "${GREEN}▶ Starting Orwell (FastAPI + SQLite)...${NC}"
-.venv/bin/uvicorn orwell.main:app --reload --port "$APP_PORT" &
-UVICORN_PID=$!
+# 6. Start Application
+APP_PORT="${APP_PORT:-8000}"
+echo -e "${GREEN}▶ Starting Orwell server...${NC}"
 
-echo -e "  Orwell running at ${BLUE}http://127.0.0.1:${APP_PORT}${NC} (PID: $UVICORN_PID)"
-echo ""
-echo -e "${GREEN}✓ Started successfully!${NC}"
-echo ""
-echo -e "${BLUE}URLs:${NC}"
-echo -e "  Playground:    http://127.0.0.1:${APP_PORT}"
-echo -e "  Data Studio:   http://127.0.0.1:${APP_PORT}/studio"
-echo -e "  Model Hub:     http://127.0.0.1:${APP_PORT}/model-hub"
-echo -e "  Configuration: http://127.0.0.1:${APP_PORT}/config"
-echo ""
-echo -e "Press ${RED}Ctrl+C${NC} to stop"
-echo ""
-
-wait $UVICORN_PID
+# Use exec to replace shell with python process, handles signals better
+exec uvicorn orwell.main:app --host 0.0.0.0 --port "$APP_PORT" --reload
