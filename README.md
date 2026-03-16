@@ -75,6 +75,7 @@ Orwell is a self-contained application. There are no external services, no cloud
 | **Audit Studio** | Run audits, monitor progress in real time, view reports |
 | **Model Hub** | Register and manage target and judge models from any provider |
 | **Data Studio** | Browse, search, import, and manage your prompt bank |
+| **Schema Builder** | Create domain-specific schemas to group dimensions for targeted audits |
 | **Dimension Builder** | Define custom bias dimensions and generate AI-powered prompts |
 | **Judge Bench** | Configure single or multi-model judge panels for scoring |
 | **Config** | Tune scoring thresholds, temperatures, and system prompts at runtime |
@@ -87,6 +88,7 @@ Orwell is a self-contained application. There are no external services, no cloud
 - **Any LLM, any provider** — Works with OpenAI, Anthropic (via OpenRouter), Google, Mistral, Ollama (local models), and any OpenAI-compatible endpoint.
 - **Local-first & fully private** — All data stays on your machine. Prompts, responses, scores, and reports are stored in a local SQLite database. Nothing is sent to external servers.
 - **Ollama support** — Run entirely offline using local models via Ollama for both the target and judge.
+- **Custom Audit Schemas** — Define industry-specific schemas (e.g., "Financial Compliance", "Brand Safety") to organize your audit dimensions.
 - **Define any bias dimension** — Not limited to cultural bias. Define your own dimension with a rubric and generate a full prompt set using AI.
 - **Judge Bench** — Score with a single model, a panel of up to 5 judges, or a Jury with a Foreman that adjudicates disagreements.
 - **Structured audit reports** — AI-generated executive summaries, failure analysis, and remediation recommendations — not just raw scores.
@@ -99,25 +101,9 @@ Orwell is a self-contained application. There are no external services, no cloud
 
 ## How It Works
 
-```
-
-1. Register your models        →   Add the LLM you want to test (target) and
-the LLM that will evaluate it (judge)
-via the Model Hub.
-2. Select your dimensions      →   Choose from the built-in GLOBE dimension
-library or create your own.
-3. Start the audit             →   Orwell fires scenario-based prompts at your
-target model and captures every response.
-4. Judge scores each response  →   The judge model scores each response 1–7
-(1 = highly biased, 7 = fully neutral) with
-a written reason for every score.
-5. Report is generated         →   A structured audit report is produced:
-per-dimension risk scores, flagged responses,
-AI failure analysis, and recommendations.
-```
-
-<!-- COMPONENT DIAGRAM PLACEHOLDER -->
-> 📐 *[Image: Step-by-step pipeline flow — target model → prompt → response → judge → score → report]*
+<p align="center">
+  <img src="static/how_it_works.png" alt="How Orwell Works" width="100%" />
+</p>
 
 ---
 
@@ -160,9 +146,11 @@ The Model Hub is where you connect Orwell to any LLM. Adding a model takes under
 
 Each model is registered with a name, provider, API key (if required), and optional system prompt or analysis persona. Orwell tests the connection live before saving. Models are categorised as either **target** (the model you're auditing) or **judge** (the model doing the evaluation).
 
+> 💡 **Ollama tip:** To run Orwell entirely offline, add an Ollama model as both your target and your judge. Set the base URL to `http://localhost:11434` and enter your model name (e.g. `llama3.2`, `qwen2.5`, `mistral`). No API key required.
+
 ---
 
-## Dimension Library & Custom Dimensions
+## Schemas, Dimensions & Customization
 
 ### Built-in Dimensions
 Orwell ships with 9 cultural bias dimensions based on the **GLOBE (Global Leadership and Organisational Behaviour Effectiveness)** research framework — one of the most widely cited cross-cultural studies in organisational psychology:
