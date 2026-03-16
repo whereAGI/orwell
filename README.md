@@ -146,8 +146,6 @@ The Model Hub is where you connect Orwell to any LLM. Adding a model takes under
 
 Each model is registered with a name, provider, API key (if required), and optional system prompt or analysis persona. Orwell tests the connection live before saving. Models are categorised as either **target** (the model you're auditing) or **judge** (the model doing the evaluation).
 
-> 💡 **Ollama tip:** To run Orwell entirely offline, add an Ollama model as both your target and your judge. Set the base URL to `http://localhost:11434` and enter your model name (e.g. `llama3.2`, `qwen2.5`, `mistral`). No API key required.
-
 ---
 
 ## Schemas, Dimensions & Customization
