@@ -21,10 +21,12 @@
 ---
 
 <p align="center">
-  <img src="static/report_screenshot.png" alt="Orwell Dashboard" width="100%" />
+  <a href="https://www.youtube.com/watch?v=nU-T3Trr-U0">
+    <img src="https://img.youtube.com/vi/nU-T3Trr-U0/maxresdefault.jpg" alt="Watch: Uncovering Hidden AI Bias with Orwell (No-Code LLM Auditing)" width="100%" />
+  </a>
 </p>
 <p align="center">
-  <i>Orwell Dashboard — Audit Studio with completed audit report</i>
+  <i>Watch: Uncovering Hidden AI Bias with Orwell (No-Code LLM Auditing)</i>
 </p>
 
 ---
