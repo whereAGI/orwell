@@ -31,18 +31,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('rowsPerPage').addEventListener('change', updateRowsPerPage);
 });
 
-// Listen for schema changes from Nav
-window.addEventListener('schemaChanged', () => {
-    loadDimensions().then(() => loadPrompts(1));
-});
+
 
 // loadSchemas removed
 
 async function loadDimensions() {
     try {
-        const schemaId = getActiveSchema()?.id;
         let url = '/api/dimensions';
-        if (schemaId) url += `?schema_id=${schemaId}`;
 
         const res = await fetch(url);
         if (res.ok) {
@@ -70,14 +65,12 @@ async function loadPrompts(page = 1) {
         const source = document.getElementById('sourceFilter').value || 'all';
         const search = document.getElementById('search').value;
         const dimension = document.getElementById('dimFilter').value;
-        const schemaId = getActiveSchema()?.id;
         const fromDate = document.getElementById('fromDate').value;
         const toDate = document.getElementById('toDate').value;
 
         let url = `/api/data/prompts?page=${page}&per_page=${perPage}&source=${source}&sort=${currentSort}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
         if (dimension) url += `&dimension=${encodeURIComponent(dimension)}`;
-        if (schemaId) url += `&schema_id=${encodeURIComponent(schemaId)}`;
         if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
         if (toDate) url += `&to_date=${encodeURIComponent(toDate)}`;
 
@@ -342,7 +335,6 @@ async function submitNewPrompt() {
     const dim = document.getElementById('newDimension').value.trim();
     const text = document.getElementById('newText').value.trim();
     const lang = document.getElementById('newLanguage').value.trim();
-    const schemaId = getActiveSchema()?.id;
 
     if (!dim || !text) {
         alert("Dimension and Text are required");
@@ -353,7 +345,7 @@ async function submitNewPrompt() {
         const res = await fetch('/api/data/prompts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dimension: dim, text: text, language: lang, schema_id: schemaId })
+            body: JSON.stringify({ dimension: dim, text: text, language: lang })
         });
         if (res.ok) {
             closeAddModal();
@@ -434,13 +426,8 @@ async function handleFileUpload(input) {
     const file = input.files[0];
     if (!file) return;
 
-    const schemaId = getActiveSchema()?.id;
-
     const formData = new FormData();
     formData.append('file', file);
-    if (schemaId) {
-        formData.append('schema_id', schemaId);
-    }
 
     try {
         // Show loading state if desired
@@ -534,9 +521,7 @@ async function loadJudgeModels() {
 // Load existing dimensions for the "Existing Dimension" dropdown
 async function loadExistingDimensions() {
     try {
-        const schemaId = getActiveSchema()?.id;
         let url = '/api/data/dimensions';
-        if (schemaId) url += `?schema_id=${schemaId}`;
 
         const res = await fetch(url);
         if (!res.ok) return;
