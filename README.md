@@ -47,6 +47,56 @@ Whether you're evaluating a third-party model before integrating it into your pr
 
 ---
 
+## Quickstart
+
+You can run Orwell on **Windows**, **macOS**, or **Linux**.
+
+### Prerequisites
+- **Git**: [Download Git](https://git-scm.com/downloads)
+- **Python 3.10+**: [Download Python](https://www.python.org/downloads/)
+- An API key for at least one LLM provider (or Ollama running locally for a fully offline setup)
+
+### Installation
+
+1.  **Clone the repository**:
+    Open your terminal or command prompt and run:
+    ```bash
+    git clone https://github.com/whereAGI/orwell.git
+    cd orwell
+    ```
+
+2.  **Start the Application**:
+
+    -   **Windows**:
+        Double-click `start.bat` or run in Command Prompt:
+        ```cmd
+        start.bat
+        ```
+
+    -   **macOS / Linux**:
+        Run in terminal:
+        ```bash
+        chmod +x start.sh  # Only needed the first time
+        ./start.sh
+        ```
+
+    *The script will automatically set up a virtual environment, install all dependencies, and launch the app.*
+
+3.  **Access the App**:
+    Open your browser and go to: [http://localhost:8000](http://localhost:8000)
+
+---
+
+### Running Your First Audit
+
+1. **Add a model** — Go to **Model Hub** and add the LLM you want to audit as a *Target* model, and a capable LLM (e.g. GPT-4o, Claude, or a local Ollama model) as a *Judge* model.
+2. **Open Audit Studio** — Go to the main dashboard and click **New Audit**.
+3. **Configure your audit** — Select your target model, your judge model (or a Judge Bench if you've set one up), choose your dimensions, and set a sample size.
+4. **Run it** — Click **Start Audit**. Watch the live log stream as Orwell works through the prompts.
+5. **View the report** — When complete, click **View Report** to see the full structured audit.
+
+---
+
 ## What Can You Audit?
 
 Orwell ships with a built-in library of cultural bias dimensions based on the GLOBE research framework, but the platform is designed for **any** behavioral bias you can define:
@@ -243,56 +293,6 @@ A full table of every response that scored below 4, with the prompt, the model's
 - **Executive Summary** — A plain-language overview of the audit findings, written for decision-makers
 - **Failure Analysis** — A deep-dive into the most significant failures, with specific examples
 - **Recommendations** — Actionable remediation steps, including system prompt suggestions and a summary table
-
----
-
-## Quickstart
-
-You can run Orwell on **Windows**, **macOS**, or **Linux**.
-
-### Prerequisites
-- **Git**: [Download Git](https://git-scm.com/downloads)
-- **Python 3.10+**: [Download Python](https://www.python.org/downloads/)
-- An API key for at least one LLM provider (or Ollama running locally for a fully offline setup)
-
-### Installation
-
-1.  **Clone the repository**:
-    Open your terminal or command prompt and run:
-    ```bash
-    git clone https://github.com/whereAGI/orwell.git
-    cd orwell
-    ```
-
-2.  **Start the Application**:
-
-    -   **Windows**:
-        Double-click `start.bat` or run in Command Prompt:
-        ```cmd
-        start.bat
-        ```
-
-    -   **macOS / Linux**:
-        Run in terminal:
-        ```bash
-        chmod +x start.sh  # Only needed the first time
-        ./start.sh
-        ```
-
-    *The script will automatically set up a virtual environment, install all dependencies, and launch the app.*
-
-3.  **Access the App**:
-    Open your browser and go to: [http://localhost:8000](http://localhost:8000)
-
----
-
-### Running Your First Audit
-
-1. **Add a model** — Go to **Model Hub** and add the LLM you want to audit as a *Target* model, and a capable LLM (e.g. GPT-4o, Claude, or a local Ollama model) as a *Judge* model.
-2. **Open Audit Studio** — Go to the main dashboard and click **New Audit**.
-3. **Configure your audit** — Select your target model, your judge model (or a Judge Bench if you've set one up), choose your dimensions, and set a sample size.
-4. **Run it** — Click **Start Audit**. Watch the live log stream as Orwell works through the prompts.
-5. **View the report** — When complete, click **View Report** to see the full structured audit.
 
 ---
 
