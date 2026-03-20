@@ -23,7 +23,8 @@ pb_data/
 data/provider_keys.db
 
 # Test Data
-data/
+data/*
+!data/globe_prompts.csv
 # Scripts that might contain local config
 # init_default_models.py
 

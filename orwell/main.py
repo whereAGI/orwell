@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, UploadFile, File, Response
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, UploadFile, File, Form, Response
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -1405,7 +1405,10 @@ async def create_custom_prompt(req: CreatePromptRequest):
 
 
 @app.post("/api/data/prompts/import")
-async def import_prompts_csv(file: UploadFile = File(...)):
+async def import_prompts_csv(
+    file: UploadFile = File(...),
+    schema_id: Optional[str] = Form(None)
+):
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are allowed")
 
@@ -1431,7 +1434,8 @@ async def import_prompts_csv(file: UploadFile = File(...)):
                     text_val = row.get("text") or row.get("prompt")
                     dim_val  = row.get("dimension")
                     lang_val = row.get("language", "en")
-                    schema_val = row.get("schema_id")
+                    # If schema_id is not in the row, use the form schema_id
+                    schema_val = row.get("schema_id", schema_id)
                     if not text_val or not dim_val:
                         continue
                     await db.execute(

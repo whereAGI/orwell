@@ -434,8 +434,13 @@ async function handleFileUpload(input) {
     const file = input.files[0];
     if (!file) return;
 
+    const schemaId = getActiveSchema()?.id;
+
     const formData = new FormData();
     formData.append('file', file);
+    if (schemaId) {
+        formData.append('schema_id', schemaId);
+    }
 
     try {
         // Show loading state if desired

@@ -85,6 +85,15 @@ You can run Orwell on **Windows**, **macOS**, or **Linux**.
 3.  **Access the App**:
     Open your browser and go to: [http://localhost:8000](http://localhost:8000)
 
+### Importing Sample Data (GLOBE Framework)
+
+Orwell ships with a sample dataset based on the GLOBE cultural framework. If your Data Studio is empty, you can easily import it:
+
+1. Open Orwell and navigate to the **Data Studio** tab.
+2. Click the **Import CSV** button.
+3. Select the `data/globe_prompts.csv` file included in this repository.
+4. The built-in GLOBE dimensions and prompts will now be available for your audits.
+
 ---
 
 ### Running Your First Audit
