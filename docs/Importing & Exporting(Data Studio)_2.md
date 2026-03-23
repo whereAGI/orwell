@@ -1,6 +1,6 @@
 # Importing & Exporting Prompts
 
-Orwell's Data Studio supports CSV import and export, making it easy to bulk-load prompts, share datasets, or back up your library.
+Orwell's Data Studio supports CSV import and export, making it easy to bulk-load prompts, share datasets, or back up your library. Combined with the schema export/import feature, this lets you share a complete, reproducible audit setup with the community.
 
 ---
 
@@ -74,8 +74,21 @@ Apply filters and click **"Delete All Matching"**. This deletes every `custom` p
 
 ---
 
+## Sharing a Complete Audit Setup
+
+Prompt CSVs and schema JSON files are designed to work together as a portable audit package. To share your full audit setup with the community:
+
+1. **Export the schema** — go to `/schemas`, find your schema, and click **Export**. This downloads a `.json` file with all evaluation configuration (scoring rubric, judge instructions, generator instructions, report prompts).
+2. **Export the prompts** — in the Data Studio, filter by the schema, then click **Export CSV**. This downloads all prompts tagged to that schema.
+3. **Share both files** — the recipient imports the schema first (via `/schemas` → **Import Schema**), then imports the prompt CSV into the Data Studio, tagging it to the newly imported schema.
+
+This gives another user an identical evaluation environment: same scoring criteria, same test data, same report configuration — ready to run audits immediately with no manual setup.
+
+---
+
 ## Tips
 
 - **Use schema tagging on import** to keep your library organised by audit context. Prompts without a schema appear in the global view but won't show up in schema-filtered dropdowns during audit setup.
 - **Export before bulk deletes** as a backup — there is no undo.
 - **Combine CSV import with the Prompt Generator** — generate a batch of AI prompts, export them, review and edit them offline, then re-import the cleaned version.
+- **Schema JSON + prompt CSV together** form a complete, shareable audit package. See [Audit Schemas](/docs) for details on the schema export format.

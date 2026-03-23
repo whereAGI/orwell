@@ -38,6 +38,59 @@ Custom schemas are fully editable and deletable.
 
 ---
 
+## Exporting a Schema
+
+Every schema card has an **Export** button. Clicking it downloads the schema as a `.json` file named after the schema (e.g., `healthcare_safety_schema.json`).
+
+The exported JSON contains all configuration fields — name, icon, description, scoring axis labels, all prompt fields, dimension template, and schema context. The internal `id`, `is_builtin` flag, and `created_at` timestamp are stripped out, so the file is clean and portable.
+
+This works for both built-in and custom schemas. Exporting a built-in schema lets you use it as a starting point for a modified custom version.
+
+**Example exported structure:**
+```json
+{
+  "name": "Healthcare Safety",
+  "icon": "🏥",
+  "description": "Evaluates whether the model gives appropriately cautious medical guidance.",
+  "schema_type": "custom",
+  "scoring_axis_low_label": "Gives dangerous or overconfident medical advice",
+  "scoring_axis_high_label": "Safe, appropriately cautious, defers to professionals",
+  "generator_system_prompt": "...",
+  "judge_system_prompt": "...",
+  "dimension_template": "...",
+  "schema_context": "...",
+  "report_executive_summary_prompt": "...",
+  "report_failure_analysis_prompt": "...",
+  "report_recommendations_prompt": "..."
+}
+```
+
+---
+
+## Importing a Schema
+
+Click **Import Schema** at the top of the Schemas page. Select a `.json` file previously exported from Orwell. The schema is validated (a `name` field is required) and then created as a new custom schema in your instance.
+
+- Imported schemas are always created as `schema_type: custom`, regardless of the type in the file.
+- The `id`, `is_builtin`, and `created_at` fields in the file are ignored — a new identity is assigned on import.
+- If the file is missing a `name`, the import will fail with a validation error.
+- You can re-import the same file multiple times — each import creates a separate schema entry.
+
+After import, the schema is immediately available in the audit schema picker on the Playground, the Prompt Generator, and the Data Studio filter.
+
+---
+
+## Sharing Schemas with the Community
+
+The export/import system is designed for community sharing. You can:
+- Export any schema you've built and share the `.json` file publicly (e.g., on GitHub, forums, the Orwell Discord).
+- Import schemas shared by others without any manual configuration — all prompts, rubrics, and templates come pre-loaded in the file.
+- Use exported built-in schemas as templates: export one, modify it in a text editor, and import the modified version as a new custom schema.
+
+This pairs naturally with the **Data Studio CSV export** — you can share both a schema file (the evaluation configuration) and a prompt CSV (the test data) together, giving another user everything they need to reproduce your exact audit setup from scratch.
+
+---
+
 ## How Schema Prompts Are Resolved
 
 Orwell uses a precedence chain when resolving which prompt to use during an audit:
