@@ -323,20 +323,20 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-category">
       <div class="sidebar-category-title">Getting Started</div>
-      <a class="sidebar-link" onclick="loadDoc('Introduction(Getting Started)_1.md', this)">Introduction</a>
-      <a class="sidebar-link" onclick="loadDoc('Installation(Getting Started)_2.md', this)">Installation</a>
+      <a class="sidebar-link" onclick="loadDoc('Introduction(Getting Started_1)_1.md', this)">Introduction</a>
+      <a class="sidebar-link" onclick="loadDoc('Installation(Getting Started_1)_2.md', this)">Installation</a>
     </div>
 
     <div class="sidebar-category">
       <div class="sidebar-category-title">Usage</div>
-      <a class="sidebar-link" onclick="loadDoc('Configuration(Usage)_1.md', this)">Configuration</a>
-      <a class="sidebar-link" onclick="loadDoc('Audit(Usage)_2.md', this)">Audit</a>
+      <a class="sidebar-link" onclick="loadDoc('Configuration(Usage_3)_1.md', this)">Configuration</a>
+      <a class="sidebar-link" onclick="loadDoc('Audit(Usage_3)_2.md', this)">Audit</a>
     </div>
 
     <div class="sidebar-category">
       <div class="sidebar-category-title">Methodology</div>
-      <a class="sidebar-link" onclick="loadDoc('Evaluation Criteria(Methodology)_1.md', this)">Evaluation Criteria</a>
-      <a class="sidebar-link" onclick="loadDoc('Generating New Dimensions(Methodology)_2.md', this)">Generating New Dimensions</a>
+      <a class="sidebar-link" onclick="loadDoc('Evaluation Criteria(Methodology_4)_1.md', this)">Evaluation Criteria</a>
+      <a class="sidebar-link" onclick="loadDoc('Generating New Dimensions(Methodology_4)_2.md', this)">Generating New Dimensions</a>
     </div>
   </aside>
 
@@ -407,7 +407,7 @@
   window.addEventListener('DOMContentLoaded', () => {
     // Check if there's a hash in the URL to load a specific doc
     const hash = window.location.hash.replace('#', '');
-    let defaultDoc = 'Introduction(Getting Started)_1.md';
+    let defaultDoc = 'Introduction(Getting Started_1)_1.md';
     let defaultLink = document.querySelectorAll('.sidebar-link')[0];
 
     if (hash) {

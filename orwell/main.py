@@ -233,19 +233,28 @@ async def list_docs():
     sections_map = {}
     if os.path.exists(docs_dir):
         files = [f for f in os.listdir(docs_dir) if f.endswith(".md")]
-        pattern = re.compile(r"^(.*?)\((.*?)\)_(\d+)\.md$")
+        # Updated pattern: title(header_headerOrder)_docOrder.md
+        pattern = re.compile(r"^(.*?)\((.*?)_(\d+)\)_(\d+)\.md$")
         for filename in files:
             match = pattern.match(filename)
             if match:
                 title  = match.group(1)
                 header = match.group(2)
-                order  = int(match.group(3)) if match.group(3).isdigit() else 999
+                header_order = int(match.group(3))
+                order  = int(match.group(4))
+                
                 if header not in sections_map:
-                    sections_map[header] = []
-                sections_map[header].append({"title": title, "filename": filename, "order": order})
+                    sections_map[header] = {"order": header_order, "pages": []}
+                sections_map[header]["pages"].append({"title": title, "filename": filename, "order": order})
+                
     result = []
-    for header in sorted(sections_map.keys()):
-        result.append({"header": header, "pages": sorted(sections_map[header], key=lambda x: x["order"])})
+    # sort headers by header_order
+    sorted_headers = sorted(sections_map.keys(), key=lambda h: sections_map[h]["order"])
+    for header in sorted_headers:
+        result.append({
+            "header": header,
+            "pages": sorted(sections_map[header]["pages"], key=lambda x: x["order"])
+        })
     return {"sections": result}
 
 
