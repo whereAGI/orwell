@@ -2,6 +2,7 @@ let allPrompts = [];
 let deleteTargetId = null;
 let editTargetId = null;
 let currentSort = '-created_at'; // Default: newest first
+let selectAllAcrossPages = false;
 
 // Removed fetch wrapper for pb auth token
 
@@ -19,15 +20,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add listeners for filters
     let searchTimeout;
     document.getElementById('search').addEventListener('keyup', () => {
+        clearSelection();
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => loadPrompts(1), 300);
     });
 
     // schemaFilter removed
-    document.getElementById('dimFilter').addEventListener('change', () => loadPrompts(1));
-    document.getElementById('sourceFilter').addEventListener('change', () => loadPrompts(1));
-    document.getElementById('fromDate').addEventListener('change', () => loadPrompts(1));
-    document.getElementById('toDate').addEventListener('change', () => loadPrompts(1));
+    document.getElementById('dimFilter').addEventListener('change', () => { clearSelection(); loadPrompts(1); });
+    document.getElementById('sourceFilter').addEventListener('change', () => { clearSelection(); loadPrompts(1); });
+    document.getElementById('fromDate').addEventListener('change', () => { clearSelection(); loadPrompts(1); });
+    document.getElementById('toDate').addEventListener('change', () => { clearSelection(); loadPrompts(1); });
     document.getElementById('rowsPerPage').addEventListener('change', updateRowsPerPage);
 });
 
@@ -176,35 +178,118 @@ function toggleSelectAll() {
     const selectAll = document.getElementById('selectAll');
     const checkboxes = document.querySelectorAll('.row-checkbox');
     checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    selectAllAcrossPages = false;
+    updateBulkDeleteState();
+}
+
+function handleRowCheckboxChange(cb) {
+    if (!cb.checked && selectAllAcrossPages) {
+        selectAllAcrossPages = false;
+    }
+    const allCheckboxes = document.querySelectorAll('.row-checkbox');
+    const checkedBoxes = document.querySelectorAll('.row-checkbox:checked');
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) selectAll.checked = (allCheckboxes.length > 0 && allCheckboxes.length === checkedBoxes.length);
+    
     updateBulkDeleteState();
 }
 
 function updateBulkDeleteState() {
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
     const btn = document.getElementById('bulkDeleteBtn');
+    const banner = document.getElementById('selectAllBanner');
+    
     if (checkboxes.length > 0) {
         btn.style.display = 'inline-block';
-        btn.textContent = `Delete Selected (${checkboxes.length})`;
+        
+        if (selectAllAcrossPages) {
+            btn.textContent = `Delete Selected (${totalItems})`;
+            if (banner) {
+                banner.style.display = 'flex';
+                banner.innerHTML = `All <strong>${totalItems}</strong> prompts in this view are selected. <button style="background:none; border:none; color:#6366f1; text-decoration:underline; cursor:pointer; padding:0; font-size:inherit; font-weight:600; margin-left:8px;" onclick="clearSelection()">Clear selection</button>`;
+            }
+        } else {
+            btn.textContent = `Delete Selected (${checkboxes.length})`;
+            
+            // Check if all visible checkboxes are checked and there are more items than visible
+            const allCheckboxes = document.querySelectorAll('.row-checkbox');
+            if (checkboxes.length === allCheckboxes.length && totalItems > allCheckboxes.length) {
+                if (banner) {
+                    banner.style.display = 'flex';
+                    banner.innerHTML = `All <strong>${checkboxes.length}</strong> prompts on this page are selected. <button style="background:none; border:none; color:#6366f1; text-decoration:underline; cursor:pointer; padding:0; font-size:inherit; font-weight:600; margin-left:8px;" onclick="selectAllFiltered()">Select all <strong>${totalItems}</strong> prompts</button>`;
+                }
+            } else {
+                if (banner) banner.style.display = 'none';
+            }
+        }
     } else {
         btn.style.display = 'none';
+        if (banner) banner.style.display = 'none';
+        selectAllAcrossPages = false;
     }
 }
 
+function selectAllFiltered() {
+    selectAllAcrossPages = true;
+    updateBulkDeleteState();
+}
+
+function clearSelection() {
+    selectAllAcrossPages = false;
+    const selectAll = document.getElementById('selectAll');
+    if (selectAll) selectAll.checked = false;
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(cb => cb.checked = false);
+    updateBulkDeleteState();
+}
+
 async function bulkDelete() {
-    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
-    const ids = Array.from(checkboxes).map(cb => cb.value);
-
-    if (ids.length === 0) return;
-
-    // Use the custom modal for bulk delete too
-    deleteTargetId = ids; // Store array for bulk delete logic
     document.getElementById('deleteModal').classList.add('active');
-
-    // Update message
     const msg = document.querySelector('#deleteModal p');
-    if (msg) msg.textContent = `Are you sure you want to delete ${ids.length} prompts? This action cannot be undone.`;
 
-    document.getElementById('confirmDeleteBtn').onclick = () => performBulkDelete(ids);
+    if (selectAllAcrossPages) {
+        if (msg) msg.textContent = `Are you sure you want to delete ALL ${totalItems} prompts matching the current filters? This action cannot be undone.`;
+        document.getElementById('confirmDeleteBtn').onclick = () => performBulkDeleteFiltered();
+    } else {
+        const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+        const ids = Array.from(checkboxes).map(cb => cb.value);
+        if (ids.length === 0) return;
+
+        deleteTargetId = ids; // Store array for bulk delete logic
+        if (msg) msg.textContent = `Are you sure you want to delete ${ids.length} prompts? This action cannot be undone.`;
+        document.getElementById('confirmDeleteBtn').onclick = () => performBulkDelete(ids);
+    }
+}
+
+async function performBulkDeleteFiltered() {
+    const source = document.getElementById('sourceFilter').value || 'all';
+    const search = document.getElementById('search').value;
+    const dimension = document.getElementById('dimFilter').value;
+    const fromDate = document.getElementById('fromDate').value;
+    const toDate = document.getElementById('toDate').value;
+
+    let url = `/api/data/prompts/bulk-filter?source=${source}`;
+    if (search) url += `&search=${encodeURIComponent(search)}`;
+    if (dimension) url += `&dimension=${encodeURIComponent(dimension)}`;
+    if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
+    if (toDate) url += `&to_date=${encodeURIComponent(toDate)}`;
+
+    try {
+        const res = await fetch(url, {
+            method: 'DELETE'
+        });
+
+        if (res.ok) {
+            clearSelection();
+            loadPrompts(1);
+            closeDeleteModal();
+        } else {
+            alert("Failed to delete prompts");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Error deleting prompts");
+    }
 }
 
 async function performBulkDelete(ids) {
@@ -236,14 +321,19 @@ function renderTable() {
 
     // Reset select all
     const selectAll = document.getElementById('selectAll');
-    if (selectAll) selectAll.checked = false;
-    updateBulkDeleteState();
+    if (selectAll) selectAll.checked = selectAllAcrossPages;
 
     // Check filter to toggle Model column
     const sourceFilter = document.getElementById('sourceFilter').value;
-    const showModel = sourceFilter === 'custom';
+    const showModel = sourceFilter !== 'system';
     const thModel = document.getElementById('thModel');
     if (thModel) thModel.style.display = showModel ? 'table-cell' : 'none';
+
+    if (allPrompts.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${showModel ? 9 : 8}" style="text-align:center;color:var(--muted)">No prompts found.</td></tr>`;
+        updateBulkDeleteState();
+        return;
+    }
 
     // Data is already filtered by server
     allPrompts.forEach((p, index) => {
@@ -273,7 +363,7 @@ function renderTable() {
 
         tr.innerHTML = `
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                <input type="checkbox" class="row-checkbox" value="${p.id}" onchange="updateBulkDeleteState()">
+                <input type="checkbox" class="row-checkbox" value="${p.id}" ${selectAllAcrossPages ? 'checked' : ''} onchange="handleRowCheckboxChange(this)">
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${globalIndex}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${dateStr}</td>
@@ -301,6 +391,8 @@ function renderTable() {
         `;
         tbody.appendChild(tr);
     });
+
+    updateBulkDeleteState();
 }
 
 // Modal Logic

@@ -1470,6 +1470,51 @@ async def bulk_delete_prompts(ids: List[str]):
     return {"deleted": deleted_count, "errors": errors}
 
 
+@app.delete("/api/data/prompts/bulk-filter")
+async def bulk_delete_prompts_by_filter(
+    source:    str          = Query("all", regex="^(all|system|custom)$"),
+    search:    Optional[str] = None,
+    dimension: Optional[str] = None,
+    schema_id: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date:   Optional[str] = None,
+):
+    conditions = []
+    params: list = []
+
+    if source == "system":
+        conditions.append("type = 'system'")
+    elif source == "custom":
+        conditions.append("type = 'custom'")
+
+    if search:
+        conditions.append("text LIKE ?")
+        params.append(f"%{search}%")
+    if dimension:
+        conditions.append("dimension = ?")
+        params.append(dimension)
+    if schema_id:
+        conditions.append("schema_id = ?")
+        params.append(schema_id)
+    if from_date:
+        conditions.append("created_at >= ?")
+        params.append(f"{from_date} 00:00:00")
+    if to_date:
+        conditions.append("created_at <= ?")
+        params.append(f"{to_date} 23:59:59")
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    try:
+        async with get_db() as db:
+            result = await db.execute(f"DELETE FROM custom_prompts {where}", params)
+            await db.commit()
+            deleted_count = result.rowcount
+        return {"deleted": deleted_count, "errors": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.delete("/api/data/prompts/{id}")
 async def delete_custom_prompt(id: str):
     try:
