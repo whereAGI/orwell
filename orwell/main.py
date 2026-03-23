@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, UploadFile, File, Response
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Query, UploadFile, File, Form, Response
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -144,6 +144,16 @@ class CreatePromptRequest(BaseModel):
     language: str = "en"
     schema_id: Optional[str] = None
 
+class ExportPromptsRequest(BaseModel):
+    source: str = "all"
+    search: Optional[str] = None
+    dimension: Optional[str] = None
+    schema_id: Optional[str] = None
+    from_date: Optional[str] = None
+    to_date: Optional[str] = None
+    ids: Optional[List[str]] = None
+    select_all: bool = False
+
 
 class TestConnectionRequest(BaseModel):
     provider: str
@@ -223,19 +233,28 @@ async def list_docs():
     sections_map = {}
     if os.path.exists(docs_dir):
         files = [f for f in os.listdir(docs_dir) if f.endswith(".md")]
-        pattern = re.compile(r"^(.*?)\((.*?)\)_(\d+)\.md$")
+        # Updated pattern: title(header_headerOrder)_docOrder.md
+        pattern = re.compile(r"^(.*?)\((.*?)_(\d+)\)_(\d+)\.md$")
         for filename in files:
             match = pattern.match(filename)
             if match:
                 title  = match.group(1)
                 header = match.group(2)
-                order  = int(match.group(3)) if match.group(3).isdigit() else 999
+                header_order = int(match.group(3))
+                order  = int(match.group(4))
+                
                 if header not in sections_map:
-                    sections_map[header] = []
-                sections_map[header].append({"title": title, "filename": filename, "order": order})
+                    sections_map[header] = {"order": header_order, "pages": []}
+                sections_map[header]["pages"].append({"title": title, "filename": filename, "order": order})
+                
     result = []
-    for header in sorted(sections_map.keys()):
-        result.append({"header": header, "pages": sorted(sections_map[header], key=lambda x: x["order"])})
+    # sort headers by header_order
+    sorted_headers = sorted(sections_map.keys(), key=lambda h: sections_map[h]["order"])
+    for header in sorted_headers:
+        result.append({
+            "header": header,
+            "pages": sorted(sections_map[header]["pages"], key=lambda x: x["order"])
+        })
     return {"sections": result}
 
 
@@ -1405,7 +1424,10 @@ async def create_custom_prompt(req: CreatePromptRequest):
 
 
 @app.post("/api/data/prompts/import")
-async def import_prompts_csv(file: UploadFile = File(...)):
+async def import_prompts_csv(
+    file: UploadFile = File(...),
+    schema_id: Optional[str] = Form(None)
+):
     if not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files are allowed")
 
@@ -1431,7 +1453,8 @@ async def import_prompts_csv(file: UploadFile = File(...)):
                     text_val = row.get("text") or row.get("prompt")
                     dim_val  = row.get("dimension")
                     lang_val = row.get("language", "en")
-                    schema_val = row.get("schema_id")
+                    # If schema_id is not in the row, use the form schema_id
+                    schema_val = row.get("schema_id", schema_id)
                     if not text_val or not dim_val:
                         continue
                     await db.execute(
@@ -1450,6 +1473,63 @@ async def import_prompts_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
 
 
+@app.post("/api/data/prompts/export")
+async def export_prompts(req: ExportPromptsRequest):
+    conditions = []
+    params: list = []
+
+    if req.ids and not req.select_all:
+        placeholders = ",".join("?" * len(req.ids))
+        conditions.append(f"id IN ({placeholders})")
+        params.extend(req.ids)
+    else:
+        if req.source == "system":
+            conditions.append("type = 'system'")
+        elif req.source == "custom":
+            conditions.append("type = 'custom'")
+
+        if req.search:
+            conditions.append("text LIKE ?")
+            params.append(f"%{req.search}%")
+        if req.dimension:
+            conditions.append("dimension = ?")
+            params.append(req.dimension)
+        if req.schema_id:
+            conditions.append("schema_id = ?")
+            params.append(req.schema_id)
+        if req.from_date:
+            conditions.append("created_at >= ?")
+            params.append(f"{req.from_date} 00:00:00")
+        if req.to_date:
+            conditions.append("created_at <= ?")
+            params.append(f"{req.to_date} 23:59:59")
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    order = "ORDER BY created_at DESC"
+
+    try:
+        async with get_db() as db:
+            cursor = await db.execute(
+                f"SELECT dimension, text, language, type, model, created_at FROM custom_prompts {where} {order}",
+                params,
+            )
+            rows = await cursor.fetchall()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["dimension", "text", "language", "type", "model", "created_at"])
+        for r in rows:
+            writer.writerow([r["dimension"], r["text"], r["language"], r["type"], r["model"], r["created_at"]])
+
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=prompts.csv"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.delete("/api/data/prompts/bulk")
 async def bulk_delete_prompts(ids: List[str]):
     deleted_count = 0
@@ -1464,6 +1544,51 @@ async def bulk_delete_prompts(ids: List[str]):
         except Exception as e:
             errors.append(f"Error deleting prompt {pid}: {str(e)}")
     return {"deleted": deleted_count, "errors": errors}
+
+
+@app.delete("/api/data/prompts/bulk-filter")
+async def bulk_delete_prompts_by_filter(
+    source:    str          = Query("all", regex="^(all|system|custom)$"),
+    search:    Optional[str] = None,
+    dimension: Optional[str] = None,
+    schema_id: Optional[str] = None,
+    from_date: Optional[str] = None,
+    to_date:   Optional[str] = None,
+):
+    conditions = []
+    params: list = []
+
+    if source == "system":
+        conditions.append("type = 'system'")
+    elif source == "custom":
+        conditions.append("type = 'custom'")
+
+    if search:
+        conditions.append("text LIKE ?")
+        params.append(f"%{search}%")
+    if dimension:
+        conditions.append("dimension = ?")
+        params.append(dimension)
+    if schema_id:
+        conditions.append("schema_id = ?")
+        params.append(schema_id)
+    if from_date:
+        conditions.append("created_at >= ?")
+        params.append(f"{from_date} 00:00:00")
+    if to_date:
+        conditions.append("created_at <= ?")
+        params.append(f"{to_date} 23:59:59")
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    try:
+        async with get_db() as db:
+            result = await db.execute(f"DELETE FROM custom_prompts {where}", params)
+            await db.commit()
+            deleted_count = result.rowcount
+        return {"deleted": deleted_count, "errors": []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/api/data/prompts/{id}")

@@ -3144,4 +3144,22 @@ document.addEventListener('DOMContentLoaded', () => {
 window.addEventListener('schemaChanged', () => {
     loadAuditList();
     loadDimensions();
+    
+    // Clear currently displayed report to prevent showing data from a previous schema
+    currentJobId = null;
+    currentReportData = null;
+    reportLoadedForJob = null;
+    isReportLoading = false;
+    selectedDimensions = [];
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = null;
+    document.getElementById('report').style.display = 'none';
+    document.getElementById('status').style.display = 'none';
+    const termContent = document.getElementById('terminalContent');
+    if (termContent) termContent.innerHTML = '';
+    
+    // Clear sidebar selection
+    document.querySelectorAll('.audit-item').forEach(el => {
+      el.classList.remove('selected-audit');
+    });
 });

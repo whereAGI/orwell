@@ -145,6 +145,7 @@
                         onchange="handleFileUpload(this)">
                     <button onclick="document.getElementById('csvUpload').click()" style="width: auto;"
                         class="secondary">Import CSV</button>
+                    <button onclick="exportData()" style="width: auto;" class="secondary">Export CSV</button>
                     <button onclick="window.location.href='/generate'"
                         style="width: auto; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-color: transparent;">⚡
                         Generate Prompts</button>
@@ -178,6 +179,9 @@
                     <input type="number" id="rowsPerPage" value="100" min="1" style="width: 80px;"
                         onchange="updateRowsPerPage()">
                 </div>
+            </div>
+
+            <div id="selectAllBanner" style="display: none; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary); padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; text-align: center; font-size: 14px; align-items: center; justify-content: center;">
             </div>
 
             <div style="overflow-x: auto;">

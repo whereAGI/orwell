@@ -21,10 +21,12 @@
 ---
 
 <p align="center">
-  <img src="static/report_screenshot.png" alt="Orwell Dashboard" width="100%" />
+  <a href="https://www.youtube.com/watch?v=nU-T3Trr-U0">
+    <img src="https://img.youtube.com/vi/nU-T3Trr-U0/maxresdefault.jpg" alt="Watch: Uncovering Hidden AI Bias with Orwell (No-Code LLM Auditing)" width="100%" />
+  </a>
 </p>
 <p align="center">
-  <i>Orwell Dashboard — Audit Studio with completed audit report</i>
+  <i>Watch: Uncovering Hidden AI Bias with Orwell (No-Code LLM Auditing)</i>
 </p>
 
 ---
@@ -42,6 +44,65 @@ Most teams test their models for accuracy, speed, and safety guardrails. Almost 
 It lets any team — product managers, AI engineers, compliance officers, researchers — systematically probe any LLM for behavioral bias across any dimension they define. You don't need to write code. You don't need a data science background. You define what you care about, and Orwell runs the audit, scores every response using an independent judge model, and delivers a structured report that tells you exactly what your model believes, where it fails, and what to do about it.
 
 Whether you're evaluating a third-party model before integrating it into your product, auditing a fine-tuned model for regulatory compliance, or simply trying to understand the behavioural tendencies of a model you're building on — Orwell gives you the evidence.
+
+---
+
+## Quickstart
+
+You can run Orwell on **Windows**, **macOS**, or **Linux**.
+
+### Prerequisites
+- **Git**: [Download Git](https://git-scm.com/downloads)
+- **Python 3.10+**: [Download Python](https://www.python.org/downloads/)
+- An API key for at least one LLM provider (or Ollama running locally for a fully offline setup)
+
+### Installation
+
+1.  **Clone the repository**:
+    Open your terminal or command prompt and run:
+    ```bash
+    git clone https://github.com/whereAGI/orwell.git
+    cd orwell
+    ```
+
+2.  **Start the Application**:
+
+    -   **Windows**:
+        Double-click `start.bat` or run in Command Prompt:
+        ```cmd
+        start.bat
+        ```
+
+    -   **macOS / Linux**:
+        Run in terminal:
+        ```bash
+        chmod +x start.sh  # Only needed the first time
+        ./start.sh
+        ```
+
+    *The script will automatically set up a virtual environment, install all dependencies, and launch the app.*
+
+3.  **Access the App**:
+    Open your browser and go to: [http://localhost:8000](http://localhost:8000)
+
+### Importing Sample Data (GLOBE Framework)
+
+Orwell ships with a sample dataset based on the GLOBE cultural framework. If your Data Studio is empty, you can easily import it:
+
+1. Open Orwell and navigate to the **Data Studio** tab.
+2. Click the **Import CSV** button.
+3. Select the `data/globe_prompts.csv` file included in this repository.
+4. The built-in GLOBE dimensions and prompts will now be available for your audits.
+
+---
+
+### Running Your First Audit
+
+1. **Add a model** — Go to **Model Hub** and add the LLM you want to audit as a *Target* model, and a capable LLM (e.g. GPT-4o, Claude, or a local Ollama model) as a *Judge* model.
+2. **Open Audit Studio** — Go to the main dashboard and click **New Audit**.
+3. **Configure your audit** — Select your target model, your judge model (or a Judge Bench if you've set one up), choose your dimensions, and set a sample size.
+4. **Run it** — Click **Start Audit**. Watch the live log stream as Orwell works through the prompts.
+5. **View the report** — When complete, click **View Report** to see the full structured audit.
 
 ---
 
@@ -239,56 +300,6 @@ A full table of every response that scored below 4, with the prompt, the model's
 - **Executive Summary** — A plain-language overview of the audit findings, written for decision-makers
 - **Failure Analysis** — A deep-dive into the most significant failures, with specific examples
 - **Recommendations** — Actionable remediation steps, including system prompt suggestions and a summary table
-
----
-
-## Quickstart
-
-You can run Orwell on **Windows**, **macOS**, or **Linux**.
-
-### Prerequisites
-- **Git**: [Download Git](https://git-scm.com/downloads)
-- **Python 3.10+**: [Download Python](https://www.python.org/downloads/)
-- An API key for at least one LLM provider (or Ollama running locally for a fully offline setup)
-
-### Installation
-
-1.  **Clone the repository**:
-    Open your terminal or command prompt and run:
-    ```bash
-    git clone https://github.com/whereAGI/orwell.git
-    cd orwell
-    ```
-
-2.  **Start the Application**:
-
-    -   **Windows**:
-        Double-click `start.bat` or run in Command Prompt:
-        ```cmd
-        start.bat
-        ```
-
-    -   **macOS / Linux**:
-        Run in terminal:
-        ```bash
-        chmod +x start.sh  # Only needed the first time
-        ./start.sh
-        ```
-
-    *The script will automatically set up a virtual environment, install all dependencies, and launch the app.*
-
-3.  **Access the App**:
-    Open your browser and go to: [http://localhost:8000](http://localhost:8000)
-
----
-
-### Running Your First Audit
-
-1. **Add a model** — Go to **Model Hub** and add the LLM you want to audit as a *Target* model, and a capable LLM (e.g. GPT-4o, Claude, or a local Ollama model) as a *Judge* model.
-2. **Open Audit Studio** — Go to the main dashboard and click **New Audit**.
-3. **Configure your audit** — Select your target model, your judge model (or a Judge Bench if you've set one up), choose your dimensions, and set a sample size.
-4. **Run it** — Click **Start Audit**. Watch the live log stream as Orwell works through the prompts.
-5. **View the report** — When complete, click **View Report** to see the full structured audit.
 
 ---
 
