@@ -1,34 +1,40 @@
-# Installation Guide (Linux/Ubuntu)
+# Installation Guide
 
-This guide will walk you through setting up Orwell on a Linux machine (specifically Ubuntu, but steps are similar for other distros).
-
-## ✅ Prerequisites
-
-Ensure you have the following installed:
-
-- **Python 3.10+**: `python3 --version`
-- **pip**: `pip --version`
-- **Git**: `git --version`
-- **Unzip**: `sudo apt install unzip` (required for PocketBase)
+This guide covers setting up Orwell on Linux/macOS and Windows. Orwell requires Python 3.10+ and no external database — everything runs locally.
 
 ---
 
-## 🛠️ Step-by-Step Installation
+## ✅ Prerequisites
+
+| Requirement | Check |
+|---|---|
+| Python 3.10+ | `python3 --version` |
+| pip | `pip --version` |
+| Git | `git --version` |
+
+---
+
+## 🛠️ Installation Steps
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/your-org/orwell.git
+git clone https://github.com/whereAGI/orwell.git
 cd orwell
 ```
 
-### 2. Set Up Virtual Environment
+### 2. Set Up a Virtual Environment
 
-It is recommended to use a virtual environment to manage dependencies.
-
+**Linux / macOS:**
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+```
+
+**Windows:**
+```bat
+python -m venv .venv
+.venv\Scripts\activate
 ```
 
 ### 3. Install Python Dependencies
@@ -37,72 +43,99 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Install PocketBase
+### 4. Configure Environment Variables
 
-Orwell uses **PocketBase** as its backend database. You need to download the Linux binary.
-
-1.  Go to the [PocketBase Releases](https://pocketbase.io/docs/) page.
-2.  Download the Linux `amd64` (or `arm64`) zip file.
-3.  Extract the `pocketbase` binary to the root of the `orwell` project.
-
-**Quick Command (for amd64):**
-
-```bash
-wget https://github.com/pocketbase/pocketbase/releases/download/v0.22.21/pocketbase_0.22.21_linux_amd64.zip
-unzip pocketbase_0.22.21_linux_amd64.zip pocketbase
-rm pocketbase_0.22.21_linux_amd64.zip
-chmod +x pocketbase
-```
-
-*Note: Ensure the file is named exactly `pocketbase` and is executable.*
-
-### 5. Configure Environment Variables
-
-Create a `.env` file from the example template.
+Copy the example environment file and open it in your editor:
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and configure your API keys (e.g., OpenRouter or local Ollama URL).
+The key variables to set:
 
 ```bash
 # .env
+
+# Optional: pre-set an OpenRouter API key
+# (you can also add keys later through the Model Hub UI)
 OPENROUTER_API_KEY=sk-or-...
-POCKETBASE_URL=http://127.0.0.1:8090
+
+# Optional: override the default database path
+# Default: data/orwell.db
+ORWELL_DB_PATH=data/orwell.db
+
+# Optional: override the server port
+# Default: 8000
+PORT=8000
 ```
 
-### 6. Start the Application
+API keys can also be configured at any time through the **Model Hub** (`/model-hub`) — you don't need to pre-populate the `.env` to start.
 
-We provide a helper script to start both the PocketBase backend and the FastAPI server.
+### 5. Start the Application
 
+**Linux / macOS:**
 ```bash
 ./start.sh
 ```
 
-You should see output indicating that both services have started:
-- **PocketBase Admin UI**: `http://127.0.0.1:8090/_/`
-- **Orwell Playground**: `http://127.0.0.1:8000`
+**Windows:**
+```bat
+start.bat
+```
+
+The start script activates the virtual environment and launches the FastAPI server. On first startup, the database is automatically created and seeded with the built-in schemas and default configuration.
+
+You should see:
+```
+[DB] Initialised at: data/orwell.db
+INFO:     Uvicorn running on http://0.0.0.0:8000
+```
 
 ---
 
 ## 🔍 Verification
 
-1.  Open your browser and navigate to `http://127.0.0.1:8000`.
-2.  You should see the Orwell Playground.
-3.  Go to the **Model Hub** tab to verify that models are loading (if you have configured any).
+1. Open `http://127.0.0.1:8000` — you should see the Orwell Playground.
+2. Open `http://127.0.0.1:8000/model-hub` — confirm the Model Hub loads.
+3. Open `http://127.0.0.1:8000/api-docs` — the FastAPI interactive API docs should be accessible.
+
+---
+
+## 📁 Directory Structure
+
+```
+orwell/
+├── data/               # SQLite database (created on first run)
+│   └── orwell.db
+├── docs/               # Markdown documentation files (rendered at /docs)
+├── orwell/             # Python backend source
+│   ├── main.py         # FastAPI app & all API routes
+│   ├── engine.py       # Audit execution engine
+│   ├── judge.py        # Judge client & scoring logic
+│   ├── database.py     # SQLite schema & init
+│   ├── models.py       # Pydantic data models
+│   ├── report_builder.py
+│   ├── prompt_generator.py
+│   └── ...
+├── static/             # Frontend HTML/CSS/JS files
+├── requirements.txt
+├── start.sh            # Linux/macOS launcher
+├── start.bat           # Windows launcher
+└── .env.example
+```
 
 ---
 
 ## ⚠️ Troubleshooting
 
-**"PocketBase binary not found"**
-- Ensure you downloaded the `pocketbase` binary and placed it in the project root.
-- Ensure it has execute permissions: `chmod +x pocketbase`.
+**"Module not found" errors**
+- Ensure the virtual environment is activated before running `start.sh`/`start.bat`.
 
-**"Address already in use"**
-- Check if port `8000` (FastAPI) or `8090` (PocketBase) is occupied.
-- You can change the ports in the `.env` file if needed.
+**"Address already in use" on port 8000**
+- Another process is using port 8000. Either kill it or change `PORT` in your `.env` file.
 
-**"Module not found"**
-- Ensure you activated the virtual environment: `source .venv/bin/activate` before running the start script.
+**Database errors on startup**
+- Ensure the `data/` directory is writable. If `ORWELL_DB_PATH` is set to a custom path, ensure the parent directory exists.
+
+**Blank page or API 500 errors**
+- Check the terminal output for Python tracebacks. Most startup issues are missing dependencies or environment variable problems.
