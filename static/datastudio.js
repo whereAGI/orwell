@@ -33,13 +33,23 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('rowsPerPage').addEventListener('change', updateRowsPerPage);
 });
 
-
+// Listen for nav schema changes
+window.addEventListener('schemaChanged', () => {
+    clearSelection();
+    loadDimensions().then(() => {
+        loadPrompts(1);
+    });
+});
 
 // loadSchemas removed
 
 async function loadDimensions() {
     try {
         let url = '/api/dimensions';
+        const schemaId = getActiveSchema()?.id;
+        if (schemaId) {
+            url += `?schema_id=${encodeURIComponent(schemaId)}`;
+        }
 
         const res = await fetch(url);
         if (res.ok) {
@@ -69,12 +79,14 @@ async function loadPrompts(page = 1) {
         const dimension = document.getElementById('dimFilter').value;
         const fromDate = document.getElementById('fromDate').value;
         const toDate = document.getElementById('toDate').value;
+        const schemaId = getActiveSchema()?.id;
 
         let url = `/api/data/prompts?page=${page}&per_page=${perPage}&source=${source}&sort=${currentSort}`;
         if (search) url += `&search=${encodeURIComponent(search)}`;
         if (dimension) url += `&dimension=${encodeURIComponent(dimension)}`;
         if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
         if (toDate) url += `&to_date=${encodeURIComponent(toDate)}`;
+        if (schemaId) url += `&schema_id=${encodeURIComponent(schemaId)}`;
 
         const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to load prompts');
@@ -267,12 +279,14 @@ async function performBulkDeleteFiltered() {
     const dimension = document.getElementById('dimFilter').value;
     const fromDate = document.getElementById('fromDate').value;
     const toDate = document.getElementById('toDate').value;
+    const schemaId = getActiveSchema()?.id;
 
     let url = `/api/data/prompts/bulk-filter?source=${source}`;
     if (search) url += `&search=${encodeURIComponent(search)}`;
     if (dimension) url += `&dimension=${encodeURIComponent(dimension)}`;
     if (fromDate) url += `&from_date=${encodeURIComponent(fromDate)}`;
     if (toDate) url += `&to_date=${encodeURIComponent(toDate)}`;
+    if (schemaId) url += `&schema_id=${encodeURIComponent(schemaId)}`;
 
     try {
         const res = await fetch(url, {
@@ -427,17 +441,23 @@ async function submitNewPrompt() {
     const dim = document.getElementById('newDimension').value.trim();
     const text = document.getElementById('newText').value.trim();
     const lang = document.getElementById('newLanguage').value.trim();
+    const schemaId = getActiveSchema()?.id;
 
     if (!dim || !text) {
         alert("Dimension and Text are required");
         return;
     }
 
+    const payload = { dimension: dim, text: text, language: lang };
+    if (schemaId) {
+        payload.schema_id = schemaId;
+    }
+
     try {
         const res = await fetch('/api/data/prompts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ dimension: dim, text: text, language: lang })
+            body: JSON.stringify(payload)
         });
         if (res.ok) {
             closeAddModal();
@@ -518,8 +538,12 @@ async function handleFileUpload(input) {
     const file = input.files[0];
     if (!file) return;
 
+    const schemaId = getActiveSchema()?.id;
     const formData = new FormData();
     formData.append('file', file);
+    if (schemaId) {
+        formData.append('schema_id', schemaId);
+    }
 
     try {
         // Show loading state if desired
@@ -582,6 +606,7 @@ async function exportData() {
     const dimension = document.getElementById('dimFilter').value;
     const fromDate = document.getElementById('fromDate').value;
     const toDate = document.getElementById('toDate').value;
+    const schemaId = getActiveSchema()?.id;
     
     const checkboxes = document.querySelectorAll('.row-checkbox:checked');
     const ids = Array.from(checkboxes).map(cb => cb.value);
@@ -594,6 +619,7 @@ async function exportData() {
         source,
         search,
         dimension,
+        schema_id: schemaId,
         from_date: fromDate,
         to_date: toDate,
         ids: isExportAllFiltered ? null : ids,
