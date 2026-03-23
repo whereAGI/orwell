@@ -133,7 +133,11 @@
                     <h2 style="margin:0;">Audit Schemas</h2>
                     <p style="margin:4px 0 0; color:var(--muted); font-size:13px;">Define evaluation criteria, scoring rubrics, and generation templates.</p>
                 </div>
-                <button onclick="openSchemaModal()" style="width:auto; padding:8px 16px;">+ New Schema</button>
+                <div style="display:flex; gap:8px;">
+                    <input type="file" id="importSchemaFile" accept=".json" style="display:none;" onchange="importSchema(event)">
+                    <button class="secondary" onclick="document.getElementById('importSchemaFile').click()" style="width:auto; padding:8px 16px;">Import Schema</button>
+                    <button onclick="openSchemaModal()" style="width:auto; padding:8px 16px;">+ New Schema</button>
+                </div>
             </div>
             
             <div id="schemaList" class="schema-list">
@@ -230,6 +234,29 @@
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:24px;">
                 <button class="secondary" onclick="closeSchemaModal()">Cancel</button>
                 <button onclick="saveSchema()">Save Schema</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="modal">
+        <div class="card" style="width: 400px; margin: 0; padding: 24px; background: #0e0e14; border: 1px solid var(--border); border-radius: 8px;">
+            <h3 style="color:var(--danger); margin-top:0;">Confirm Deletion</h3>
+            <p id="deleteMessage" style="color: var(--text); margin: 16px 0;">Are you sure you want to delete this schema? This action cannot be undone.</p>
+            <div style="display:flex; justify-content:flex-end; gap:12px;">
+                <button class="secondary" onclick="closeDeleteModal()" style="padding:8px 16px;">Cancel</button>
+                <button class="danger" id="confirmDeleteBtn" style="padding:8px 16px;">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert Modal -->
+    <div id="alertModal" class="modal" style="z-index: 1100;">
+        <div class="card" style="width: 400px; margin: 0; padding: 24px; background: #0e0e14; border: 1px solid var(--border); border-radius: 8px;">
+            <h3 id="alertTitle" style="margin-top:0; color: var(--text);">Alert</h3>
+            <p id="alertMessage" style="color: var(--text); margin: 16px 0;"></p>
+            <div style="display:flex; justify-content:flex-end; gap:12px;">
+                <button class="primary" onclick="closeAlertModal()" style="padding:8px 16px;">OK</button>
             </div>
         </div>
     </div>

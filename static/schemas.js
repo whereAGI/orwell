@@ -54,6 +54,9 @@ function renderSchemas(schemas) {
                 <button class="primary" style="flex:1; padding:6px; font-size:12px;" onclick="startAuditWithSchema('${s.id}')">
                     Start Audit
                 </button>
+                <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="exportSchema('${s.id}')">
+                    Export
+                </button>
                 <button class="secondary" style="width:auto; padding:6px 12px; font-size:12px;" onclick="openSchemaModal('${s.id}')">
                     Edit
                 </button>
@@ -198,10 +201,10 @@ async function saveSchema() {
         report_recommendations_prompt: document.getElementById('schemaRecoPrompt').value.trim() || null
     };
 
-    if (!payload.name) {
-        alert('Schema name is required');
-        return;
-    }
+        if (!payload.name) {
+            showInAppAlert('Schema name is required', 'Validation Error');
+            return;
+        }
 
     const btn = document.querySelector('button[onclick="saveSchema()"]');
     const originalText = btn.textContent;
@@ -232,24 +235,134 @@ async function saveSchema() {
         closeSchemaModal();
         loadSchemas();
     } catch (e) {
-        alert(e.message);
+        showInAppAlert(e.message, 'Error');
     } finally {
         btn.textContent = originalText;
         btn.disabled = false;
     }
 }
 
-async function deleteSchema(id) {
-    if (!confirm('Are you sure you want to delete this schema? This cannot be undone.')) return;
+function showInAppAlert(message, title = 'Alert') {
+    const modal = document.getElementById('alertModal');
+    const titleEl = document.getElementById('alertTitle');
+    const msgEl = document.getElementById('alertMessage');
 
+    if (modal && titleEl && msgEl) {
+        titleEl.textContent = title;
+        msgEl.textContent = message;
+        modal.style.display = 'flex';
+    } else {
+        alert(message);
+    }
+}
+
+function closeAlertModal() {
+    document.getElementById('alertModal').style.display = 'none';
+}
+
+let deleteTargetId = null;
+
+function openDeleteModal(id) {
+    deleteTargetId = id;
+    document.getElementById('deleteModal').style.display = 'flex';
+    document.getElementById('confirmDeleteBtn').onclick = () => confirmDeleteSchema(id);
+}
+
+function closeDeleteModal() {
+    document.getElementById('deleteModal').style.display = 'none';
+    deleteTargetId = null;
+}
+
+async function confirmDeleteSchema(id) {
     try {
         const res = await fetch(`/api/schemas/${id}`, { method: 'DELETE' });
         if (!res.ok) {
             const err = await res.json();
             throw new Error(err.detail || 'Failed to delete schema');
         }
+        closeDeleteModal();
         loadSchemas();
     } catch (e) {
-        alert(e.message);
+        showInAppAlert(e.message, 'Error');
+    }
+}
+
+function deleteSchema(id) {
+    openDeleteModal(id);
+}
+
+function exportSchema(id) {
+    const schema = currentSchemas.find(s => s.id === id);
+    if (!schema) return;
+
+    // Create a clean copy for export
+    const exportData = { ...schema };
+    delete exportData.id;
+    delete exportData.is_builtin;
+    delete exportData.created_at;
+
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    
+    const exportFileDefaultName = `${schema.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_schema.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', url);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    document.body.appendChild(linkElement);
+    linkElement.click();
+    document.body.removeChild(linkElement);
+    URL.revokeObjectURL(url);
+}
+
+async function importSchema(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    try {
+        const text = await file.text();
+        const schemaData = JSON.parse(text);
+
+        // Basic validation
+        if (!schemaData.name) {
+            throw new Error('Invalid schema file: missing name');
+        }
+
+        // Prepare payload for creation
+        const payload = {
+            name: schemaData.name,
+            icon: schemaData.icon || '',
+            description: schemaData.description || '',
+            schema_type: 'custom',
+            scoring_axis_low_label: schemaData.scoring_axis_low_label || '',
+            scoring_axis_high_label: schemaData.scoring_axis_high_label || '',
+            generator_system_prompt: schemaData.generator_system_prompt || null,
+            judge_system_prompt: schemaData.judge_system_prompt || null,
+            dimension_template: schemaData.dimension_template || null,
+            schema_context: schemaData.schema_context || null,
+            report_executive_summary_prompt: schemaData.report_executive_summary_prompt || null,
+            report_failure_analysis_prompt: schemaData.report_failure_analysis_prompt || null,
+            report_recommendations_prompt: schemaData.report_recommendations_prompt || null
+        };
+
+        const res = await fetch('/api/schemas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.detail || 'Failed to import schema');
+        }
+
+        loadSchemas();
+        showInAppAlert('Schema imported successfully!', 'Success');
+    } catch (e) {
+        showInAppAlert('Error importing schema: ' + e.message, 'Error');
+    } finally {
+        // Reset file input so the same file can be imported again if needed
+        event.target.value = '';
     }
 }
