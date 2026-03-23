@@ -576,6 +576,56 @@ function closeImportModal() {
     document.getElementById('importModal').classList.remove('active');
 }
 
+async function exportData() {
+    const source = document.getElementById('sourceFilter').value || 'all';
+    const search = document.getElementById('search').value;
+    const dimension = document.getElementById('dimFilter').value;
+    const fromDate = document.getElementById('fromDate').value;
+    const toDate = document.getElementById('toDate').value;
+    
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+
+    // If no checkboxes are checked, we export the whole filtered set.
+    // If checkboxes are checked, we check if selectAllAcrossPages is true.
+    const isExportAllFiltered = (ids.length === 0) || selectAllAcrossPages;
+
+    const payload = {
+        source,
+        search,
+        dimension,
+        from_date: fromDate,
+        to_date: toDate,
+        ids: isExportAllFiltered ? null : ids,
+        select_all: isExportAllFiltered
+    };
+
+    try {
+        const res = await fetch('/api/data/prompts/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `prompts_export_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } else {
+            alert("Failed to export data");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Error exporting data");
+    }
+}
+
 // Sortable Created At column
 function toggleDateSort() {
     currentSort = currentSort === '-created_at' ? 'created_at' : '-created_at';

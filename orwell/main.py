@@ -144,6 +144,16 @@ class CreatePromptRequest(BaseModel):
     language: str = "en"
     schema_id: Optional[str] = None
 
+class ExportPromptsRequest(BaseModel):
+    source: str = "all"
+    search: Optional[str] = None
+    dimension: Optional[str] = None
+    schema_id: Optional[str] = None
+    from_date: Optional[str] = None
+    to_date: Optional[str] = None
+    ids: Optional[List[str]] = None
+    select_all: bool = False
+
 
 class TestConnectionRequest(BaseModel):
     provider: str
@@ -1452,6 +1462,63 @@ async def import_prompts_csv(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process CSV: {str(e)}")
+
+
+@app.post("/api/data/prompts/export")
+async def export_prompts(req: ExportPromptsRequest):
+    conditions = []
+    params: list = []
+
+    if req.ids and not req.select_all:
+        placeholders = ",".join("?" * len(req.ids))
+        conditions.append(f"id IN ({placeholders})")
+        params.extend(req.ids)
+    else:
+        if req.source == "system":
+            conditions.append("type = 'system'")
+        elif req.source == "custom":
+            conditions.append("type = 'custom'")
+
+        if req.search:
+            conditions.append("text LIKE ?")
+            params.append(f"%{req.search}%")
+        if req.dimension:
+            conditions.append("dimension = ?")
+            params.append(req.dimension)
+        if req.schema_id:
+            conditions.append("schema_id = ?")
+            params.append(req.schema_id)
+        if req.from_date:
+            conditions.append("created_at >= ?")
+            params.append(f"{req.from_date} 00:00:00")
+        if req.to_date:
+            conditions.append("created_at <= ?")
+            params.append(f"{req.to_date} 23:59:59")
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    order = "ORDER BY created_at DESC"
+
+    try:
+        async with get_db() as db:
+            cursor = await db.execute(
+                f"SELECT dimension, text, language, type, model, created_at FROM custom_prompts {where} {order}",
+                params,
+            )
+            rows = await cursor.fetchall()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["dimension", "text", "language", "type", "model", "created_at"])
+        for r in rows:
+            writer.writerow([r["dimension"], r["text"], r["language"], r["type"], r["model"], r["created_at"]])
+
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=prompts.csv"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/api/data/prompts/bulk")
