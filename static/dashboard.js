@@ -1458,6 +1458,29 @@ if (criteriaClose) {
 
 
 
+function deselectCurrentAudit() {
+  // Called when user clicks the already-selected audit card — clears selection and shows comparison hub
+  currentJobId = null;
+  document.querySelectorAll('.audit-item').forEach(el => el.classList.remove('selected-audit'));
+
+  // Clear the main content panels
+  document.getElementById('qaAccordion').innerHTML = '';
+  document.getElementById('criteriaList').innerHTML = '';
+
+  const statusEl = document.getElementById('status');
+  if (statusEl) statusEl.style.display = 'none';
+
+  const reportContainer = document.getElementById('report');
+  if (reportContainer) {
+    reportContainer.style.display = 'none';
+  }
+
+  // Trigger behavior hub refresh so it shows the comparison table
+  if (typeof loadBehaviorHub === 'function') {
+    loadBehaviorHub();
+  }
+}
+
 async function loadAuditList() {
   const container = document.getElementById('auditList');
   const schemaId = getActiveSchema()?.id;
@@ -1484,14 +1507,18 @@ async function loadAuditList() {
       if (a.overall_risk === 'high') riskColor = 'var(--danger)';
 
       const riskLabel = a.overall_risk ? ` • <span style="color:${riskColor};font-weight:bold;">${a.overall_risk.toUpperCase()}</span>` : '';
+      const isSelected = a.job_id === currentJobId;
       const dims = a.dimensions ? a.dimensions.length + ' dims' : '';
       const judge = a.judge_name || 'Unknown Judge';
 
       return `
-      <div class="audit-item ${a.job_id === currentJobId ? 'selected-audit' : ''}" data-job="${a.job_id}" data-status="${a.status}" data-selected="0">
+      <div class="audit-item ${isSelected ? 'selected-audit' : ''}" data-job="${a.job_id}" data-status="${a.status}" data-selected="0" title="${isSelected ? 'Click to deselect and view comparison' : ''}">
         <div style="display:flex;justify-content:space-between;align-items:start;">
           <div style="flex:1; min-width:0; padding-right:8px;">
-            <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(a.target_model || '')}">${escapeHtml(a.target_model || 'Unknown')}</div>
+            <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px;">
+              ${escapeHtml(a.target_model || 'Unknown')}
+              ${isSelected ? '<span style="font-size:10px;font-weight:400;color:var(--primary);background:rgba(129,140,248,0.15);padding:1px 6px;border-radius:10px;white-space:nowrap;">click to compare</span>' : ''}
+            </div>
             <div class="mono" style="font-size:10px; margin-top:4px; color:#a0a0b8; display:flex; flex-direction:column; gap:2px;">
                <span>${date}</span>
                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(judge)}">${escapeHtml(judge)}</span>
@@ -1516,6 +1543,14 @@ async function loadAuditList() {
 
     container.querySelectorAll('.audit-item').forEach(item => {
       item.addEventListener('click', async (event) => {
+        const clickedJobId = item.getAttribute('data-job');
+
+        // Deselect if clicking the already-selected audit
+        if (clickedJobId === currentJobId) {
+          deselectCurrentAudit();
+          return;
+        }
+
         if (event.shiftKey) {
           const sel = item.getAttribute('data-selected') === '1';
           item.setAttribute('data-selected', sel ? '0' : '1');
@@ -1531,7 +1566,7 @@ async function loadAuditList() {
         });
         updateSelectionUI();
 
-        currentJobId = item.getAttribute('data-job');
+        currentJobId = clickedJobId;
         const jobStatus = item.getAttribute('data-status');
 
         // Update highlight manually to avoid full reload
@@ -1543,13 +1578,13 @@ async function loadAuditList() {
         if (statusEl) statusEl.style.display = 'block';
         await loadPromptsAndResponses();
         await loadCriteria();
-        
+
         if (jobStatus === 'completed') {
           await loadReport();
         } else {
           document.getElementById('report').style.display = 'none';
         }
-        
+
         await loadLogsForReport();
       });
     });
