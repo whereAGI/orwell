@@ -806,6 +806,9 @@ function renderReportSection(section) {
     case 'recommendations':
       html += renderRecommendations(section);
       break;
+    case 'decision_analysis':
+      html += renderDecisionAnalysis(section);
+      break;
     default:
       html += `<div class="reason" style="margin-bottom:12px;">${renderMarkdown(JSON.stringify(section, null, 2))}</div>`;
   }
@@ -1188,6 +1191,88 @@ function renderRecommendations(section) {
       <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
       ${renderCollapsibleThinking(thinking)}
       <div class="reason">${renderMarkdown(content)}</div>
+    </div>`;
+}
+
+function renderDecisionAnalysis(section) {
+  const dist = section.decision_distribution || {};
+  const entries = Object.entries(dist);
+
+  // If no decision data, show empty state
+  if (entries.length === 0) {
+    return `
+      <div style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
+        <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;color:var(--muted);">
+          No decision behavior data available for this audit.
+        </div>
+        ${renderExplanation(section.explanation)}
+      </div>`;
+  }
+
+  // Sort by percentage descending
+  entries.sort((a, b) => b[1] - a[1]);
+
+  // Color mapping for decision types
+  const decisionColors = {
+    'assert':   '#3b82f6',   // blue  — confident, direct
+    'hedge':    '#f59e0b',   // amber — cautious, hedged
+    'balance':  '#10b981',   // green — neutral, balanced
+    'pivot':    '#ec4899',   // pink  — deflecting
+    'qualify':  '#8b5cf6',   // violet — qualified, conditional
+    'refuse':   '#ef4444',   // red   — refusing, declined
+    'default':  '#a0a0b8'
+  };
+
+  const getColor = (dt) => {
+    const key = (dt || '').toLowerCase();
+    return decisionColors[key] || decisionColors.default;
+  };
+
+  // Build distribution bars
+  let distBars = '';
+  for (const [dt, pct] of entries) {
+    const color = getColor(dt);
+    const barWidth = Math.round(pct * 100);
+    distBars += `
+      <div style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-weight:600;font-size:13px;">${escapeHtml(dt)}</span>
+          <span style="color:${color};font-weight:700;font-size:13px;">${(pct * 100).toFixed(0)}%</span>
+        </div>
+        <div style="background:#1e1e30;border-radius:4px;height:8px;overflow:hidden;">
+          <div style="background:${color};width:${barWidth}%;height:100%;border-radius:4px;transition:width 0.3s;"></div>
+        </div>
+      </div>`;
+  }
+
+  // Stats pills
+  const dominantColor = getColor(section.dominant_decision);
+  const statsPills = `
+    <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+      <div style="display:inline-flex;flex-direction:column;align-items:center;background:#1e1e30;border:1px solid var(--border);border-radius:8px;padding:10px 16px;min-width:100px;">
+        <span style="font-size:20px;font-weight:700;color:var(--primary);">${section.total_classified || 0}</span>
+        <span style="font-size:11px;color:var(--muted);margin-top:2px;">CLASSIFIED</span>
+      </div>
+      <div style="display:inline-flex;flex-direction:column;align-items:center;background:#1e1e30;border:1px solid var(--border);border-radius:8px;padding:10px 16px;min-width:100px;">
+        <span style="font-size:20px;font-weight:700;color:${dominantColor};">${escapeHtml(section.dominant_decision || '-')}</span>
+        <span style="font-size:11px;color:var(--muted);margin-top:2px;">DOMINANT</span>
+      </div>
+      <div style="display:inline-flex;flex-direction:column;align-items:center;background:#1e1e30;border:1px solid var(--border);border-radius:8px;padding:10px 16px;min-width:100px;">
+        <span style="font-size:20px;font-weight:700;color:var(--primary);">${((section.avg_confidence || 0) * 100).toFixed(1)}%</span>
+        <span style="font-size:11px;color:var(--muted);margin-top:2px;">AVG CONFIDENCE</span>
+      </div>
+    </div>`;
+
+  return `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 12px;">${escapeHtml(section.title)}</h4>
+      <div style="background:#0f1018;border-radius:8px;border:1px solid var(--border);padding:16px;">
+        ${statsPills}
+        <h5 style="margin:0 0 12px;color:var(--muted);font-size:11px;text-transform:uppercase;">Decision Type Distribution</h5>
+        ${distBars}
+      </div>
+      ${renderExplanation(section.insight || section.explanation)}
     </div>`;
 }
 
