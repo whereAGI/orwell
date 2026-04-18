@@ -643,6 +643,12 @@ async function loadReport() {
         reportElement.style.display = 'block';
       }
 
+      // Hide the Behavioral Intelligence Hub when showing the audit report
+      const hubCard = document.getElementById('behaviorHubCard');
+      if (hubCard) {
+        hubCard.style.display = 'none';
+      }
+
       // Initialize charts after DOM is ready
       setTimeout(() => initReportCharts(rj.sections), 100);
       return;
@@ -672,6 +678,12 @@ async function loadReport() {
     const reportElement = document.getElementById('report');
     if (reportElement) {
       reportElement.style.display = 'block';
+    }
+
+    // Hide the Behavioral Intelligence Hub when showing the audit report
+    const hubCard = document.getElementById('behaviorHubCard');
+    if (hubCard) {
+      hubCard.style.display = 'none';
     }
 
   } catch (err) {
@@ -1475,6 +1487,12 @@ function deselectCurrentAudit() {
     reportContainer.style.display = 'none';
   }
 
+  // Restore the Behavioral Intelligence Hub visibility when deselecting
+  const hubCard = document.getElementById('behaviorHubCard');
+  if (hubCard) {
+    hubCard.style.display = 'block';
+  }
+
   // Trigger behavior hub refresh so it shows the comparison table
   if (typeof loadBehaviorHub === 'function') {
     loadBehaviorHub();
@@ -1803,7 +1821,8 @@ function renderDimensionList(dims) {
   listEl.innerHTML = dims.map(d => `<span class="pill ${selectedDimensions.includes(d) ? 'selected' : ''}" data-dim="${escapeHtml(d)}">${escapeHtml(d)}</span>`).join('');
 
   listEl.querySelectorAll('.pill').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (event) => {
+      event.stopPropagation();
       const d = el.getAttribute('data-dim');
       const idx = selectedDimensions.indexOf(d);
       if (idx >= 0) {
