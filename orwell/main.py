@@ -1182,6 +1182,37 @@ async def get_audit_report(job_id: str):
         raise HTTPException(status_code=404, detail=f"Report not found: {e}")
 
 
+# ──────────────────────────────────────────────────
+# Decision Trace — Behavior Profile API
+# ──────────────────────────────────────────────────
+
+@app.get("/api/behavior-profile")
+async def get_behavior_profile():
+    """Return model behavior profiles from dbt-generated obt_model_behavior_profile table."""
+    try:
+        async with get_db() as db:
+            # Check if the table exists
+            cursor = await db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='obt_model_behavior_profile'"
+            )
+            table_exists = await cursor.fetchone()
+
+            if not table_exists:
+                return {"models": []}
+
+            cursor = await db.execute("SELECT * FROM obt_model_behavior_profile")
+            rows = await cursor.fetchall()
+
+            if not rows:
+                return {"models": []}
+
+            models = [dict(row) for row in rows]
+            return {"models": models}
+    except Exception as e:
+        # If table doesn't exist or any error, return empty
+        return {"models": []}
+
+
 @app.get("/api/audit/{job_id}/details")
 async def get_audit_details(job_id: str):
     try:

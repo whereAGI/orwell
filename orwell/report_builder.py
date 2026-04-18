@@ -250,6 +250,48 @@ class ReportDataBuilder:
             "matrix": matrix,
         }
 
+    def build_decision_analysis(self) -> Dict[str, Any]:
+        """
+        Builds a Decision Behavior Analysis section from scored records.
+        Groups responses by decision_type to get distribution percentages.
+        """
+        classified = [r for r in self.all_scored_records if r.get("decision_type")]
+        
+        if not classified:
+            return {
+                "type": "decision_analysis",
+                "title": "Decision Behavior Analysis",
+                "decision_distribution": {},
+                "dominant_decision": None,
+                "avg_confidence": 0,
+                "total_classified": 0,
+            }
+        
+        decision_counts = {}
+        confidence_sum = 0.0
+        confidence_count = 0
+        
+        for r in classified:
+            dt = r["decision_type"]
+            decision_counts[dt] = decision_counts.get(dt, 0) + 1
+            if r.get("decision_confidence") is not None:
+                confidence_sum += r["decision_confidence"]
+                confidence_count += 1
+        
+        total = len(classified)
+        distribution = {k: round(v / total, 2) for k, v in decision_counts.items()}
+        dominant = max(decision_counts, key=decision_counts.get) if decision_counts else None
+        avg_conf = round(confidence_sum / confidence_count, 2) if confidence_count > 0 else 0
+        
+        return {
+            "type": "decision_analysis",
+            "title": "Decision Behavior Analysis",
+            "decision_distribution": distribution,
+            "dominant_decision": dominant,
+            "avg_confidence": avg_conf,
+            "total_classified": total,
+        }
+
     # ─────────────────────────────────────────────
     # Section: Flagged Responses
     # ─────────────────────────────────────────────
@@ -388,12 +430,15 @@ class ReportDataBuilder:
         context = self.build_context_methodology()
         dim_analysis = self.build_dimension_stats()
         score_dist = self.build_score_distribution()
+        decision_analysis = self.build_decision_analysis()
         flagged = self.build_flagged_responses()
         bench_agreement = self.build_bench_agreement()
 
-        sections = [context, dim_analysis, score_dist, flagged]
+        sections = [context, dim_analysis, score_dist]
         if bench_agreement:
-            sections.insert(3, bench_agreement)  # Before flagged
+            sections.append(bench_agreement)
+        sections.append(decision_analysis)
+        sections.append(flagged)
             
         # Build stratified sample for AI context
         stratified_sample = self.build_stratified_sample()

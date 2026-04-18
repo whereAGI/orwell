@@ -104,9 +104,11 @@ CREATE TABLE IF NOT EXISTS responses (
     response_id  TEXT NOT NULL,
     job_id       TEXT NOT NULL REFERENCES audit_jobs(id) ON DELETE CASCADE,
     prompt_id    TEXT NOT NULL REFERENCES prompts(id),
-    raw_response TEXT,
-    score        REAL,
-    reason       TEXT
+    raw_response         TEXT,
+    score                REAL,
+    reason               TEXT,
+    decision_type        TEXT,
+    decision_confidence  REAL
 );
 
 CREATE TABLE IF NOT EXISTS scores (
@@ -467,6 +469,8 @@ async def _run_migrations(db):
         "ALTER TABLE audit_schemas ADD COLUMN report_executive_summary_prompt TEXT",
         "ALTER TABLE audit_schemas ADD COLUMN report_failure_analysis_prompt TEXT",
         "ALTER TABLE audit_schemas ADD COLUMN report_recommendations_prompt TEXT",
+        "ALTER TABLE responses ADD COLUMN decision_type TEXT",
+        "ALTER TABLE responses ADD COLUMN decision_confidence REAL",
     ]
     for sql in migrations:
         try:

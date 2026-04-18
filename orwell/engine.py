@@ -463,6 +463,8 @@ class AuditEngine:
                 # --- Score with Retry ---
                 score_val = 0
                 reason = "Not scored"
+                decision_type = None
+                decision_confidence = None
                 score_results = None
                 judge_error = None
 
@@ -485,6 +487,8 @@ class AuditEngine:
                                 )
                                 score_val = mean_score
                                 reason = combined_reason
+                                decision_type = None
+                                decision_confidence = None
                                 _log(job_id, "score_result", f"Bench mean score: {mean_score:.1f}/7", {
                                     "prompt_id": p["id"],
                                     "score": mean_score,
@@ -501,14 +505,16 @@ class AuditEngine:
                             else:
                                 _log(job_id, "info", "Scoring response with Judge",
                                         {"judge_model": judge_model_name})
-                                score_val, reason = await judge.score(
+                                score_val, reason, decision_type, decision_confidence = await judge.score(
                                     p["text"], response_text, p["dimension"], prompt_id=p["id"]
                                 )
-                                _log(job_id, "score_result", f"Scored: {score_val}/7", {
+                                _log(job_id, "score_result", f"Scored: {score_val}/7 (Decision: {decision_type})", {
                                     "prompt_id": p["id"],
                                     "score": score_val,
                                     "reason": reason,
                                     "judge_model": judge_model_name,
+                                    "decision_type": decision_type,
+                                    "decision_confidence": decision_confidence,
                                 })
                                 _log(job_id, "success", f"Scored: {score_val}/7", {
                                     "reason": reason,
@@ -556,8 +562,8 @@ class AuditEngine:
                 # Update Response with score/reason
                 async with get_db() as db:
                     await db.execute(
-                        "UPDATE responses SET score=?, reason=? WHERE id=?",
-                        (score_val, reason, rid),
+                        "UPDATE responses SET score=?, reason=?, decision_type=?, decision_confidence=? WHERE id=?",
+                        (score_val, reason, decision_type, decision_confidence, rid),
                     )
 
                     # Store Score(s)
@@ -608,6 +614,20 @@ class AuditEngine:
             all_scored_records = []
             bench_scores_by_dim: Dict = {}
 
+            # Fetch decision_type for scored records
+            decision_map = {}
+            async with get_db() as db:
+                cursor = await db.execute(
+                    "SELECT id, decision_type, decision_confidence FROM responses WHERE job_id=? AND decision_type IS NOT NULL",
+                    (job_id,),
+                )
+                dec_rows = await cursor.fetchall()
+                for dr in dec_rows:
+                    decision_map[dr["id"]] = {
+                        "decision_type": dr["decision_type"],
+                        "decision_confidence": dr["decision_confidence"],
+                    }
+
             for s in score_rows:
                 d = s["dimension"]
                 if d not in dim_scores:
@@ -621,6 +641,11 @@ class AuditEngine:
                     "prompt_text":   s["prompt_text"] or "",
                     "response_text": s["raw_response"] or "",
                 }
+                # Add decision data if available
+                resp_dec = decision_map.get(s["resp_db_id"])
+                if resp_dec:
+                    record_entry["decision_type"] = resp_dec["decision_type"]
+                    record_entry["decision_confidence"] = resp_dec["decision_confidence"]
                 if s["judge_model"]:
                     record_entry["judge_model"] = s["judge_model"]
                 all_scored_records.append(record_entry)
@@ -850,6 +875,22 @@ class AuditEngine:
 
             _log(job_id, "success", "Report saved with structured report_json")
             _log(job_id, "success", "Audit completed successfully")
+
+            # Post-audit: trigger dbt pipeline refresh
+            try:
+                import subprocess
+                dbt_result = subprocess.run(
+                    ["dbt", "run", "--project-dir", "dbt/", "--profiles-dir", "dbt/"],
+                    capture_output=True, text=True, timeout=120
+                )
+                if dbt_result.returncode == 0:
+                    _log(job_id, "info", "dbt pipeline refreshed successfully")
+                else:
+                    _log(job_id, "warning", f"dbt pipeline refresh had issues: {dbt_result.stderr[:200]}")
+            except FileNotFoundError:
+                _log(job_id, "info", "dbt not installed — skipping pipeline refresh")
+            except Exception as e:
+                _log(job_id, "warning", f"dbt pipeline refresh failed: {e}")
 
         except Exception as e:
             err_msg = f"Audit failed: {e}"
