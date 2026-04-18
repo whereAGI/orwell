@@ -3111,6 +3111,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAuditList();
     loadSystemPrompts();
     loadModels(); // Added
+    loadBehaviorHub();
 
     // Wire up search controllers
     // Terminal search

@@ -1,0 +1,22 @@
+name: 'orwell_decision_trace'
+version: '1.0.0'
+config-version: 2
+
+profile: 'orwell'
+
+vars:
+  dbt_dduckduck_schema: ''
+
+model-paths: ["models"]
+test-paths: ["tests"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  orwell_decision_trace:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table

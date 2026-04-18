@@ -1,0 +1,138 @@
+version: 2
+
+sources:
+  - name: main
+    description: Source tables in the DuckDB main schema.
+    database: null
+    schema: main
+    tables:
+      - name: responses
+        description: Raw response records captured for each audit prompt and job.
+        columns:
+          - name: id
+            description: Unique identifier for the response row.
+          - name: response_id
+            description: External response identifier associated with the response row.
+          - name: job_id
+            description: Identifier of the audit job that produced the response.
+          - name: prompt_id
+            description: Identifier of the prompt presented to the model.
+          - name: raw_response
+            description: Raw text returned by the model for the prompt.
+          - name: score
+            description: Overall score captured on the response row.
+          - name: reason
+            description: Explanation associated with the stored response score.
+          - name: decision_type
+            description: Classified decision pattern assigned to the response.
+          - name: decision_confidence
+            description: Confidence score for the assigned decision type.
+
+      - name: scores
+        description: Dimension-level scoring records for each response.
+        columns:
+          - name: id
+            description: Unique identifier for the score row.
+          - name: score_id
+            description: External identifier for the score event.
+          - name: job_id
+            description: Identifier of the audit job associated with the score.
+          - name: response_id
+            description: Identifier of the response associated with the score row.
+          - name: dimension
+            description: Evaluation dimension that was scored.
+          - name: value
+            description: Numeric score assigned for the dimension.
+          - name: judge_model
+            description: Model used to judge or generate the dimension score.
+
+      - name: audit_jobs
+        description: Audit job metadata and execution status records.
+        columns:
+          - name: id
+            description: Unique identifier for the audit job.
+          - name: target_endpoint
+            description: Endpoint used to call the target model.
+          - name: target_model
+            description: Name of the model audited by the job.
+          - name: status
+            description: Execution status of the audit job.
+          - name: progress
+            description: Fractional progress recorded for the job.
+          - name: config_json
+            description: JSON configuration captured for the audit job.
+          - name: name
+            description: Optional display name for the audit job.
+          - name: notes
+            description: Optional notes stored with the audit job.
+          - name: system_prompt_snapshot
+            description: Snapshot of the system prompt used for the job.
+          - name: message
+            description: Status or result message for the job.
+          - name: error_message
+            description: Error details if the audit job failed.
+          - name: bench_id
+            description: Identifier of the associated benchmark, if present.
+          - name: created_at
+            description: Timestamp when the audit job was created.
+          - name: schema_id
+            description: Identifier of the audit schema used for the job.
+models:
+  - name: stg_orwell__responses
+    description: Filtered response records with non-null decision types.
+    columns:
+      - name: id
+        description: Unique identifier for the response row.
+        tests:
+          - not_null
+          - unique
+      - name: job_id
+        description: Identifier of the audit job that produced the response.
+      - name: prompt_id
+        description: Identifier of the prompt associated with the response.
+      - name: response_text
+        description: Raw response text renamed for analytics use.
+      - name: score
+        description: Overall score captured on the response row.
+      - name: reason
+        description: Explanation associated with the stored response score.
+      - name: decision_type
+        description: Classified decision pattern assigned to the response.
+      - name: decision_confidence
+        description: Confidence score for the assigned decision type.
+
+  - name: stg_orwell__scores
+    description: Dimension-level scores for audited responses.
+    columns:
+      - name: id
+        description: Unique identifier for the score row.
+        tests:
+          - not_null
+          - unique
+      - name: job_id
+        description: Identifier of the audit job associated with the score.
+      - name: response_id
+        description: Identifier of the response associated with the score row.
+      - name: dimension
+        description: Evaluation dimension that was scored.
+      - name: score
+        description: Numeric score assigned for the dimension.
+      - name: judge_model
+        description: Model used to judge or generate the dimension score.
+
+  - name: stg_orwell__audit_jobs
+    description: Completed audit job metadata keyed by job identifier.
+    columns:
+      - name: job_id
+        description: Unique identifier for the completed audit job.
+        tests:
+          - not_null
+          - unique
+      - name: model_name
+        description: Name of the model audited by the job.
+      - name: status
+        description: Execution status of the audit job.
+      - name: created_at
+        description: Timestamp when the audit job was created.
+      - name: schema_id
+        description: Identifier of the audit schema used for the job.

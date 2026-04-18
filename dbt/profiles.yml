@@ -1,0 +1,7 @@
+orwell:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: /home/pratheek/projects/orwell/data/orwell.db
+      threads: 1
