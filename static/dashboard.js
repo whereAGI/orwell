@@ -1556,6 +1556,7 @@ function deselectCurrentAudit() {
 }
 
 let behaviorHubVisible = true;
+let isInitialLoad = true;
 
 function toggleBehaviorHub() {
   const hubCard = document.getElementById('behaviorHubCard');
@@ -1566,8 +1567,41 @@ function toggleBehaviorHub() {
   hubCard.classList.toggle('collapsed', !behaviorHubVisible);
   toggleBtn.classList.toggle('active', behaviorHubVisible);
 
-  if (behaviorHubVisible && typeof loadBehaviorHub === 'function') {
-    loadBehaviorHub();
+  // When hub is visible: show it, hide report, clear audit selection
+  // When hub is hidden: show report (if an audit is selected)
+  const reportContainer = document.getElementById('report');
+  if (behaviorHubVisible) {
+    // Show hub, hide report, deselect any audit
+    currentJobId = null;
+    document.querySelectorAll('.audit-item').forEach(el => el.classList.remove('selected-audit'));
+    document.getElementById('qaAccordion').innerHTML = '';
+    document.getElementById('criteriaList').innerHTML = '';
+    const statusEl = document.getElementById('status');
+    if (statusEl) statusEl.style.display = 'none';
+    if (reportContainer) reportContainer.style.display = 'none';
+    if (typeof loadBehaviorHub === 'function') loadBehaviorHub();
+  } else {
+    // Hide hub — user wants to see the report
+    // Restore report structure if needed
+    if (reportContainer && !document.getElementById('reportContent')) {
+      reportContainer.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h3 style="margin:0">Audit Report</h3>
+          <div style="position:relative; display:inline-block;">
+            <button onclick="toggleDownloadDropdown()" style="width:auto;padding:6px 12px;font-size:12px;background:var(--card);border-color:var(--border);display:flex;align-items:center;gap:6px;" title="Download Report">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              Download
+            </button>
+            <div id="downloadDropdown" style="display:none; position:absolute; right:0; top:100%; margin-top:4px; background:var(--card); border:1px solid var(--border); border-radius:6px; min-width:120px; z-index:100; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+              <div onclick="downloadReport('md')" class="dropdown-item" style="padding:8px 12px; cursor:pointer; font-size:13px; color:var(--text);">Markdown</div>
+              <div onclick="downloadReport('pdf')" class="dropdown-item" style="padding:8px 12px; cursor:pointer; font-size:13px; color:var(--text); border-top:1px solid var(--border);">PDF</div>
+            </div>
+          </div>
+        </div>
+        <div id="reportContent"></div>
+      `;
+    }
+    if (reportContainer) reportContainer.style.display = 'block';
   }
 }
 
@@ -1674,7 +1708,11 @@ async function loadAuditList() {
     // Check if currentJobId exists in the new list
     const currentExists = audits.some(a => a.job_id === currentJobId);
 
-    if ((!currentJobId || !currentExists) && audits.length > 0) {
+    if (isInitialLoad) {
+      // On initial page load, show the hub instead of auto-selecting an audit
+      isInitialLoad = false;
+      if (typeof loadBehaviorHub === 'function') loadBehaviorHub();
+    } else if ((!currentJobId || !currentExists) && audits.length > 0) {
       // Ensure report structure is restored if it was previously overwritten
       const reportContainer = document.getElementById('report');
       if (reportContainer && !document.getElementById('reportContent')) {
@@ -3228,7 +3266,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAuditList();
     loadSystemPrompts();
     loadModels(); // Added
-    loadBehaviorHub();
 
     // Wire up search controllers
     // Terminal search
