@@ -643,12 +643,6 @@ async function loadReport() {
         reportElement.style.display = 'block';
       }
 
-      // Hide the Behavioral Intelligence Hub when showing the audit report
-      const hubCard = document.getElementById('behaviorHubCard');
-      if (hubCard) {
-        hubCard.style.display = 'none';
-      }
-
       // Initialize charts after DOM is ready
       setTimeout(() => initReportCharts(rj.sections), 100);
       return;
@@ -678,12 +672,6 @@ async function loadReport() {
     const reportElement = document.getElementById('report');
     if (reportElement) {
       reportElement.style.display = 'block';
-    }
-
-    // Hide the Behavioral Intelligence Hub when showing the audit report
-    const hubCard = document.getElementById('behaviorHubCard');
-    if (hubCard) {
-      hubCard.style.display = 'none';
     }
 
   } catch (err) {
@@ -1556,30 +1544,29 @@ if (criteriaClose) {
 
 
 function deselectCurrentAudit() {
-  // Called when user clicks the already-selected audit card — clears selection and shows comparison hub
+  // Clears audit selection — does not affect hub visibility (hub is toggled separately)
   currentJobId = null;
   document.querySelectorAll('.audit-item').forEach(el => el.classList.remove('selected-audit'));
-
-  // Clear the main content panels
   document.getElementById('qaAccordion').innerHTML = '';
   document.getElementById('criteriaList').innerHTML = '';
-
   const statusEl = document.getElementById('status');
   if (statusEl) statusEl.style.display = 'none';
-
   const reportContainer = document.getElementById('report');
-  if (reportContainer) {
-    reportContainer.style.display = 'none';
-  }
+  if (reportContainer) reportContainer.style.display = 'none';
+}
 
-  // Restore the Behavioral Intelligence Hub visibility when deselecting
+let behaviorHubVisible = true;
+
+function toggleBehaviorHub() {
   const hubCard = document.getElementById('behaviorHubCard');
-  if (hubCard) {
-    hubCard.style.display = 'block';
-  }
+  const toggleBtn = document.getElementById('hubToggleBtn');
+  if (!hubCard || !toggleBtn) return;
 
-  // Trigger behavior hub refresh so it shows the comparison table
-  if (typeof loadBehaviorHub === 'function') {
+  behaviorHubVisible = !behaviorHubVisible;
+  hubCard.classList.toggle('collapsed', !behaviorHubVisible);
+  toggleBtn.classList.toggle('active', behaviorHubVisible);
+
+  if (behaviorHubVisible && typeof loadBehaviorHub === 'function') {
     loadBehaviorHub();
   }
 }
@@ -1615,13 +1602,10 @@ async function loadAuditList() {
       const judge = a.judge_name || 'Unknown Judge';
 
       return `
-      <div class="audit-item ${isSelected ? 'selected-audit' : ''}" data-job="${a.job_id}" data-status="${a.status}" data-selected="0" title="${isSelected ? 'Click to deselect and view comparison' : ''}">
+      <div class="audit-item ${isSelected ? 'selected-audit' : ''}" data-job="${a.job_id}" data-status="${a.status}" data-selected="0">
         <div style="display:flex;justify-content:space-between;align-items:start;">
           <div style="flex:1; min-width:0; padding-right:8px;">
-            <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px;">
-              ${escapeHtml(a.target_model || 'Unknown')}
-              ${isSelected ? '<span style="font-size:10px;font-weight:400;color:var(--primary);background:rgba(129,140,248,0.15);padding:1px 6px;border-radius:10px;white-space:nowrap;">click to compare</span>' : ''}
-            </div>
+            <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(a.target_model || '')}">${escapeHtml(a.target_model || 'Unknown')}</div>
             <div class="mono" style="font-size:10px; margin-top:4px; color:#a0a0b8; display:flex; flex-direction:column; gap:2px;">
                <span>${date}</span>
                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(judge)}">${escapeHtml(judge)}</span>
@@ -1647,12 +1631,6 @@ async function loadAuditList() {
     container.querySelectorAll('.audit-item').forEach(item => {
       item.addEventListener('click', async (event) => {
         const clickedJobId = item.getAttribute('data-job');
-
-        // Deselect if clicking the already-selected audit
-        if (clickedJobId === currentJobId) {
-          deselectCurrentAudit();
-          return;
-        }
 
         if (event.shiftKey) {
           const sel = item.getAttribute('data-selected') === '1';

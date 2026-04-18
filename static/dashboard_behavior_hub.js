@@ -41,27 +41,15 @@ async function loadBehaviorHub() {
 }
 
 function renderBehaviorHub(container, models) {
-  if (models.length < 2) {
-    const count = models.length;
+  if (!models || models.length === 0) {
     container.innerHTML = `
       <div style="padding:24px 16px;text-align:center;">
-        <div style="font-size:32px;margin-bottom:8px;">🔒</div>
-        <h4 style="margin:0 0 8px;font-size:15px;color:var(--text);">Cross-Model Comparison Locked</h4>
+        <div style="font-size:32px;margin-bottom:8px;opacity:0.4;">📊</div>
+        <h4 style="margin:0 0 8px;font-size:15px;color:var(--text);">No Behavior Data Yet</h4>
         <p style="margin:0;font-size:13px;color:var(--muted);line-height:1.5;">
-          Run audits on at least <strong>2 models</strong> to unlock the Behavioral Intelligence Hub.<br/>
-          ${count === 0 ? 'You have no behavior profiles yet — complete your first audit.' : `You have ${count} model${count === 1 ? '' : 's'} profiled so far.`}
+          Complete audits on your models to build behavior profiles.
+          Decision strategy data will appear here once audits finish.
         </p>
-        <div style="margin-top:16px;display:flex;justify-content:center;gap:8px;">
-          ${models.map(m => `
-            <div style="background:#0e0e14;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:12px;color:var(--text);">
-              <div style="font-weight:600;">${escapeHtml(m.model_name)}</div>
-              <div style="color:var(--muted);font-size:11px;margin-top:2px;">
-                ${m.total_audits || 0} audit${m.total_audits === 1 ? '' : 's'}
-                ${m.dominant_decision ? ` · ${m.dominant_decision}` : ''}
-              </div>
-            </div>
-          `).join('')}
-        </div>
       </div>`;
     return;
   }
@@ -182,7 +170,7 @@ function renderBehaviorHub(container, models) {
         </svg>
         <span style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--primary);letter-spacing:0.05em;">Cross-Model Insight</span>
       </div>
-      ${escapeHtml(distinctInsight)}
+      ${distinctInsight}
     </div>` : ''}
   `;
 }
@@ -202,7 +190,7 @@ function generateDistinctInsight(models, mostDistinct, leastDistinct) {
     `and relies primarily on <strong>${mostDistinct.dominant_decision || 'N/A'}</strong> responses. ` +
     `${leastDistinct.model_name} scores ${(leastDistinct.overall_avg_score || 0).toFixed(2)}/7 ` +
     `with a <strong>${leastDistinct.dominant_decision || 'N/A'}</strong>-led strategy. ` +
-    `Consider whether the lower-scoring model's惯用 strategy is appropriate for high-stakes deployments.`;
+    `Consider whether the lower-scoring model's preferred strategy is appropriate for high-stakes deployments.`;
 }
 
 function timeAgo(date) {

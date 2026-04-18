@@ -444,6 +444,33 @@
     #behaviorHubCard h3 .hub-icon {
       font-size: 18px;
     }
+    #behaviorHubCard.collapsed {
+      display: none;
+    }
+    #hubToggleBtn {
+      width: auto;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 3px 8px;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    #hubToggleBtn:hover {
+      background: var(--bg-secondary);
+      color: var(--text);
+    }
+    #hubToggleBtn.active {
+      background: rgba(129, 140, 248, 0.15);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
   </style>
 </head>
 
@@ -466,6 +493,10 @@
               <path d="M1 20v-6h6"></path>
               <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
             </svg>
+          </button>
+          <button id="hubToggleBtn" class="active" onclick="toggleBehaviorHub()" title="Toggle Behavioral Intelligence Hub">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4M12 8h.01"></path></svg>
+            Hub
           </button>
         </div>
         <div id="auditList" class="audit-list"></div>
